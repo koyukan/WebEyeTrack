@@ -16,6 +16,9 @@ classifiers = [
 ]
 
 dependencies = [
+    'mediapipe',
+    'numpy',
+    "opencv-python"
 ]
 
 [project.optional-dependencies]
