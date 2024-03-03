@@ -9,7 +9,9 @@ import cv2
 import pandas as pd
 import imutils
 import numpy as np
+from tqdm import tqdm
 
+from kalman_filter import GazeFilter
 from models import WebCamVideo
 
 logger = logging.getLogger(__name__)
@@ -133,27 +135,46 @@ def main(args):
         # webcam_fps = -1
 
         # Iterating over the webcam videos using the user events
-        for session_name, session in webcam_videos.items():
+        for session_name, session in tqdm(webcam_videos.items(), total=len(webcam_videos)):
             
             # Load the webcam video
-            webcam_cap = cv2.VideoCapture(str(session['file']))
+            try:
+                webcam_cap = cv2.VideoCapture(str(session['file']))
+            except:
+                logger.error(f"Could not load the webcam video for {session_name}")
+                continue
+
             webcam_fps = webcam_cap.get(cv2.CAP_PROP_FPS)
-            webcam_length = int(webcam_cap.get(cv2.CAP_PROP_FRAME_COUNT))
             webcam_timestamp = session['epoch']
 
             # Get the mouse data for the current session
-            session_mouse_data = mouse_data[(mouse_data['epoch'] > webcam_timestamp) & (mouse_data['epoch'] < webcam_timestamp + webcam_length)]
+            session_mouse_data = mouse_data[(mouse_data['epoch'] > webcam_timestamp)]
             mouse_data_available = len(session_mouse_data) > 0
             if mouse_data_available:
                 mouse_timestamp = session_mouse_data.iloc[0]['epoch']
                 mouse_index = 0
                 mouse_pos = (-1,-1)
 
-            logger.debug(f"Webcam video: {session_name}, length: {webcam_length}, fps: {webcam_fps}, timestamp: {webcam_timestamp}, mouse data available: {mouse_data_available}")
+            # Get tobii data
+            session_tobii_data = tobii_data[(tobii_data['timestamp'] > webcam_timestamp)]
+            tobii_data_available = len(session_tobii_data) > 0
+            if tobii_data_available:
+                tobii_timestamp = session_tobii_data.iloc[0]['timestamp']
+                tobii_index = 0
+                tobii_pos = (int(0.5*display_w),int(0.5*display_h))
+                gaze_filter = GazeFilter()
+
+            logger.debug(f"Webcam video: {session_name}, fps: {webcam_fps}, timestamp: {webcam_timestamp}, mouse data available: {mouse_data_available}, tobii data available: {tobii_data_available}")
 
             # Iterate over the webcam video
             while True:
-                ret, frame = webcam_cap.read()
+
+                try:
+                    ret, frame = webcam_cap.read()
+                except:
+                    logger.error(f"Could not read the webcam video for {session_name}")
+                    break
+
                 if not ret:
                     break
 
@@ -177,7 +198,28 @@ def main(args):
                         mouse_index += 1
 
                     # Draw the mouse data
-                    cv2.circle(screen, mouse_pos, 5, (0, 0, 255), -1)
+                    cv2.circle(screen, mouse_pos, 10, (0, 0, 255), -1)
+
+                # Only process tobii if available
+                if tobii_data_available:
+
+                    # Draw the tobii data on the screen
+                    while tobii_index < len(session_tobii_data) and tobii_timestamp < webcam_timestamp:
+                        # Get the tobii data
+                        tobii_x = int(session_tobii_data.iloc[tobii_index]['rsgx'] * display_w)
+                        tobii_y = int(session_tobii_data.iloc[tobii_index]['rsgy'] * display_h)
+                        tobii_timestamp = session_tobii_data.iloc[tobii_index]['timestamp']
+
+                        # Draw the tobii data
+                        # tobii_pos = gaze_filter.process(np.array([tobii_x, tobii_y]))[0]
+                        # tobii_pos = (int(tobii_pos[0]), int(tobii_pos[1]))
+                        tobii_pos = (tobii_x, tobii_y)
+
+                        # Update the tobii index
+                        tobii_index += 1
+
+                    # Draw the tobii data
+                    cv2.circle(screen, tobii_pos, 10, (255, 0, 0), -1)
 
                 # Concat the screen and the webcam
                 webcam_h, webcam_w, _ = frame.shape
@@ -203,7 +245,7 @@ def main(args):
             # webcam_data = pd.DataFrame(webcam_data)
             # webcam_data.to_pickle(args.output / f"{participant}_{session_name}_webcam.pkl")
 
-        break
+        # break
 
     return
 
