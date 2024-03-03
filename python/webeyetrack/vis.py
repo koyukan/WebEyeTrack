@@ -9,7 +9,7 @@ def draw_fps(img: np.ndarray, fps: float) -> np.ndarray:
     return img
 
 def draw_iris(img: np.ndarray, center: np.ndarray, radius: int) -> np.ndarray:
-    cv2.circle(img, center, int(radius), (0, 255, 0), 2)
+    cv2.circle(img, center, int(radius), (0, 255, 0), 1)
     return img
 
 def draw_landmarks_on_image(rgb_image: np.ndarray, detection_result) -> np.ndarray:
