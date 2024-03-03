@@ -1,0 +1,72 @@
+[project]
+name = "webeyetrack"
+version = "0.0.1"
+description = "WebEyeTrack: Robust & Scalable Gaze Tracking for Web Applications"
+authors = [
+    {name = "Eduardo Davalos", email="eduardo.davalos.anaya@vanderbilt.edu"}
+]
+license = {file = "LICENSE.txt"}
+readme = "README.md"
+requires-python = ">3.6"
+
+keywords = ["eye-tracking", "scalable", "rgb", "gaze"]
+
+classifiers = [
+    "Programming Language :: Python :: 3"
+]
+
+dependencies = [
+]
+
+[project.optional-dependencies]
+test = [
+
+]
+
+[project.urls]
+homepath = "https://github.com/reading-analytics-group"
+repository = "https://github.com/reading-analytics-group/WebEyeTrack"
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# https://setuptools.pypa.io/en/stable/userguide/datafiles.html
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.ruff]
+ignore = ["E501"]
+select = ["E", "W", "F", "C", "B", "I"]
+ignore-init-module-imports = true
+fixable = ["I001"]  # isort fix only
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["E402", "F401"]
+"chimerapy/pipelines/__version__.py" = ["E402"]
+
+# Reference:
+# https://stackoverflow.com/questions/4673373/logging-within-pytest-tests
+
+[tool.pytest.ini_options]
+asyncio_mode = 'auto'
+
+# Logging + CLI
+log_cli = true
+log_cli_level = "DEBUG"
+log_cli_format = "%(asctime)s.%(msecs)03d [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+
+# Timeout
+faulthandler_timeout=300
+
+# Ignore warnings
+filterwarnings = "ignore::DeprecationWarning"
+
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "unit: marks tests as unit tests (deselect with '-m \"not unit\"')"
+]
