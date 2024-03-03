@@ -8,6 +8,7 @@ from decimal import Decimal
 import cv2
 import pandas as pd
 import imutils
+import numpy as np
 
 from models import WebCamVideo
 
@@ -46,15 +47,17 @@ def main(args):
         with open(user_events) as f:
             user_events = json.load(f)
 
+        # Create dataframe for mouse data
+        mouse_data = defaultdict(list)
         for l in user_events:
-            if 'windowX' in l and l['windowX'] != None:
-                wg_window_x = int(l['windowX'])
-                wg_window_y = int(l['windowY'])
-                wg_window_inner_width = int(l['windowInnerWidth'])
-                wg_window_inner_height = int(l['windowInnerHeight'])
-                wg_window_outer_width = int(l['windowOuterWidth'])
-                wg_window_outer_height = int(l['windowOuterHeight'])
-                break
+            if 'type' in l and (l['type'] == 'mousemove' or l['type'] == 'mouseclick'):
+                for k, v in l.items():
+                    mouse_data[k].append(v)
+        mouse_data = pd.DataFrame(mouse_data)
+
+        # Get screen size parameter
+        display_w = row['Display Width (pixels)']
+        display_h = row['Display Height (pixels)']
 
         # Webcam
         webcam_videos = {}
@@ -81,14 +84,14 @@ def main(args):
         # Sort the webcam videos by epoch
         webcam_videos = dict(sorted(webcam_videos.items(), key=lambda item: item[1]['epoch']))
 
-        # Screen
-        extension = ".mov"
-        if row['Setting'] == 'PC': extension = ".flv"
-        screen_video = p_dir / f"{participant}{extension}"
-        if not screen_video.exists():
-            # logger.error(f"Participant {participant} does not have screen video: {screen_video}")
-            continue
-        screen_cap = cv2.VideoCapture(str(screen_video))
+        # Screen (don't even bother, you would have to perform manual alignment, as reported by the WebGazer team)
+        # extension = ".mov"
+        # if row['Setting'] == 'PC': extension = ".flv"
+        # screen_video = p_dir / f"{participant}{extension}"
+        # if not screen_video.exists():
+        #     # logger.error(f"Participant {participant} does not have screen video: {screen_video}")
+        #     continue
+        # screen_cap = cv2.VideoCapture(str(screen_video))
 
         # Tobii
         tobii_log = p_dir / f"{participant}.txt"
@@ -118,82 +121,87 @@ def main(args):
         tobii_data = pd.DataFrame(tobii_data)
 
         # Iterate over the screen capture video
-        screen_length = int(screen_cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        fps = screen_cap.get(cv2.CAP_PROP_FPS)
+        # screen_length = int(screen_cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        # fps = screen_cap.get(cv2.CAP_PROP_FPS)
 
         # Timestamps to train each data stream
-        video_timestamp = start_timestamp
-        user_events_timestamp = -1
-        user_events_index = 0
-        webcam_cap = None
-        webcam_timestamp = -1
-        webcam_fps = -1
+        # video_timestamp = start_timestamp
+        # user_events_timestamp = -1
+        # user_events_index = 0
+        # webcam_cap = None
+        # webcam_timestamp = -1
+        # webcam_fps = -1
 
-        # Loop over the video
-        for i in range(screen_length):
+        # Iterating over the webcam videos using the user events
+        for session_name, session in webcam_videos.items():
+            
+            # Load the webcam video
+            webcam_cap = cv2.VideoCapture(str(session['file']))
+            webcam_fps = webcam_cap.get(cv2.CAP_PROP_FPS)
+            webcam_length = int(webcam_cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            webcam_timestamp = session['epoch']
 
-            # Update the video timestamp
-            video_timestamp += 1000 / fps
+            # Get the mouse data for the current session
+            session_mouse_data = mouse_data[(mouse_data['epoch'] > webcam_timestamp) & (mouse_data['epoch'] < webcam_timestamp + webcam_length)]
+            mouse_data_available = len(session_mouse_data) > 0
+            if mouse_data_available:
+                mouse_timestamp = session_mouse_data.iloc[0]['epoch']
+                mouse_index = 0
+                mouse_pos = (-1,-1)
 
-            # Load frame
-            ret, frame = screen_cap.read()
-            if not ret:
-                logger.error(f"Could not read frame {i} from screen video")
-                break
+            logger.debug(f"Webcam video: {session_name}, length: {webcam_length}, fps: {webcam_fps}, timestamp: {webcam_timestamp}, mouse data available: {mouse_data_available}")
 
-            # Iterate over the event data
-            while user_events_timestamp < video_timestamp:
-                if user_events_index >= len(user_events):
+            # Iterate over the webcam video
+            while True:
+                ret, frame = webcam_cap.read()
+                if not ret:
                     break
 
-                user_events_timestamp = user_events[user_events_index]['epoch']
-                user_events_index += 1
+                # Create a blank frame for the screen 
+                screen = np.ones((display_h, display_w, 3), dtype=np.uint8) * 255
 
-                latest_user_event = user_events[user_events_index - 1]
-                if 'type' in latest_user_event:
-                    if latest_user_event['type'] == 'recording start':
-                        if webcam_cap is not None:
-                            webcam_cap.release()
-                        
-                        session_id = latest_user_event['sessionId']
-                        session_name = session_id.split('/')[-1]
-                        if not session_name in webcam_videos:
-                            continue
+                # Only process mouse if available
+                if mouse_data_available:
 
-                        webcam_video = webcam_videos[session_name]
-                        # print(webcam_videos, session_name, webcam_video)
-                        webcam_cap = cv2.VideoCapture(str(webcam_video['file']))
-                        webcam_timestamp = webcam_video['epoch']
-                        webcam_fps = webcam_cap.get(cv2.CAP_PROP_FPS)
+                    # Draw the mouse data on the screen
+                    while mouse_index < len(session_mouse_data) and mouse_timestamp < webcam_timestamp:
+                        # Get the mouse data
+                        mouse_x = session_mouse_data.iloc[mouse_index]['clientX']
+                        mouse_y = session_mouse_data.iloc[mouse_index]['clientY']
+                        mouse_timestamp = session_mouse_data.iloc[mouse_index]['epoch']
 
-            # Align webcam with screen
-            # import pdb; pdb.set_trace()
-            webcam_frame = None
-            if webcam_cap is not None:
-                while webcam_timestamp < video_timestamp:
-                    ret, webcam_frame = webcam_cap.read()
-                    if not ret:
-                        logger.error(f"Could not read frame {i} from webcam video")
-                        break
-                    webcam_timestamp += 1000 / webcam_fps
+                        # Draw the mouse data
+                        mouse_pos = (int(mouse_x), int(mouse_y))
 
-            # Process the frame
-            # import pdb; pdb.set_trace()
-            h, w = frame.shape[:2]
+                        # Update the mouse index
+                        mouse_index += 1
 
-            # Draw informatics of the video (timestamp, etc) with black background
-            cv2.rectangle(frame, (0, 0), (w, 50), (255, 255, 255), -1)
-            cv2.putText(frame, f"Participant: {participant}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 4, cv2.LINE_AA)
-            cv2.putText(frame, f"Timestamp: {video_timestamp}", (500, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 4, cv2.LINE_AA)
+                    # Draw the mouse data
+                    cv2.circle(screen, mouse_pos, 5, (0, 0, 255), -1)
 
-            # Concatenate the frames
-            if type(webcam_frame) is not type(None):
-                frame = cv2.hconcat([frame, webcam_frame])
+                # Concat the screen and the webcam
+                webcam_h, webcam_w, _ = frame.shape
+                pad_h = (display_h - webcam_h) // 2
+                pad_w = (display_w - webcam_w) // 2
+                frame = cv2.copyMakeBorder(frame, pad_h, pad_h, pad_w, pad_w, cv2.BORDER_CONSTANT, value=[0, 0, 0])
+                frame = np.concatenate((screen, frame), axis=1)
 
-            # Show the frame
-            cv2.imshow('frame', imutils.resize(frame, width=800))
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+                cv2.imshow('frame', imutils.resize(frame, width=1200))
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+
+                # Update the time
+                webcam_timestamp += 1000/webcam_fps
+
+            # Release the webcam video
+            webcam_cap.release()
+            cv2.destroyAllWindows()
+
+            # break
+
+            # Store the webcam data
+            # webcam_data = pd.DataFrame(webcam_data)
+            # webcam_data.to_pickle(args.output / f"{participant}_{session_name}_webcam.pkl")
 
         break
 
