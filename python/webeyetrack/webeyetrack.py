@@ -10,10 +10,8 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import cv2
 
-from .depth_estimation import from_landmarks_to_depth
-
 # Indices of the landmarks that correspond to the eyes and irises
-LEFT_IRIS = [474,475, 476, 477]
+LEFT_IRIS = [474, 475, 476, 477]
 RIGHT_IRIS = [469, 470, 471, 472]
 LEFT_EYE = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385,384, 398]
 RIGHT_EYE= [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161 , 246]
@@ -111,36 +109,13 @@ class WebEyeTrack():
         right_eye_center = np.mean(right_eye_center_pts, axis=0).astype(int)
 
         # Depth
-        face_landmarks = detection_results.face_landmarks[0]
-        landmarks = np.array(
-            [(lm.x, lm.y, lm.z) for lm in face_landmarks]
-        )
-        landmarks = landmarks.T
-
         h,w = frame.shape[:2]
         image_size = (w,h)
-
-        left_eye_landmarks_id = np.array([33, 133])
-        (
-            l_depth,
-            l_iris_size,
-            l_iris_landmarks,
-            l_eye_contours
-        ) = from_landmarks_to_depth(
-            frame,
-            landmarks[:, left_eye_landmarks_id],
-            image_size,
-            is_right_eye=False,
-            focal_length = w
-        )
-        l_depth /= 10
-
-        # Compute depth for the eyes
-        # focal_length_pixel = frame.shape[1]
-        # depth_l = self.estimate_depth(l_radius, left_eye_center, focal_length_pixel, np.array(image_size))
-        # depth_r = self.estimate_depth(r_radius, right_eye_center, focal_length_pixel, np.array(frame.shape[:2]))
-        cv2.putText(frame, f'Depth L: {l_depth:.2f} cm', (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
+        focal_length_pixel = w
+        depth_l = self.estimate_depth(l_radius*1.8, left_eye_center, focal_length_pixel, np.array(image_size))
+        depth_r = self.estimate_depth(r_radius*1.8, right_eye_center, focal_length_pixel, np.array(frame.shape[:2]))
+        cv2.putText(frame, f'Depth L: {depth_l:.2f} cm', (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        cv2.putText(frame, f'Depth R: {depth_r:.2f} cm', (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
         # Compute gaze vectors
         # pitch_l, yaw_l = self.compute_gaze_direction(left_eye_center, center_l, depth_l)
