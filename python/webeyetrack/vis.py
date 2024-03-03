@@ -8,6 +8,10 @@ def draw_fps(img: np.ndarray, fps: float) -> np.ndarray:
     cv2.putText(img, f'FPS: {int(fps)}', (20,70), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0,0,255), 2)
     return img
 
+def draw_iris(img: np.ndarray, center: np.ndarray, radius: int) -> np.ndarray:
+    cv2.circle(img, center, int(radius), (0, 255, 0), 2)
+    return img
+
 def draw_landmarks_on_image(rgb_image: np.ndarray, detection_result) -> np.ndarray:
     face_landmarks_list = detection_result.face_landmarks
     annotated_image = np.copy(rgb_image)
