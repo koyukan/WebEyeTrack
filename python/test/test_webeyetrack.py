@@ -30,6 +30,7 @@ def test_facemesh(webeyetrack):
 
     cv2.destroyAllWindows()
 
+
 def test_iris(webeyetrack):
 
     # Load example image
@@ -46,5 +47,25 @@ def test_iris(webeyetrack):
 
     cv2.imshow('output', annotated_image)
     cv2.waitKey(0)
+
+    cv2.destroyAllWindows()
+
+
+def test_gaze_vector(webeyetrack):
+
+    # Load example image
+    image_fp = TEST_DIR / 'webgazer_p14.png'
+    image = cv2.imread(str(image_fp))
+
+    # Process the image
+    results = webeyetrack.process(image)
+
+    # Draw the annotations
+    annotated_image = we.vis.draw_iris(image, results.left_iris.center, results.left_iris.radius)
+    annotated_image = we.vis.draw_iris(annotated_image, results.right_iris.center, results.right_iris.radius)
+    annotated_image = we.vis.draw_fps(annotated_image, results.fps)
+
+    # cv2.imshow('output', annotated_image)
+    # cv2.waitKey(0)
 
     cv2.destroyAllWindows()

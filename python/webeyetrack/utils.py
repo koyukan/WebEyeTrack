@@ -1,5 +1,6 @@
 import math
 import numpy as np
+from scipy.spatial.transform import Rotation as R
 
 HUMAN_IRIS_RADIUS = 11.8  # mm
 
@@ -11,6 +12,7 @@ def estimate_depth(iris_diameter: float, iris_center: np.ndarray, focal_length_p
     depth_cm = depth_mm / 10
     return depth_cm
 
+
 def compute_3D_point(x, y, Z, H, W):
     """
     Compute the 3D point in the camera coordinate system from an image coordinate and depth.
@@ -18,14 +20,17 @@ def compute_3D_point(x, y, Z, H, W):
     Parameters:
     - x, y: The image coordinates (pixels)
     - Z: The depth value (distance along the camera's viewing axis)
-    - H, W: The height and width of the image (pixels)
+    - f_x, f_y: The camera's focal lengths along the X and Y axes (pixels)
+    - c_x, c_y: The optical center of the camera (pixels)
 
     Returns:
     A tuple (X, Y, Z) representing the 3D point in the camera coordinate system.
     """
     # 
-    fy = 0.5 * W / np.tan(0.5 * 55 * np.pi / 180.0)
-    fx = 0.5 * W / np.tan(0.5 * 55 * np.pi / 180.0)
+    # fy = 0.5 * W / np.tan(0.5 * 55 * np.pi / 180.0)
+    # fx = 0.5 * W / np.tan(0.5 * 55 * np.pi / 180.0)
+    fy = 0.5 * W / np.tan(0.5 * 50 * np.pi / 180.0)
+    fx = 0.5 * W / np.tan(0.5 * 50 * np.pi / 180.0)
     cx = 0.5 * W
     cy = 0.5 * H
 
@@ -39,18 +44,33 @@ def compute_3D_point(x, y, Z, H, W):
 
     return np.array([X, Y, Z])
 
-def compute_gaze_direction(eye_center, iris_center, depth):
-    # Step 1: Compute displacement vector
-    dx = iris_center[0] - eye_center[0]
-    dy = iris_center[1] - eye_center[1]
-    
-    # Step 2: Normalize the displacement vector
-    magnitude = math.sqrt(dx**2 + dy**2)
-    ux = dx / magnitude
-    uy = dy / magnitude
-    
-    # Step 3: Compute pitch and yaw (in radians)
-    pitch = math.atan2(uy, math.sqrt(ux**2))
-    yaw = math.atan2(ux, 1)  # Assuming uz = 1 for 2D to 3D projection
-    
-    return pitch, yaw
+
+def compute_gaze_vector(iris_t, eyeball_t):
+
+    # Compute the 3D rotation vector from the eyeball to the iris
+    gaze_vector = iris_t - eyeball_t
+    gaze_vector /= np.linalg.norm(gaze_vector)
+
+    # Convert to pitch and yaw
+    pitch = math.asin(-gaze_vector[1])
+    yaw = math.atan2(-gaze_vector[0], -gaze_vector[2])
+
+    # Convert to rotation vector
+    rotation = R.from_euler('xyz', [0, yaw, pitch], degrees=False)
+    return rotation
+
+def project_3d_pt(pt, K):
+    """
+    Project a 3D point to 2D using the camera matrix K.
+
+    Parameters:
+    - pt: The 3D point (X, Y, Z)
+    - K: The camera matrix
+
+    Returns:
+    A tuple (x, y) representing the 2D point in the image.
+    """
+    pt = pt.reshape((3, 1))
+    pt = np.dot(K, pt)
+    pt = pt / pt[2]
+    return (pt[0], pt[1])

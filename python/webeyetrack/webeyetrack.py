@@ -4,13 +4,22 @@ import numpy as np
 from dataclasses import dataclass
 from typing import Any, Optional, Union
 import time
+import logging
 
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import cv2
+import imutils
 
-from .utils import estimate_depth, compute_3D_point
+logger = logging.getLogger("webeyetrack")
+
+from .utils import (
+    estimate_depth, 
+    compute_3D_point,
+    compute_gaze_vector,
+    project_3d_pt
+)
 
 # Indices of the landmarks that correspond to the eyes and irises
 LEFT_IRIS = [474, 475, 476, 477]
@@ -19,6 +28,8 @@ LEFT_EYE = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385
 RIGHT_EYE= [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161 , 246]
 LEFT_EYE_CENTER = [386, 374]
 RIGHT_EYE_CENTER = [159, 145]
+
+HUMAN_EYEBALL_RADIUS = 24 # mm
 
 @dataclass
 class IrisData():
@@ -68,38 +79,68 @@ class WebEyeTrack():
         mesh_points = np.array([np.multiply([p.x, p.y], [w, h]).astype(int) for p in detection_results.face_landmarks[0]])
 
         # Get the iris circles
-        center_l, l_radius, center_r, r_radius = self.get_iris_circle(
+        iris_center_l, iris_radius_l, iris_center_r, iris_radius_r = self.get_iris_circle(
             mesh_points
         )
 
         # Get the eye contours
         left_eye = mesh_points[LEFT_EYE]
         right_eye = mesh_points[RIGHT_EYE]
-        cv2.polylines(frame, [left_eye], isClosed=True, color=(0, 0, 255), thickness=1)
-        cv2.polylines(frame, [right_eye], isClosed=True, color=(0, 0, 255), thickness=1)
+        # cv2.polylines(frame, [left_eye], isClosed=True, color=(0, 0, 255), thickness=1)
+        # cv2.polylines(frame, [right_eye], isClosed=True, color=(0, 0, 255), thickness=1)
 
-        # Obtain the center of the eye
-        left_eye_center_pts = mesh_points[LEFT_EYE_CENTER]
-        left_eye_center = np.mean(left_eye_center_pts, axis=0).astype(int)
-        right_eye_center_pts = mesh_points[RIGHT_EYE_CENTER]
-        right_eye_center = np.mean(right_eye_center_pts, axis=0).astype(int)
-
-        # Depth
+        # Depth for the irises
         h,w = frame.shape[:2]
         image_size = (w,h)
         focal_length_pixel = w
-        depth_l = estimate_depth(l_radius*1.8, left_eye_center, focal_length_pixel, np.array(image_size))
-        depth_r = estimate_depth(r_radius*1.8, right_eye_center, focal_length_pixel, np.array(image_size))
+        depth_l = estimate_depth(iris_radius_l*2, iris_center_l, focal_length_pixel, np.array(image_size))
+        depth_r = estimate_depth(iris_radius_r*2, iris_center_r, focal_length_pixel, np.array(image_size))
         cv2.putText(frame, f'Depth L: {depth_l:.2f} cm', (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
         cv2.putText(frame, f'Depth R: {depth_r:.2f} cm', (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-        # Construct 3D position of the eye
-        eye_3d_l = compute_3D_point(left_eye_center[0], left_eye_center[1], depth_l, h, w)
-        eye_3d_r = compute_3D_point(right_eye_center[0], right_eye_center[1], depth_r, h, w)
+        # Compute 3D position of the iris
+        iris_3d_l = compute_3D_point(iris_center_l[0], iris_center_l[1], depth_l, h, w)
+        iris_3d_r = compute_3D_point(iris_center_r[0], iris_center_r[1], depth_r, h, w)
+        logger.debug(f'3D position of the left iris: {iris_3d_l}')
+
+        # Test the 3D position of the iris by project back to 2D
+        K = np.array([[focal_length_pixel, 0, w/2], [0, focal_length_pixel, h/2], [0, 0, 1]])
+        # projected_iris_l = cv2.projectPoints(iris_3d_l, np.eye(3), np.zeros(3), K, np.zeros(5))
+        # projected_iris_r = cv2.projectPoints(iris_3d_r, np.eye(3), np.zeros(3), K, np.zeros(5))
+        projected_iris_l = project_3d_pt(iris_3d_l, K)
+        # import pdb; pdb.set_trace()
+        cv2.circle(frame, (int(projected_iris_l[0]), int(projected_iris_l[1])), 1, (0, 0, 255), -1)
+        # cv2.circle(frame, tuple(projected_iris_r[0][0][0].astype(int)), 1, (0, 0, 255), -1)
+
+        # Compute the 3D center of the eye-ball
+        eye_center_pts_l = mesh_points[LEFT_EYE_CENTER]
+        left_eye_center = np.mean(eye_center_pts_l, axis=0).astype(int)
+        eye_center_pts_r = mesh_points[RIGHT_EYE_CENTER]
+        right_eye_center = np.mean(eye_center_pts_r, axis=0).astype(int)
+
+        # Draw the eye centers
+        # cv2.circle(frame, tuple(iris_center_l), 1, (0, 0, 255), -1)
+        # cv2.circle(frame, tuple(left_eye_center), 1, (0, 255, 0), -1)
+
+        # Crop the eye region 
+        eye_l = frame[left_eye_center[1]-50:left_eye_center[1]+50, left_eye_center[0]-50:left_eye_center[0]+50]
+        cv2.imshow('eye_l', imutils.resize(eye_l, width=300))
+        cv2.waitKey(0)
+
+        # Compute 3D position of the eye center
+        eye_3d_l = compute_3D_point(left_eye_center[0], left_eye_center[1], depth_l+(HUMAN_EYEBALL_RADIUS/10), h, w)
+        eye_3d_r = compute_3D_point(right_eye_center[0], right_eye_center[1], depth_r+(HUMAN_EYEBALL_RADIUS/10), h, w)
+
 
         # Compute gaze vectors
-        # pitch_l, yaw_l = self.compute_gaze_direction(left_eye_center, center_l, depth_l)
-        # pitch_r, yaw_r = self.compute_gaze_direction(right_eye_center, center_r, depth_r)
+        gaze_vector_l = compute_gaze_vector(iris_3d_l, eye_3d_l)
+        gaze_vector_r = compute_gaze_vector(iris_3d_r, eye_3d_r)
+
+        # Draw the gaze vectors
+        # cv2.arrowedLine(frame, tuple(left_eye_center), (int(left_eye_center[0] + 50 * gaze_vector_l[0]), int(left_eye_center[1] - 50 * gaze_vector_l[1])), (0, 255, 0), 1)
+        eye_l = frame[left_eye_center[1]-50:left_eye_center[1]+50, left_eye_center[0]-50:left_eye_center[0]+50]
+        cv2.imshow('eye_l', imutils.resize(eye_l, width=300))
+        cv2.waitKey(0)
 
         # Draw the gaze vectors
         # cv2.arrowedLine(frame, tuple(left_eye_center), (int(left_eye_center[0] + 50 * yaw_l), int(left_eye_center[1] - 50 * pitch_l)), (0, 255, 0), 2)
@@ -112,12 +153,12 @@ class WebEyeTrack():
         return WebEyeTrackResults(
             detection_results=detection_results,
             left_iris=IrisData(
-                center=center_l, 
-                radius=l_radius,
+                center=iris_center_l, 
+                radius=iris_radius_l,
             ),
             right_iris=IrisData(
-                center=center_r, 
-                radius=r_radius
+                center=iris_center_r, 
+                radius=iris_radius_r
             ),
             fps=fps
         )
