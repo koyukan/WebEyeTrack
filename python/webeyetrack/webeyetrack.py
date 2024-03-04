@@ -10,6 +10,8 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import cv2
 
+from .utils import estimate_depth, compute_3D_point
+
 # Indices of the landmarks that correspond to the eyes and irises
 LEFT_IRIS = [474, 475, 476, 477]
 RIGHT_IRIS = [469, 470, 471, 472]
@@ -17,8 +19,6 @@ LEFT_EYE = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385
 RIGHT_EYE= [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161 , 246]
 LEFT_EYE_CENTER = [386, 374]
 RIGHT_EYE_CENTER = [159, 145]
-
-HUMAN_IRIS_RADIUS = 11.8  # mm
 
 @dataclass
 class IrisData():
@@ -56,30 +56,6 @@ class WebEyeTrack():
         center_r = np.array([r_cx, r_cy], dtype=np.int32)
         return center_l, l_radius, center_r, r_radius
     
-    def estimate_depth(self, iris_diameter: float, iris_center: np.ndarray, focal_length_pixel: float, image_size: np.ndarray):
-        origin = image_size / 2.0
-        y = np.sqrt((origin[0]-iris_center[0])**2 + (origin[1]-iris_center[1])**2)
-        x = np.sqrt(focal_length_pixel ** 2 + y ** 2)
-        depth_mm = HUMAN_IRIS_RADIUS * x / iris_diameter
-        depth_cm = depth_mm / 10
-        return depth_cm
-
-    def compute_gaze_direction(self, eye_center, iris_center, depth):
-        # Step 1: Compute displacement vector
-        dx = iris_center[0] - eye_center[0]
-        dy = iris_center[1] - eye_center[1]
-        
-        # Step 2: Normalize the displacement vector
-        magnitude = math.sqrt(dx**2 + dy**2)
-        ux = dx / magnitude
-        uy = dy / magnitude
-        
-        # Step 3: Compute pitch and yaw (in radians)
-        pitch = math.atan2(uy, math.sqrt(ux**2))
-        yaw = math.atan2(ux, 1)  # Assuming uz = 1 for 2D to 3D projection
-        
-        return pitch, yaw
-
     def process(self, frame: np.ndarray):
         start = time.perf_counter()
 
@@ -112,10 +88,14 @@ class WebEyeTrack():
         h,w = frame.shape[:2]
         image_size = (w,h)
         focal_length_pixel = w
-        depth_l = self.estimate_depth(l_radius*1.8, left_eye_center, focal_length_pixel, np.array(image_size))
-        depth_r = self.estimate_depth(r_radius*1.8, right_eye_center, focal_length_pixel, np.array(frame.shape[:2]))
+        depth_l = estimate_depth(l_radius*1.8, left_eye_center, focal_length_pixel, np.array(image_size))
+        depth_r = estimate_depth(r_radius*1.8, right_eye_center, focal_length_pixel, np.array(image_size))
         cv2.putText(frame, f'Depth L: {depth_l:.2f} cm', (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
         cv2.putText(frame, f'Depth R: {depth_r:.2f} cm', (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+        # Construct 3D position of the eye
+        eye_3d_l = compute_3D_point(left_eye_center[0], left_eye_center[1], depth_l, h, w)
+        eye_3d_r = compute_3D_point(right_eye_center[0], right_eye_center[1], depth_r, h, w)
 
         # Compute gaze vectors
         # pitch_l, yaw_l = self.compute_gaze_direction(left_eye_center, center_l, depth_l)
