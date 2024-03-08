@@ -14,6 +14,9 @@ import imutils
 
 logger = logging.getLogger("webeyetrack")
 
+from .translation_kalman_filter import TranslationKalmanFilter
+# from .pose_kalman_filter import PoseKalmanFilter
+from .vis import draw_landmarks_on_image
 from .utils import (
     estimate_depth, 
     compute_3D_point,
@@ -60,6 +63,8 @@ class WebEyeTrack():
             num_faces=1
         )
         self.detector = vision.FaceLandmarker.create_from_options(options)
+        # self.pose_kalman_filter = PoseKalmanFilter()
+        self.translation_filter = TranslationKalmanFilter()
 
     def get_iris_circle(self, landmarks: np.ndarray):
 
@@ -91,8 +96,11 @@ class WebEyeTrack():
 
         # Detect the face
         detection_results = self.detector.detect(mp_image)
+        if detection_results is None: return
         points = detection_results.face_landmarks[0]
-        
+
+        frame = draw_landmarks_on_image(frame, detection_results)
+
         """
         The gaze function gets an image and face landmarks from mediapipe framework.
         The function draws the gaze direction into the frame.
@@ -111,6 +119,9 @@ class WebEyeTrack():
             relative(points[287], frame.shape),  # Left Mouth corner
             relative(points[57], frame.shape)  # Right mouth corner
         ], dtype="double")
+        # image_points = np.array([
+        #     [relative(points[x], frame.shape)] for x in HEADPOSE
+        # ], dtype="double")
 
         '''
         2D image points.
@@ -125,6 +136,9 @@ class WebEyeTrack():
             relativeT(points[287], frame.shape),  # Left Mouth corner
             relativeT(points[57], frame.shape)  # Right mouth corner
         ], dtype="double")
+        # image_points1 = np.array([
+        #     [relativeT(points[x], frame.shape)] for x in HEADPOSE
+        # ], dtype="double")
 
         # 3D model points.
         model_points = np.array([
@@ -155,8 +169,15 @@ class WebEyeTrack():
         )
 
         dist_coeffs = np.zeros((4, 1))  # Assuming no lens distortion
-        (success, rotation_vector, translation_vector) = cv2.solvePnP(model_points, image_points, camera_matrix,
-                                                                    dist_coeffs, flags=cv2.SOLVEPNP_ITERATIVE)
+        (success, rvec, tvec, inliners) = cv2.solvePnPRansac(model_points, image_points, camera_matrix, dist_coeffs, flags=cv2.SOLVEPNP_ITERATIVE)
+
+        if not success:
+            logger.error("Failed to solve PnP")
+            return frame
+        
+        # Kalman filter for pose
+        tvec, _ = self.translation_filter.process(tvec)
+        # rvec, tvec, _ = self.pose_kalman_filter.process(rvec, tvec)
 
         # 2d pupil location
         left_pupil = relative(points[468], frame.shape)
@@ -166,6 +187,11 @@ class WebEyeTrack():
         _, transformation, _ = cv2.estimateAffine3D(image_points1, model_points)  # image to world transformation
 
         if transformation is not None:  # if estimateAffine3D seceded
+
+            # project the 3D head pose into the image plane
+            (nose_start_point2D, _) = cv2.projectPoints(np.array([(0.0, 0.0, int(0))]), rvec, tvec, camera_matrix, dist_coeffs)
+            (nose_end_point2D, _) = cv2.projectPoints(np.array([(0.0, 0.0, int(100.0))]), rvec, tvec, camera_matrix, dist_coeffs)
+
             # project left pupils image point into 3d world point 
             left_pupil_world_cord = transformation @ np.array([[left_pupil[0], left_pupil[1], 0, 1]]).T
             right_pupil_world_cord = transformation @ np.array([[right_pupil[0], right_pupil[1], 0, 1]]).T
@@ -175,18 +201,18 @@ class WebEyeTrack():
             R = Eye_ball_center_right + (right_pupil_world_cord - Eye_ball_center_right) * 10
 
             # Project a 3D gaze direction onto the image plane.
-            (left_eye_pupil2D, _) = cv2.projectPoints((int(L[0]), int(L[1]), int(L[2])), rotation_vector,
-                                                translation_vector, camera_matrix, dist_coeffs)
-            (right_eye_pupil2D, _) = cv2.projectPoints((int(R[0]), int(R[1]), int(R[2])), rotation_vector,
-                                                translation_vector, camera_matrix, dist_coeffs)
+            (left_eye_pupil2D, _) = cv2.projectPoints((int(L[0]), int(L[1]), int(L[2])), rvec,
+                                                tvec, camera_matrix, dist_coeffs)
+            (right_eye_pupil2D, _) = cv2.projectPoints((int(R[0]), int(R[1]), int(R[2])), rvec,
+                                                tvec, camera_matrix, dist_coeffs)
 
             # project 3D head pose into the image plane
             (left_head_pose, _) = cv2.projectPoints((int(left_pupil_world_cord[0]), int(left_pupil_world_cord[1]), int(70)),
-                                            rotation_vector,
-                                            translation_vector, camera_matrix, dist_coeffs)
+                                            rvec,
+                                            tvec, camera_matrix, dist_coeffs)
             (right_head_pose, _) = cv2.projectPoints((int(right_pupil_world_cord[0]), int(right_pupil_world_cord[1]), int(70)),
-                                            rotation_vector,
-                                            translation_vector, camera_matrix, dist_coeffs)
+                                            rvec,
+                                            tvec, camera_matrix, dist_coeffs)
 
             # correct gaze for head rotation
             gaze_left = left_pupil + (left_eye_pupil2D[0][0] - left_pupil) - (left_head_pose[0][0] - left_pupil)
@@ -198,9 +224,13 @@ class WebEyeTrack():
             
             R1 = (int(right_pupil[0]), int(right_pupil[1])) 
             R2 = (int(gaze_right[0]), int(gaze_right[1]))
-            
-            cv2.line(frame, L1, L2, (0, 0, 255), 2)
-            cv2.line(frame, R1, R2, (0, 0, 255), 2)
+
+            H1 = (int(nose_start_point2D[0][0][0]), int(nose_start_point2D[0][0][1]))
+            H2 = (int(nose_end_point2D[0][0][0]), int(nose_end_point2D[0][0][1]))
+
+            cv2.line(frame, H1, H2, (0, 0, 255), 2)
+            # cv2.line(frame, L1, L2, (0, 0, 255), 2)
+            # cv2.line(frame, R1, R2, (0, 0, 255), 2)
             
             gaze_point =  (int((gaze_left[0] + gaze_right[0]) / 2), int((gaze_left[1] + gaze_right[1]) / 2))
             cv2.circle(frame, gaze_point, 3 , (255, 0, 0), 3)
@@ -209,4 +239,4 @@ class WebEyeTrack():
         end = time.perf_counter()
         fps = 1 / (end - start)
 
-        return None
+        return frame

@@ -16,7 +16,7 @@ while cap.isOpened():
     # pass by reference.
     image.flags.writeable = False
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # frame to RGB for the face-mesh model
-    results = tracker.process(image)
+    image = tracker.process(image)
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)  # frame back to BGR for OpenCV
 
     cv2.imshow('output window', image)
