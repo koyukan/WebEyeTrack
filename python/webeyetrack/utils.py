@@ -74,3 +74,6 @@ def project_3d_pt(pt, K):
     pt = np.dot(K, pt)
     pt = pt / pt[2]
     return (pt[0], pt[1])
+
+def compute_head_pose():
+    ...
