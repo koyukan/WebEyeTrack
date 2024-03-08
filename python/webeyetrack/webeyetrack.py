@@ -1,3 +1,4 @@
+import os
 import math
 import pathlib
 import numpy as np
@@ -37,6 +38,8 @@ HEADPOSE = [4, 152, 263, 33, 287, 57]
 
 HUMAN_EYEBALL_RADIUS = 24 # mm
 
+CWD = pathlib.Path(os.path.abspath(__file__)).parent
+
 @dataclass
 class IrisData():
     center: np.ndarray
@@ -63,8 +66,17 @@ class WebEyeTrack():
             num_faces=1
         )
         self.detector = vision.FaceLandmarker.create_from_options(options)
-        # self.pose_kalman_filter = PoseKalmanFilter()
         self.translation_filter = TranslationKalmanFilter()
+
+        self.canonical_face = np.load(CWD / 'assets' / "canonical_face_model.npy")
+        # with open(CWD / 'assets' / "canonical_face_model.obj", "rb") as f:
+        #     for line in f:
+        #         if line.startswith(b"v "):
+        #             x, y, z = line.split()[1:]
+        #             self.canonical_face.append([float(x), float(y), float(z)])
+        # self.canonical_face = np.array(self.canonical_face)
+        # # Save the canonical face as a numpy array
+        # np.save(CWD / 'assets' / "canonical_face_model.npy", self.canonical_face)
 
     def get_iris_circle(self, landmarks: np.ndarray):
 
@@ -74,18 +86,6 @@ class WebEyeTrack():
         center_l = np.array([l_cx, l_cy], dtype=np.int32)
         center_r = np.array([r_cx, r_cy], dtype=np.int32)
         return center_l, l_radius, center_r, r_radius
-    
-    def compute_depth(self, frame: np.ndarray, iris_center_l: np.ndarray, iris_radius_l: float, iris_center_r: np.ndarray, iris_radius_r: float):
-        
-        # Depth for the irises
-        h,w = frame.shape[:2]
-        image_size = (w,h)
-        focal_length_pixel = w
-        depth_l = estimate_depth(iris_radius_l*2, iris_center_l, focal_length_pixel, np.array(image_size))
-        depth_r = estimate_depth(iris_radius_r*2, iris_center_r, focal_length_pixel, np.array(image_size))
-        # cv2.putText(frame, f'Depth L: {depth_l:.2f} cm', (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-        # cv2.putText(frame, f'Depth R: {depth_r:.2f} cm', (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-        return depth_l, depth_r
     
     def process(self, frame: np.ndarray):
         start = time.perf_counter()
@@ -122,7 +122,7 @@ class WebEyeTrack():
         at (x,y,0) format
         '''
         image_points1 = np.array([
-            [relativeT(points[x], frame.shape)] for x in HEADPOSE
+            relativeT(points[x], frame.shape) for x in HEADPOSE
         ], dtype="double")
 
         # 3D model points.
@@ -134,6 +134,10 @@ class WebEyeTrack():
             (-28.9, -28.9, -24.1),  # Left Mouth corner
             (28.9, -28.9, -24.1)  # Right mouth corner
         ])
+        # model_points2 = np.array([
+        #     points[x].z for x in HEADPOSE
+        # ])
+        import pdb; pdb.set_trace()
 
         '''
         3D model eye points
