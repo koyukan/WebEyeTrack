@@ -67,8 +67,11 @@ class WebEyeTrack():
         )
         self.detector = vision.FaceLandmarker.create_from_options(options)
         self.translation_filter = TranslationKalmanFilter()
-
         self.canonical_face = np.load(CWD / 'assets' / "canonical_face_model.npy")
+
+        # Center the canonical face model around the nose
+        self.canonical_face -= self.canonical_face[4]
+
         # with open(CWD / 'assets' / "canonical_face_model.obj", "rb") as f:
         #     for line in f:
         #         if line.startswith(b"v "):
@@ -98,6 +101,7 @@ class WebEyeTrack():
         detection_results = self.detector.detect(mp_image)
         if detection_results is None: return
         points = detection_results.face_landmarks[0]
+        detected_canonical_face = points[:468]
 
         frame = draw_landmarks_on_image(frame, detection_results)
 
@@ -137,7 +141,7 @@ class WebEyeTrack():
         # model_points2 = np.array([
         #     points[x].z for x in HEADPOSE
         # ])
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
 
         '''
         3D model eye points
