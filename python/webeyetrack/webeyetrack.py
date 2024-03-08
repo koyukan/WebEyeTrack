@@ -122,7 +122,7 @@ class WebEyeTrack():
         ], dtype="double")
 
         # 3D model points.
-        prior_model_points = np.array([
+        model_points = np.array([
             (0.0, 0.0, 0.0),  # Nose tip
             (0, -63.6, -12.5),  # Chin
             (-43.3, 32.7, -26),  # Left eye, left corner
@@ -130,9 +130,9 @@ class WebEyeTrack():
             (-28.9, -28.9, -24.1),  # Left Mouth corner
             (28.9, -28.9, -24.1)  # Right mouth corner
         ])
-        model_points = self.canonical_face[HEADPOSE]
-        model_points[:, 0] *= -1
-        # model_points2 = np.array([
+        # model_points = self.canonical_face[HEADPOSE]
+        # model_points[:, 0] *= -1
+        # model_points = np.array([
         #     points[x].z for x in HEADPOSE
         # ])
         # RATIO = [9.52, 8.57, 5.87]
@@ -142,14 +142,10 @@ class WebEyeTrack():
         3D model eye points
         The center of the eye ball
         '''
-        # Eye_ball_center_right = np.array([[-29.05], [32.7], [-39.5]])
-        # Eye_ball_center_left = np.array([[29.05], [32.7], [-39.5]])  # the center of the left eyeball as a vector.
-        # eye = np.array([[-3.04922173, 3.81236286, -6.7824702]])
-        # Eye_ball_center_left = eye
-        # Eye_ball_center_right = eye
-        # Eye_ball_center_right[0, 0] *= -1
-        Eye_ball_center_right = np.array([[-3.09], [4.0875], [-7.90]])
-        Eye_ball_center_left = np.array([[3.09], [4.0875], [-7.50]])  # the center of the left eyeball as a vector.
+        Eye_ball_center_right = np.array([[-29.05], [32.7], [-39.5]])
+        Eye_ball_center_left = np.array([[29.05], [32.7], [-39.5]])  # the center of the left eyeball as a vector.
+        # Eye_ball_center_right = np.array([[-3.09], [4.0875], [-7.90]])
+        # Eye_ball_center_left = np.array([[3.09], [4.0875], [-7.50]])  # the center of the left eyeball as a vector.
 
         '''
         camera matrix estimation

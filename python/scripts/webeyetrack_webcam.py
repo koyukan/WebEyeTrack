@@ -1,14 +1,18 @@
+import pathlib
+import os
+
 import webeyetrack
 import cv2
 
-tracker = webeyetrack.WebEyeTrack(
-    model_path="/media/eduardo/Crucial X6/reading-analytics-group/WebEyeTrack/python/models/face_landmarker_v2_with_blendshapes.task"
-)
+CWD = pathlib.Path(os.path.abspath(__file__)).parent
+
+tracker = webeyetrack.WebEyeTrack(CWD.parent / 'models' / 'face_landmarker_v2_with_blendshapes.task')
 
 # camera stream:
 cap = cv2.VideoCapture(0)  # chose camera index (try 1, 2, 3)
 while cap.isOpened():
     success, image = cap.read()
+    print(image)
     if not success:  # no frame input
         print("Ignoring empty camera frame.")
         continue
