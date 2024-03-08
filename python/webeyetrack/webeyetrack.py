@@ -33,7 +33,7 @@ RIGHT_EYE= [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 1
 LEFT_EYE_CENTER = [386, 374]
 RIGHT_EYE_CENTER = [159, 145]
 
-HEADPOSE = [4, 152, 236, 33, 287, 57]
+HEADPOSE = [4, 152, 263, 33, 287, 57]
 
 HUMAN_EYEBALL_RADIUS = 24 # mm
 
@@ -112,16 +112,9 @@ class WebEyeTrack():
         at (x,y) format
         '''
         image_points = np.array([
-            relative(points[4], frame.shape),  # Nose tip
-            relative(points[152], frame.shape),  # Chin
-            relative(points[263], frame.shape),  # Left eye left corner
-            relative(points[33], frame.shape),  # Right eye right corner
-            relative(points[287], frame.shape),  # Left Mouth corner
-            relative(points[57], frame.shape)  # Right mouth corner
+            relative(points[x], frame.shape) for x in HEADPOSE
         ], dtype="double")
-        # image_points = np.array([
-        #     [relative(points[x], frame.shape)] for x in HEADPOSE
-        # ], dtype="double")
+        # import pdb; pdb.set_trace()
 
         '''
         2D image points.
@@ -129,16 +122,8 @@ class WebEyeTrack():
         at (x,y,0) format
         '''
         image_points1 = np.array([
-            relativeT(points[4], frame.shape),  # Nose tip
-            relativeT(points[152], frame.shape),  # Chin
-            relativeT(points[263], frame.shape),  # Left eye, left corner
-            relativeT(points[33], frame.shape),  # Right eye, right corner
-            relativeT(points[287], frame.shape),  # Left Mouth corner
-            relativeT(points[57], frame.shape)  # Right mouth corner
+            [relativeT(points[x], frame.shape)] for x in HEADPOSE
         ], dtype="double")
-        # image_points1 = np.array([
-        #     [relativeT(points[x], frame.shape)] for x in HEADPOSE
-        # ], dtype="double")
 
         # 3D model points.
         model_points = np.array([
