@@ -72,15 +72,6 @@ class WebEyeTrack():
         # Center the canonical face model around the nose
         self.canonical_face -= self.canonical_face[4]
 
-        # with open(CWD / 'assets' / "canonical_face_model.obj", "rb") as f:
-        #     for line in f:
-        #         if line.startswith(b"v "):
-        #             x, y, z = line.split()[1:]
-        #             self.canonical_face.append([float(x), float(y), float(z)])
-        # self.canonical_face = np.array(self.canonical_face)
-        # # Save the canonical face as a numpy array
-        # np.save(CWD / 'assets' / "canonical_face_model.npy", self.canonical_face)
-
     def get_iris_circle(self, landmarks: np.ndarray):
 
         (l_cx, l_cy), l_radius = cv2.minEnclosingCircle(landmarks[LEFT_IRIS])
@@ -130,14 +121,16 @@ class WebEyeTrack():
         ], dtype="double")
 
         # 3D model points.
-        model_points = np.array([
-            (0.0, 0.0, 0.0),  # Nose tip
-            (0, -63.6, -12.5),  # Chin
-            (-43.3, 32.7, -26),  # Left eye, left corner
-            (43.3, 32.7, -26),  # Right eye, right corner
-            (-28.9, -28.9, -24.1),  # Left Mouth corner
-            (28.9, -28.9, -24.1)  # Right mouth corner
-        ])
+        # model_points = np.array([
+        #     (0.0, 0.0, 0.0),  # Nose tip
+        #     (0, -63.6, -12.5),  # Chin
+        #     (-43.3, 32.7, -26),  # Left eye, left corner
+        #     (43.3, 32.7, -26),  # Right eye, right corner
+        #     (-28.9, -28.9, -24.1),  # Left Mouth corner
+        #     (28.9, -28.9, -24.1)  # Right mouth corner
+        # ])
+        model_points = self.canonical_face[HEADPOSE]
+        model_points[:, 0] *= -1
         # model_points2 = np.array([
         #     points[x].z for x in HEADPOSE
         # ])
@@ -147,8 +140,10 @@ class WebEyeTrack():
         3D model eye points
         The center of the eye ball
         '''
-        Eye_ball_center_right = np.array([[-29.05], [32.7], [-39.5]])
-        Eye_ball_center_left = np.array([[29.05], [32.7], [-39.5]])  # the center of the left eyeball as a vector.
+        # Eye_ball_center_right = np.array([[-29.05], [32.7], [-39.5]])
+        # Eye_ball_center_left = np.array([[29.05], [32.7], [-39.5]])  # the center of the left eyeball as a vector.
+        Eye_ball_center_right = np.array([[-3.09], [4.0875], [-7.90]])
+        Eye_ball_center_left = np.array([[3.09], [4.0875], [-7.50]])  # the center of the left eyeball as a vector.
 
         '''
         camera matrix estimation
@@ -169,7 +164,7 @@ class WebEyeTrack():
             return frame
         
         # Kalman filter for pose
-        tvec, _ = self.translation_filter.process(tvec)
+        # tvec, _ = self.translation_filter.process(tvec)
         # rvec, tvec, _ = self.pose_kalman_filter.process(rvec, tvec)
 
         # 2d pupil location
@@ -231,5 +226,6 @@ class WebEyeTrack():
         # Compute FPS 
         end = time.perf_counter()
         fps = 1 / (end - start)
+        cv2.putText(frame, f"FPS: {fps:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
 
         return frame
