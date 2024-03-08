@@ -34,7 +34,8 @@ RIGHT_EYE= [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 1
 LEFT_EYE_CENTER = [386, 374]
 RIGHT_EYE_CENTER = [159, 145]
 
-HEADPOSE = [4, 152, 263, 33, 287, 57]
+# HEADPOSE = [4, 152, 263, 33, 287, 57]
+HEADPOSE = range(0, 468)
 
 HUMAN_EYEBALL_RADIUS = 24 # mm
 
@@ -94,7 +95,7 @@ class WebEyeTrack():
         points = detection_results.face_landmarks[0]
         detected_canonical_face = points[:468]
 
-        frame = draw_landmarks_on_image(frame, detection_results)
+        # frame = draw_landmarks_on_image(frame, detection_results)
 
         """
         The gaze function gets an image and face landmarks from mediapipe framework.
@@ -216,9 +217,9 @@ class WebEyeTrack():
             H1 = (int(nose_start_point2D[0][0][0]), int(nose_start_point2D[0][0][1]))
             H2 = (int(nose_end_point2D[0][0][0]), int(nose_end_point2D[0][0][1]))
 
-            cv2.line(frame, H1, H2, (0, 0, 255), 2)
-            # cv2.line(frame, L1, L2, (0, 0, 255), 2)
-            # cv2.line(frame, R1, R2, (0, 0, 255), 2)
+            # cv2.line(frame, H1, H2, (0, 0, 255), 2)
+            cv2.line(frame, L1, L2, (0, 0, 255), 2)
+            cv2.line(frame, R1, R2, (0, 0, 255), 2)
             
             gaze_point =  (int((gaze_left[0] + gaze_right[0]) / 2), int((gaze_left[1] + gaze_right[1]) / 2))
             cv2.circle(frame, gaze_point, 3 , (255, 0, 0), 3)
