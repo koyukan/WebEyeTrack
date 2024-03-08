@@ -165,43 +165,48 @@ class WebEyeTrack():
         # Transformation between image point to world point
         _, transformation, _ = cv2.estimateAffine3D(image_points1, model_points)  # image to world transformation
 
-        if transformation is not None:  # if estimateAffine3D secsseded
-            # project pupil image point into 3d world point 
-            pupil_world_cord = transformation @ np.array([[left_pupil[0], left_pupil[1], 0, 1]]).T
+        if transformation is not None:  # if estimateAffine3D seceded
+            # project left pupils image point into 3d world point 
+            left_pupil_world_cord = transformation @ np.array([[left_pupil[0], left_pupil[1], 0, 1]]).T
+            right_pupil_world_cord = transformation @ np.array([[right_pupil[0], right_pupil[1], 0, 1]]).T
 
             # 3D gaze point (10 is arbitrary value denoting gaze distance)
-            S = Eye_ball_center_left + (pupil_world_cord - Eye_ball_center_left) * 10
+            L = Eye_ball_center_left + (left_pupil_world_cord - Eye_ball_center_left) * 10
+            R = Eye_ball_center_right + (right_pupil_world_cord - Eye_ball_center_right) * 10
 
             # Project a 3D gaze direction onto the image plane.
-            (eye_pupil2D, _) = cv2.projectPoints((int(S[0]), int(S[1]), int(S[2])), rotation_vector,
+            (left_eye_pupil2D, _) = cv2.projectPoints((int(L[0]), int(L[1]), int(L[2])), rotation_vector,
                                                 translation_vector, camera_matrix, dist_coeffs)
+            (right_eye_pupil2D, _) = cv2.projectPoints((int(R[0]), int(R[1]), int(R[2])), rotation_vector,
+                                                translation_vector, camera_matrix, dist_coeffs)
+
             # project 3D head pose into the image plane
-            (head_pose, _) = cv2.projectPoints((int(pupil_world_cord[0]), int(pupil_world_cord[1]), int(40)),
+            (left_head_pose, _) = cv2.projectPoints((int(left_pupil_world_cord[0]), int(left_pupil_world_cord[1]), int(70)),
                                             rotation_vector,
                                             translation_vector, camera_matrix, dist_coeffs)
+            (right_head_pose, _) = cv2.projectPoints((int(right_pupil_world_cord[0]), int(right_pupil_world_cord[1]), int(70)),
+                                            rotation_vector,
+                                            translation_vector, camera_matrix, dist_coeffs)
+
             # correct gaze for head rotation
-            gaze = left_pupil + (eye_pupil2D[0][0] - left_pupil) - (head_pose[0][0] - left_pupil)
+            gaze_left = left_pupil + (left_eye_pupil2D[0][0] - left_pupil) - (left_head_pose[0][0] - left_pupil)
+            gaze_right = right_pupil + (right_eye_pupil2D[0][0] - right_pupil) - (right_head_pose[0][0] - right_pupil)
 
             # Draw gaze line into screen
-            p1 = (int(left_pupil[0]), int(left_pupil[1]))
-            p2 = (int(gaze[0]), int(gaze[1]))
-            cv2.line(frame, p1, p2, (0, 0, 255), 2)
+            L1 = (int(left_pupil[0]), int(left_pupil[1]))
+            L2 = (int(gaze_left[0]), int(gaze_left[1]))
+            
+            R1 = (int(right_pupil[0]), int(right_pupil[1])) 
+            R2 = (int(gaze_right[0]), int(gaze_right[1]))
+            
+            cv2.line(frame, L1, L2, (0, 0, 255), 2)
+            cv2.line(frame, R1, R2, (0, 0, 255), 2)
+            
+            gaze_point =  (int((gaze_left[0] + gaze_right[0]) / 2), int((gaze_left[1] + gaze_right[1]) / 2))
+            cv2.circle(frame, gaze_point, 3 , (255, 0, 0), 3)
 
         # Compute FPS 
         end = time.perf_counter()
         fps = 1 / (end - start)
 
         return None
-
-        # return WebEyeTrackResults(
-        #     detection_results=detection_results,
-        #     left_iris=IrisData(
-        #         center=iris_center_l, 
-        #         radius=iris_radius_l,
-        #     ),
-        #     right_iris=IrisData(
-        #         center=iris_center_r, 
-        #         radius=iris_radius_r
-        #     ),
-        #     fps=fps
-        # )
