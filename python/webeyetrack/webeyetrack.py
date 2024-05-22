@@ -34,8 +34,8 @@ RIGHT_EYE= [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 1
 LEFT_EYE_CENTER = [386, 374]
 RIGHT_EYE_CENTER = [159, 145]
 
-HEADPOSE = [4, 152, 263, 33, 287, 57]
-# HEADPOSE = range(0, 468)
+# HEADPOSE = [4, 152, 263, 33, 287, 57]
+HEADPOSE = range(0, 468)
 
 HUMAN_EYEBALL_RADIUS = 24 # mm
 
@@ -91,11 +91,10 @@ class WebEyeTrack():
 
         # Detect the face
         detection_results = self.detector.detect(mp_image)
-        if detection_results is None or len(detection_results.face_landmarks) == 0: return
+        if detection_results is None or len(detection_results.face_landmarks) == 0: return frame
         points = detection_results.face_landmarks[0]
         detected_canonical_face = points[:468]
-
-        # frame = draw_landmarks_on_image(frame, detection_results)
+        frame = draw_landmarks_on_image(frame, detection_results)
 
         """
         The gaze function gets an image and face landmarks from mediapipe framework.
@@ -122,28 +121,39 @@ class WebEyeTrack():
         ], dtype="double")
 
         # 3D model points.
-        model_points = np.array([
-            (0.0, 0.0, 0.0),  # Nose tip
-            (0, -63.6, -12.5),  # Chin
-            (-43.3, 32.7, -26),  # Left eye, left corner
-            (43.3, 32.7, -26),  # Right eye, right corner
-            (-28.9, -28.9, -24.1),  # Left Mouth corner
-            (28.9, -28.9, -24.1)  # Right mouth corner
-        ])
-        # model_points = self.canonical_face[HEADPOSE]
+        # model_points = np.array([
+        #     (0.0, 0.0, 0.0),  # Nose tip
+        #     (0, -63.6, -12.5),  # Chin
+        #     (-43.3, 32.7, -26),  # Left eye, left corner
+        #     (43.3, 32.7, -26),  # Right eye, right corner
+        #     (-28.9, -28.9, -24.1),  # Left Mouth corner
+        #     (28.9, -28.9, -24.1)  # Right mouth corner
+        # ])
+        model_points = self.canonical_face[HEADPOSE]
         # model_points[:, 0] *= -1
         # model_points = np.array([
         #     points[x].z for x in HEADPOSE
         # ])
-        # RATIO = [9.52, 8.57, 5.87]
+        RATIO = np.array([9.52, 8.57, 5.87])
+        # model_points = model_points * RATIO
         # import pdb; pdb.set_trace()
 
         '''
         3D model eye points
         The center of the eye ball
         '''
-        Eye_ball_center_right = np.array([[-29.05], [32.7], [-39.5]])
-        Eye_ball_center_left = np.array([[29.05], [32.7], [-39.5]])  # the center of the left eyeball as a vector.
+        # Eye_ball_center_right = np.array([[-29.05], [32.7], [-39.5]])
+        # Eye_ball_center_left = np.array([[29.05], [32.7], [-39.5]])  # the center of the left eyeball as a vector.
+        # X = 29.05
+        # Y = 29.7
+        # Z = -39.5
+        # Eye_ball_center_right = np.array([[-X], [Y], [Z]])
+        # Eye_ball_center_left = np.array([[X], [Y], [Z]])  # the center of the left eyeball as a vector.
+        X = -3.01
+        Y = 3.1875
+        Z = -5.90
+        Eye_ball_center_left = np.array([[X], [Y], [Z]])  # the center of the left eyeball as a vector.
+        Eye_ball_center_right = np.array([[-X], [Y], [Z]])
         # Eye_ball_center_right = np.array([[-3.09], [4.0875], [-7.90]])
         # Eye_ball_center_left = np.array([[3.09], [4.0875], [-7.50]])  # the center of the left eyeball as a vector.
 
@@ -159,6 +169,7 @@ class WebEyeTrack():
         )
 
         dist_coeffs = np.zeros((4, 1))  # Assuming no lens distortion
+        print(model_points.shape)
         (success, rvec, tvec, inliners) = cv2.solvePnPRansac(model_points, image_points, camera_matrix, dist_coeffs, flags=cv2.SOLVEPNP_ITERATIVE)
 
         if not success:
@@ -187,8 +198,15 @@ class WebEyeTrack():
             right_pupil_world_cord = transformation @ np.array([[right_pupil[0], right_pupil[1], 0, 1]]).T
 
             # 3D gaze point (10 is arbitrary value denoting gaze distance)
-            L = Eye_ball_center_left + (left_pupil_world_cord - Eye_ball_center_left) * 10
-            R = Eye_ball_center_right + (right_pupil_world_cord - Eye_ball_center_right) * 10
+            length = 10
+            L = Eye_ball_center_left + (left_pupil_world_cord - Eye_ball_center_left) * length
+            R = Eye_ball_center_right + (right_pupil_world_cord - Eye_ball_center_right) * length
+
+            # Draw the eye ball center
+            (left_eye_center, _) = cv2.projectPoints(Eye_ball_center_left, rvec, tvec, camera_matrix, dist_coeffs)
+            (right_eye_center, _) = cv2.projectPoints(Eye_ball_center_right, rvec, tvec, camera_matrix, dist_coeffs)
+            cv2.circle(frame, (int(left_eye_center[0][0][0]), int(left_eye_center[0][0][1])), 3, (0, 255, 0), 3)
+            cv2.circle(frame, (int(right_eye_center[0][0][0]), int(right_eye_center[0][0][1])), 3, (0, 255, 0), 3)
 
             # Project a 3D gaze direction onto the image plane.
             (left_eye_pupil2D, _) = cv2.projectPoints((int(L[0]), int(L[1]), int(L[2])), rvec,
@@ -212,22 +230,24 @@ class WebEyeTrack():
             L1 = (int(left_pupil[0]), int(left_pupil[1]))
             L2 = (int(gaze_left[0]), int(gaze_left[1]))
             
-            # R1 = (int(right_pupil[0]), int(right_pupil[1])) 
-            # R2 = (int(gaze_right[0]), int(gaze_right[1]))
+            R1 = (int(right_pupil[0]), int(right_pupil[1])) 
+            R2 = (int(gaze_right[0]), int(gaze_right[1]))
 
             # H1 = (int(nose_start_point2D[0][0][0]), int(nose_start_point2D[0][0][1]))
             # H2 = (int(nose_end_point2D[0][0][0]), int(nose_end_point2D[0][0][1]))
 
             # cv2.line(frame, H1, H2, (0, 0, 255), 2)
-            cv2.line(frame, L1, L2, (0, 0, 255), 2)
-            # cv2.line(frame, R1, R2, (0, 0, 255), 2)
+            cv2.line(frame, L1, L2, (255, 0, 0), 2)
+            cv2.line(frame, R1, R2, (255, 0, 0), 2)
             
             gaze_point =  (int((gaze_left[0] + gaze_right[0]) / 2), int((gaze_left[1] + gaze_right[1]) / 2))
-            cv2.circle(frame, gaze_point, 3 , (255, 0, 0), 3)
+            # cv2.circle(frame, gaze_point, 3 , (255, 0, 0), 3)
 
         # Compute FPS 
         end = time.perf_counter()
         fps = 1 / (end - start)
         cv2.putText(frame, f"FPS: {fps:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
 
-        return frame
+        pog = (0.5, 0.5)
+
+        return frame, pog
