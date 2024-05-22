@@ -55,6 +55,59 @@ class WebEyeTrackResults():
     fps: float
 
 
+def compute_pog(eye_center, eye_pupil2D, screen_origin, screen_normal):
+    """
+    Compute the PoG (Point of Gaze) by intersecting the gaze ray with the screen plane.
+    screen_origin is the origin of the screen plane (e.g., [0, 0, 0]).
+    screen_normal is the normal vector of the screen plane (e.g., [0, 0, 1]).
+    """
+    # Convert points to numpy arrays
+    o = np.array(eye_center)
+    r = np.array(eye_pupil2D) - o
+    r /= np.linalg.norm(r)
+
+    numer = np.dot(screen_normal, screen_origin - o)
+    denom = np.dot(screen_normal, r) + 1e-6
+
+    lambda_distance = numer / denom
+    # print(lambda_distance)
+    pog = o + lambda_distance * r
+    pog = pog[:2] / 10
+
+    return pog
+
+
+def transform_to_camera_coordinates(world_points, rvec, tvec):
+    """
+    Transforms points from world coordinates to camera coordinates.
+
+    Args:
+    - world_points: Nx3 array of points in world coordinates.
+    - rvec: Rotation vector.
+    - tvec: Translation vector.
+
+    Returns:
+    - camera_points: Nx3 array of points in camera coordinates.
+    """
+    # Convert rotation vector to rotation matrix
+    R, _ = cv2.Rodrigues(rvec)
+    
+    # Create the 4x4 transformation matrix
+    RT = np.hstack((R, tvec))
+    RT = np.vstack((RT, [0, 0, 0, 1]))
+    
+    # Convert world points to homogeneous coordinates (Nx4)
+    ones = np.ones((world_points.shape[0], 1))
+    world_points_hom = np.hstack((world_points, ones))
+    
+    # Apply the transformation matrix
+    camera_points_hom = RT @ world_points_hom.T
+    
+    # Convert back to 3xN and return
+    camera_points = camera_points_hom[:3].T
+    return camera_points
+
+
 class WebEyeTrack():
 
     def __init__(self, model_path: Union[str, pathlib.Path]):
@@ -169,12 +222,11 @@ class WebEyeTrack():
         )
 
         dist_coeffs = np.zeros((4, 1))  # Assuming no lens distortion
-        print(model_points.shape)
         (success, rvec, tvec, inliners) = cv2.solvePnPRansac(model_points, image_points, camera_matrix, dist_coeffs, flags=cv2.SOLVEPNP_ITERATIVE)
 
         if not success:
             logger.error("Failed to solve PnP")
-            return frame
+            return frame, (-1, -1)
         
         # Kalman filter for pose
         # tvec, _ = self.translation_filter.process(tvec)
@@ -243,11 +295,17 @@ class WebEyeTrack():
             gaze_point =  (int((gaze_left[0] + gaze_right[0]) / 2), int((gaze_left[1] + gaze_right[1]) / 2))
             # cv2.circle(frame, gaze_point, 3 , (255, 0, 0), 3)
 
+        # Compute the PoG
+        # Transform the eye ball center to camera coordinates
+        # import pdb; pdb.set_trace()
+        eye_ball_center_left_camera = transform_to_camera_coordinates(Eye_ball_center_left.reshape((-1, 3)), rvec, tvec)
+        left_pupil_camera = transform_to_camera_coordinates(left_pupil_world_cord.reshape((-1, 3)), rvec, tvec)
+        pog = compute_pog(eye_ball_center_left_camera.flatten(), left_pupil_camera.flatten(), np.array([1, 0, 0]), np.array([0, 0, 1]))
+        print(pog)
+
         # Compute FPS 
         end = time.perf_counter()
         fps = 1 / (end - start)
         cv2.putText(frame, f"FPS: {fps:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
-
-        pog = (0.5, 0.5)
 
         return frame, pog
