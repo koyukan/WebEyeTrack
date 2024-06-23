@@ -1,7 +1,9 @@
 import pathlib
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import List, Dict, Union
 
+import cv2
+from PIL import Image
 import scipy.io
 import yaml
 import numpy as np
@@ -109,7 +111,23 @@ class MPIIFaceGazeDataset(Dataset):
             
     def __getitem__(self, index: int):
         sample = self.samples[index]
-        return sample
+
+        # Create torch-compatible data
+        image = Image.open(sample.image_fp)
+        image_np = np.array(image)
+
+        # Reshape image to match 640x480
+        image_np = cv2.resize(image_np, (640, 480), interpolation=cv2.INTER_LINEAR)
+        image_np = np.moveaxis(image_np, -1, 0)
+
+        # Convert from uint8 to float32
+        image_np = image_np.astype(np.float32) / 255.0
+
+        sample_dict = {
+            'image': image_np,
+        }
+        sample_dict.update(asdict(sample.annotations))
+        return sample_dict
 
     def __len__(self):
         return len(self.samples)
@@ -122,3 +140,6 @@ if __name__ == '__main__':
 
     dataset = MPIIFaceGazeDataset(GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']))
     print(len(dataset))
+
+    sample = dataset[0]
+    print(sample.keys())

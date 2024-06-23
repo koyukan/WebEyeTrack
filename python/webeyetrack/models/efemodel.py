@@ -22,11 +22,20 @@ class EFEModel(pl.LightningModule):
         )
 
     def forward(self, x):
-        ...
+        logits, bottleneck = self.unet(x)
+        import pdb; pdb.set_trace()
+        # gaze_origin = self.resnet_gaze_origin(logits)
+        # gaze_depth = self.resnet_gaze_depth(logits)
+        # gaze_direction = self.gaze_direction_fc(bottleneck)
+
+        return {
+            # 'gaze_origin': gaze_origin,
+            # 'gaze_depth': gaze_depth,
+            # 'gaze_direction': gaze_direction
+        }
 
     def training_step(self, batch, batch_idx):
-        import pdb; pdb.set_trace()
-        ...
+        output = self.forward(batch['image'])
 
     def validation_step(self, batch, batch_idx):
         ...
