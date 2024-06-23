@@ -1,6 +1,6 @@
 import pathlib
 from dataclasses import dataclass
-from typing import List, Dict
+from typing import List, Dict, Union
 
 import scipy.io
 import yaml
@@ -8,11 +8,6 @@ import numpy as np
 from torch.utils.data import Dataset
 
 from ..constants import GIT_ROOT
-
-FILE_DIR = pathlib.Path(__file__).parent
-
-with open(FILE_DIR.parent / 'config.yaml', 'r') as f:
-    config = yaml.safe_load(f)
 
 @dataclass
 class Annotations:
@@ -44,7 +39,9 @@ class Sample:
 
 class MPIIFaceGazeDataset(Dataset):
     
-    def __init__(self, dataset_dir: pathlib.Path):
+    def __init__(self, dataset_dir: Union[pathlib.Path, str]):
+        if isinstance(dataset_dir, str):
+            dataset_dir = pathlib.Path(dataset_dir)
         self.dataset_dir = dataset_dir
         assert self.dataset_dir.is_dir(), f"Dataset directory {self.dataset_dir} does not exist."
 
@@ -111,12 +108,17 @@ class MPIIFaceGazeDataset(Dataset):
                     )
             
     def __getitem__(self, index: int):
-        ...
+        sample = self.samples[index]
+        return sample
 
     def __len__(self):
         return len(self.samples)
 
 if __name__ == '__main__':
+
+    from ..constants import DEFAULT_CONFIG
+    with open(DEFAULT_CONFIG, 'r') as f:
+        config = yaml.safe_load(f)
 
     dataset = MPIIFaceGazeDataset(GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']))
     print(len(dataset))

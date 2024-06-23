@@ -1,0 +1,7 @@
+datasets:
+  MPIIFaceGaze:
+    path: "data/MPIIFaceGaze"
+train:
+  train_size: 0.8
+  batch_size: 32
+  max_epochs: 100
