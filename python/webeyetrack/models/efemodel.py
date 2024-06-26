@@ -2,7 +2,7 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 
-from .unet import UNet
+# from .unet import UNet
 from .utils import ResNetBlock
 
 class EFEModel(pl.LightningModule):
@@ -10,7 +10,7 @@ class EFEModel(pl.LightningModule):
         super().__init__()
 
         # Create components
-        self.unet = UNet(n_channels=3, n_classes=1)
+        # self.unet = UNet(n_channels=3, n_classes=1)
         self.resnet_gaze_origin = ResNetBlock(in_channels=3, out_channels=3)
         self.resnet_gaze_depth = ResNetBlock(in_channels=3, out_channels=3)
 
