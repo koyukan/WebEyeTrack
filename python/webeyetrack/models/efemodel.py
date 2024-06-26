@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 
 # from .unet import UNet
+from .unet_efficientnet_v2 import UNetEfficientNetV2Small
 from .utils import ResNetBlock
 
 class EFEModel(pl.LightningModule):
@@ -10,7 +11,7 @@ class EFEModel(pl.LightningModule):
         super().__init__()
 
         # Create components
-        # self.unet = UNet(n_channels=3, n_classes=1)
+        self.unet = UNetEfficientNetV2Small(num_classes=1, pretrained=True)
         self.resnet_gaze_origin = ResNetBlock(in_channels=3, out_channels=3)
         self.resnet_gaze_depth = ResNetBlock(in_channels=3, out_channels=3)
 
@@ -42,3 +43,9 @@ class EFEModel(pl.LightningModule):
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=1e-3)
+    
+if __name__ == '__main__':
+    model = EFEModel()
+    input_tensor = torch.randn(1, 3, 256, 256)
+    output = model(input_tensor)
+    print(output.shape)
