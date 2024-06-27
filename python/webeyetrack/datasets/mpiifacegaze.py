@@ -78,6 +78,9 @@ class MPIIFaceGazeDataset(Dataset):
                     )
                     gaze_direction_3d = gaze_target_3d - face_origin_3d
 
+                    # Make the gaze direction a unit vector
+                    gaze_direction_3d = gaze_direction_3d / np.linalg.norm(gaze_direction_3d)
+
                     # Create gaze_target_2d via the direction and a fixed distance
                     gaze_target_3d_semi = face_origin_3d + gaze_direction_3d / 5
                     gaze_target_2d, _ = cv2.projectPoints(

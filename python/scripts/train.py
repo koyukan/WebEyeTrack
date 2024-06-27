@@ -42,7 +42,7 @@ if __name__ == '__main__':
 
     # Configure EarlyStopping
     early_stop_callback = EarlyStopping(
-        monitor='gaze_origin_loss',
+        monitor='val_loss',
         min_delta=0.00,
         patience=3,
         verbose=True,

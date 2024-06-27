@@ -49,22 +49,47 @@ class EFEModel(pl.LightningModule):
     
     def compute_loss(self, output, batch):
         
-        # Compute the gaze origin loss
+        # Compute the gaze origin loss (Heatmap MSE Loss)
         gt_heatmap = generate_2d_gaussian_heatmap_torch(batch['face_origin_2d'], self.img_size)
         gaze_origin_loss = F.mse_loss(output['gaze_origin'], gt_heatmap)
 
-        return {'gaze_origin_loss': gaze_origin_loss}
+        # Compute the gaze origin location (XY MSE Loss)
+        softmax_gaze_origin = F.softmax(output['gaze_origin'].view(batch['face_origin_2d'].shape[0], -1), dim=1)
+        gaze_origin_xy_idx = torch.argmax(softmax_gaze_origin, dim=1)
+        gaze_origin_xy = torch.stack([gaze_origin_xy_idx % self.img_size[1], gaze_origin_xy_idx // self.img_size[1]], dim=1)
+        gaze_origin_xy_loss = F.mse_loss(gaze_origin_xy, batch['face_origin_2d'])
+
+        # Compute the gaze z-origin location (L1 Loss)
+        # First, we apply the dot product between the softmax_gaze_origin and the depth map to get the z-origin
+        gaze_depth = output['gaze_depth'].view(batch['face_origin_2d'].shape[0], -1)
+        gaze_z_origin = torch.sum(gaze_depth * softmax_gaze_origin, dim=1)
+        gaze_z_origin_loss = F.l1_loss(gaze_z_origin, batch['face_origin_3d'][:, 2])
+
+        # Compute the angular loss for the gaze direction
+        gaze_direction_unit_vector = output['gaze_direction'] / (torch.norm(output['gaze_direction'], dim=1, keepdim=True) + 1e-6)
+        angular_loss = torch.acos(torch.sum(gaze_direction_unit_vector * batch['gaze_direction_3d'], dim=1))
+        angular_loss = torch.mean(angular_loss)
+
+        return {
+            'gaze_origin_heatmap_loss': gaze_origin_loss, 
+            'gaze_origin_xy_loss': gaze_origin_xy_loss,
+            'gaze_z_origin_loss': gaze_z_origin_loss,
+            'angular_loss': angular_loss
+        }
 
     def training_step(self, batch, batch_idx):
         output = self.forward(batch['image'])
         losses = self.compute_loss(output, batch)
-        return {'loss': losses['gaze_origin_loss'], 'log': losses}
+        complete_loss = torch.sum(torch.stack(list(losses.values())))
+        return {'loss': complete_loss, 'log': losses}
 
     def validation_step(self, batch, batch_idx):
         output = self.forward(batch['image'])
         losses = self.compute_loss(output, batch)
-        self.log('gaze_origin_loss', losses['gaze_origin_loss'])
-        # self.log('val_loss', 0.0)
+
+        self.log('val_loss', losses['gaze_origin_heatmap_loss'])
+        for k, v in losses.items():
+            self.log(f'val_{k}', v, batch_size=batch['image'].shape[0])
         
         if batch_idx % 10:
             self.log_tb_images(batch)
