@@ -1,0 +1,32 @@
+from dataclasses import dataclass
+import numpy as np
+import pathlib
+
+@dataclass
+class Annotations:
+    pog_px: np.ndarray # (2,)
+    facial_landmarks_2d: np.ndarray # (2, 6)
+    head_pose_3d: np.ndarray # (6,), rotation matrix
+    face_origin_3d: np.ndarray # (3,)
+    face_origin_2d: np.ndarray # (2,)
+    gaze_target_3d: np.ndarray # (3,)
+    which_eye: str # (left, right)
+
+@dataclass
+class CalibrationData:
+    camera_matrix: np.ndarray
+    dist_coeffs: np.ndarray
+    camera_retval: float
+    camera_rvecs: np.ndarray
+    camera_tvecs: np.ndarray
+    monitor_rvecs: np.ndarray
+    monitor_tvecs: np.ndarray
+    monitor_height_mm: float
+    monitor_height_px: float
+    monitor_width_mm: float
+    monitor_width_px: float
+
+@dataclass
+class Sample:
+    image_fp: pathlib.Path
+    annotations: Annotations

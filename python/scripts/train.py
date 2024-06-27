@@ -27,7 +27,14 @@ if __name__ == '__main__':
     # Create the dataloader
     train_size = int(config['train']['train_size'] * len(dataset))
     val_size = len(dataset) - train_size
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+
+    # Debugging, reducing the size of the dataset
+    train_size = 10
+    val_size = 50
+
+    # train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+    train_dataset = torch.utils.data.Subset(dataset, range(train_size))
+    val_dataset = torch.utils.data.Subset(dataset, range(train_size, train_size + val_size))
 
     # Create the dataloaders
     train_loader = DataLoader(train_dataset, batch_size=config['train']['batch_size'], shuffle=True)

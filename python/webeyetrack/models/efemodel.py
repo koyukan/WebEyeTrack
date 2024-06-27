@@ -1,10 +1,13 @@
 import pytorch_lightning as pl
+from pytorch_lightning import loggers as pl_loggers
 import torch
 import torch.nn as nn
+import numpy as np
 
 # from .unet import UNet
 from .unet_efficientnet_v2 import UNetEfficientNetV2Small
 from .utils import ResNetBlock
+from ..vis import draw_gaze_origin
 
 class EFEModel(pl.LightningModule):
     def __init__(self, img_size=(640, 480)):
@@ -40,10 +43,29 @@ class EFEModel(pl.LightningModule):
         }
 
     def training_step(self, batch, batch_idx):
-        output = self.forward(batch['image'])
+        ...
+        # output = self.forward(batch['image'])
+        # import pdb; pdb.set_trace()
 
     def validation_step(self, batch, batch_idx):
-        ...
+
+        # Add fake val_loss
+        self.log('val_loss', 0.0)
+        
+        if batch_idx % 10:
+            self.log_tb_images(batch)
+
+    def log_tb_images(self, batch):
+
+        tb_logger = self.logger.experiment
+        
+        # Log the images (Give them different names)
+        # import pdb; pdb.set_trace()
+        np_cpu_images = batch['image'].cpu().numpy()
+        viz_images = []
+        for i in range(np_cpu_images.shape[0]):
+            viz_images.append(draw_gaze_origin(np.moveaxis(np_cpu_images[i], 0, -1), batch['face_origin_2d'][i]))
+        tb_logger.add_images(f"gaze_origin", np.moveaxis(np.stack(viz_images), -1, 1), self.current_epoch)
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=1e-3)

@@ -1,6 +1,7 @@
 import pathlib
-from dataclasses import dataclass, asdict
+from dataclasses import asdict
 from typing import List, Dict, Union
+import copy
 
 import cv2
 from PIL import Image
@@ -11,33 +12,8 @@ from torch.utils.data import Dataset
 
 from ..constants import GIT_ROOT
 
-@dataclass
-class Annotations:
-    pog_px: np.ndarray # (2,)
-    facial_landmarks: np.ndarray # (2, 6)
-    head_pose: np.ndarray # (6,), rotation matrix
-    face_origin: np.ndarray # (3,)
-    gaze_target: np.ndarray # (3,)
-    which_eye: str # (left, right)
-
-@dataclass
-class CalibrationData:
-    camera_matrix: np.ndarray
-    dist_coeffs: np.ndarray
-    camera_retval: float
-    camera_rvecs: np.ndarray
-    camera_tvecs: np.ndarray
-    monitor_rvecs: np.ndarray
-    monitor_tvecs: np.ndarray
-    monitor_height_mm: float
-    monitor_height_px: float
-    monitor_width_mm: float
-    monitor_width_px: float
-
-@dataclass
-class Sample:
-    image_fp: pathlib.Path
-    annotations: Annotations
+from .data_protocols import Annotations, CalibrationData, Sample
+from .utils import resize_annotations
 
 class MPIIFaceGazeDataset(Dataset):
     
@@ -66,7 +42,7 @@ class MPIIFaceGazeDataset(Dataset):
             screen_size_mat = scipy.io.loadmat(cal_dir / 'screenSize.mat')
 
             # Save the calibration information
-            self.participant_calibration_data[participant_id] = CalibrationData(
+            calibration_data = CalibrationData(
                 camera_matrix=camera_mat['cameraMatrix'],
                 dist_coeffs=camera_mat['distCoeffs'],
                 camera_retval=camera_mat['retval'],
@@ -79,6 +55,7 @@ class MPIIFaceGazeDataset(Dataset):
                 monitor_width_mm=screen_size_mat['width_mm'],
                 monitor_width_px=screen_size_mat['width_pixel']
             )
+            self.participant_calibration_data[participant_id] = calibration_data
 
             # Load the meta data
             annotations = {} 
@@ -86,15 +63,31 @@ class MPIIFaceGazeDataset(Dataset):
                 lines = f.readlines()
                 for line in lines:
                     items = line.split(' ')
-                    annotations[items[0]] = Annotations(
+
+                    face_origin_3d = np.array(items[21:24], dtype=np.float32)
+                    
+                    # Additionall meta data that needs to be computed
+                    # Compute the 2D face origin by projecting the 3D face origin to the image plane
+                    face_origin_2d, _ = cv2.projectPoints(
+                        face_origin_3d, 
+                        np.array([0, 0, 0], dtype=np.float32),
+                        np.array([0, 0, 0], dtype=np.float32),
+                        calibration_data.camera_matrix, 
+                        calibration_data.dist_coeffs
+                    )
+
+                    annotation = Annotations(
                         pog_px=np.array(items[1:3], dtype=np.float32),
-                        facial_landmarks=np.array(items[3:15], dtype=np.float32).reshape(2, 6),
-                        head_pose=np.array(items[15:21], dtype=np.float32).reshape(3, 2),
-                        face_origin=np.array(items[21:24], dtype=np.float32),
-                        gaze_target=np.array(items[24:27], dtype=np.float32),
+                        facial_landmarks_2d=np.array(items[3:15], dtype=np.float32).reshape(2, 6),
+                        head_pose_3d=np.array(items[15:21], dtype=np.float32).reshape(3, 2),
+                        face_origin_3d=face_origin_3d,
+                        face_origin_2d=face_origin_2d.flatten(),
+                        gaze_target_3d=np.array(items[24:27], dtype=np.float32),
                         which_eye=items[27]
                     )
-         
+            
+                    annotations[items[0]] = annotation
+     
             day_folders = [d for d in participant_dir.glob('day*') if d.is_dir()]
             for day_folder in day_folders:
 
@@ -110,7 +103,8 @@ class MPIIFaceGazeDataset(Dataset):
                     )
             
     def __getitem__(self, index: int):
-        sample = self.samples[index]
+        # Make a copy of the sample
+        sample = copy.deepcopy(self.samples[index])
 
         # Create torch-compatible data
         image = Image.open(sample.image_fp)
@@ -119,6 +113,9 @@ class MPIIFaceGazeDataset(Dataset):
         # Reshape image to match 640x480
         image_np = cv2.resize(image_np, (640, 480), interpolation=cv2.INTER_LINEAR)
         image_np = np.moveaxis(image_np, -1, 0)
+
+        # Modify the annotations to account for the image resizing
+        sample.annotations = resize_annotations(sample.annotations, image.size, (640, 480))
 
         # Convert from uint8 to float32
         image_np = image_np.astype(np.float32) / 255.0
