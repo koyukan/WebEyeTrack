@@ -78,14 +78,6 @@ class MPIIFaceGazeDataset(Dataset):
                     )
                     gaze_direction_3d = gaze_target_3d - face_origin_3d
 
-                    # gaze_target_2d, _ = cv2.projectPoints(
-                    #     gaze_target_3d, 
-                    #     np.array([0, 0, 0], dtype=np.float32),
-                    #     np.array([0, 0, 0], dtype=np.float32),
-                    #     calibration_data.camera_matrix, 
-                    #     calibration_data.dist_coeffs
-                    # )
-
                     # Create gaze_target_2d via the direction and a fixed distance
                     gaze_target_3d_semi = face_origin_3d + gaze_direction_3d / 5
                     gaze_target_2d, _ = cv2.projectPoints(
@@ -95,7 +87,6 @@ class MPIIFaceGazeDataset(Dataset):
                         calibration_data.camera_matrix, 
                         calibration_data.dist_coeffs
                     )
-                    # import pdb; pdb.set_trace()
 
                     annotation = Annotations(
                         pog_px=np.array(items[1:3], dtype=np.float32),

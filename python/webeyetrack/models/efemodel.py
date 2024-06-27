@@ -2,16 +2,20 @@ import pytorch_lightning as pl
 from pytorch_lightning import loggers as pl_loggers
 import torch
 import torch.nn as nn
+from torch.nn import functional as F
 import numpy as np
 
-# from .unet import UNet
+from .funcs import generate_2d_gaussian_heatmap_torch
 from .unet_efficientnet_v2 import UNetEfficientNetV2Small
 from .components import ResNetBlock
 from ..vis import draw_gaze_origin, draw_gaze_direction
 
 class EFEModel(pl.LightningModule):
-    def __init__(self, img_size=(640, 480)):
+    def __init__(self, img_size=(480, 640)):
         super().__init__()
+
+        # Save the image size
+        self.img_size = img_size
 
         # Create components
         self.unet = UNetEfficientNetV2Small(num_classes=1, pretrained=True)
@@ -31,26 +35,36 @@ class EFEModel(pl.LightningModule):
         )
 
     def forward(self, x):
+        batch_size = x.shape[0]
         logits, bottleneck = self.unet(x)
         gaze_origin = self.resnet_gaze_origin(logits)
         gaze_depth = self.resnet_gaze_depth(logits)
-        gaze_direction = self.gaze_direction_fc(bottleneck.view(-1))
+        gaze_direction = self.gaze_direction_fc(bottleneck.view(batch_size, -1))
 
         return {
             'gaze_origin': gaze_origin,
             'gaze_depth': gaze_depth,
             'gaze_direction': gaze_direction
         }
+    
+    def compute_loss(self, output, batch):
+        
+        # Compute the gaze origin loss
+        gt_heatmap = generate_2d_gaussian_heatmap_torch(batch['face_origin_2d'], self.img_size)
+        gaze_origin_loss = F.mse_loss(output['gaze_origin'], gt_heatmap)
+
+        return {'gaze_origin_loss': gaze_origin_loss}
 
     def training_step(self, batch, batch_idx):
-        ...
-        # output = self.forward(batch['image'])
-        # import pdb; pdb.set_trace()
+        output = self.forward(batch['image'])
+        losses = self.compute_loss(output, batch)
+        return {'loss': losses['gaze_origin_loss'], 'log': losses}
 
     def validation_step(self, batch, batch_idx):
-
-        # Add fake val_loss
-        self.log('val_loss', 0.0)
+        output = self.forward(batch['image'])
+        losses = self.compute_loss(output, batch)
+        self.log('gaze_origin_loss', losses['gaze_origin_loss'])
+        # self.log('val_loss', 0.0)
         
         if batch_idx % 10:
             self.log_tb_images(batch)
@@ -77,6 +91,6 @@ class EFEModel(pl.LightningModule):
     
 if __name__ == '__main__':
     model = EFEModel()
-    input_tensor = torch.randn(1, 3, 640, 480)
+    input_tensor = torch.randn(1, 3, 480, 640)
     output = model(input_tensor)
     print([o.shape for o in output.values()])
