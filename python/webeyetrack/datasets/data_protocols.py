@@ -10,6 +10,8 @@ class Annotations:
     face_origin_3d: np.ndarray # (3,)
     face_origin_2d: np.ndarray # (2,)
     gaze_target_3d: np.ndarray # (3,)
+    gaze_target_2d: np.ndarray # (2,)
+    gaze_direction_3d: np.ndarray # (3,)
     which_eye: str # (left, right)
 
 @dataclass

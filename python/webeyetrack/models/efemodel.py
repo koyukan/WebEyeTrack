@@ -6,8 +6,8 @@ import numpy as np
 
 # from .unet import UNet
 from .unet_efficientnet_v2 import UNetEfficientNetV2Small
-from .utils import ResNetBlock
-from ..vis import draw_gaze_origin
+from .components import ResNetBlock
+from ..vis import draw_gaze_origin, draw_gaze_direction
 
 class EFEModel(pl.LightningModule):
     def __init__(self, img_size=(640, 480)):
@@ -60,12 +60,17 @@ class EFEModel(pl.LightningModule):
         tb_logger = self.logger.experiment
         
         # Log the images (Give them different names)
-        # import pdb; pdb.set_trace()
         np_cpu_images = batch['image'].cpu().numpy()
-        viz_images = []
+
+        gaze_origin_imgs = []
+        gaze_direction_imgs = []
         for i in range(np_cpu_images.shape[0]):
-            viz_images.append(draw_gaze_origin(np.moveaxis(np_cpu_images[i], 0, -1), batch['face_origin_2d'][i]))
-        tb_logger.add_images(f"gaze_origin", np.moveaxis(np.stack(viz_images), -1, 1), self.current_epoch)
+            img = np.moveaxis(np_cpu_images[i], 0, -1)
+            gaze_origin_imgs.append(draw_gaze_origin(img, batch['face_origin_2d'][i]))
+            gaze_direction_imgs.append(draw_gaze_direction(img, batch['face_origin_2d'][i], batch['gaze_target_2d'][i]))
+
+        tb_logger.add_images(f"gaze_origin", np.moveaxis(np.stack(gaze_origin_imgs), -1, 1), self.current_epoch)
+        tb_logger.add_images(f"gaze_direction", np.moveaxis(np.stack(gaze_direction_imgs), -1, 1), self.current_epoch)
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=1e-3)

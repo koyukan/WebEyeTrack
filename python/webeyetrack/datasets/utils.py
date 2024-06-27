@@ -32,5 +32,7 @@ def resize_annotations(annotations, original_size, new_size):
     annotations.facial_landmarks_2d[1, :] *= scale_y
     annotations.face_origin_2d[0] *= scale_x
     annotations.face_origin_2d[1] *= scale_y
+    annotations.gaze_target_2d[0] *= scale_x
+    annotations.gaze_target_2d[1] *= scale_y
     
     return annotations

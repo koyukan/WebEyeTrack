@@ -65,6 +65,7 @@ class MPIIFaceGazeDataset(Dataset):
                     items = line.split(' ')
 
                     face_origin_3d = np.array(items[21:24], dtype=np.float32)
+                    gaze_target_3d = np.array(items[24:27], dtype=np.float32)
                     
                     # Additionall meta data that needs to be computed
                     # Compute the 2D face origin by projecting the 3D face origin to the image plane
@@ -75,6 +76,26 @@ class MPIIFaceGazeDataset(Dataset):
                         calibration_data.camera_matrix, 
                         calibration_data.dist_coeffs
                     )
+                    gaze_direction_3d = gaze_target_3d - face_origin_3d
+
+                    # gaze_target_2d, _ = cv2.projectPoints(
+                    #     gaze_target_3d, 
+                    #     np.array([0, 0, 0], dtype=np.float32),
+                    #     np.array([0, 0, 0], dtype=np.float32),
+                    #     calibration_data.camera_matrix, 
+                    #     calibration_data.dist_coeffs
+                    # )
+
+                    # Create gaze_target_2d via the direction and a fixed distance
+                    gaze_target_3d_semi = face_origin_3d + gaze_direction_3d / 5
+                    gaze_target_2d, _ = cv2.projectPoints(
+                        gaze_target_3d_semi, 
+                        np.array([0, 0, 0], dtype=np.float32),
+                        np.array([0, 0, 0], dtype=np.float32),
+                        calibration_data.camera_matrix, 
+                        calibration_data.dist_coeffs
+                    )
+                    # import pdb; pdb.set_trace()
 
                     annotation = Annotations(
                         pog_px=np.array(items[1:3], dtype=np.float32),
@@ -82,7 +103,9 @@ class MPIIFaceGazeDataset(Dataset):
                         head_pose_3d=np.array(items[15:21], dtype=np.float32).reshape(3, 2),
                         face_origin_3d=face_origin_3d,
                         face_origin_2d=face_origin_2d.flatten(),
-                        gaze_target_3d=np.array(items[24:27], dtype=np.float32),
+                        gaze_target_3d=gaze_target_3d,
+                        gaze_target_2d=gaze_target_2d.flatten(),
+                        gaze_direction_3d=gaze_direction_3d,
                         which_eye=items[27]
                     )
             
