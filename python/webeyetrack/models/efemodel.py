@@ -40,15 +40,28 @@ class EFEModel(pl.LightningModule):
 
     def forward(self, x):
         batch_size = x.shape[0]
+
+        # Predict
         logits, bottleneck = self.unet(x)
         gaze_origin = self.resnet_gaze_origin(logits)
         gaze_depth = self.resnet_gaze_depth(logits)
         gaze_direction = self.gaze_direction_fc(bottleneck.view(batch_size, -1))
 
+        # Compute the gaze origin location
+        softmax_gaze_origin = F.softmax(gaze_origin.view(batch_size, -1), dim=1)
+        gaze_origin_xy_idx = torch.argmax(softmax_gaze_origin, dim=1)
+        gaze_origin_xy = torch.stack([gaze_origin_xy_idx % self.img_size[1], gaze_origin_xy_idx // self.img_size[1]], dim=1)
+        
+        # First, we apply the dot product between the softmax_gaze_origin and the depth map to get the z-origin
+        gaze_depth = gaze_depth.view(batch_size, -1)
+        gaze_origin_z = torch.sum(gaze_depth * softmax_gaze_origin, dim=1)
+
         return {
             'gaze_origin': gaze_origin,
             'gaze_depth': gaze_depth,
-            'gaze_direction': gaze_direction
+            'gaze_direction': gaze_direction,
+            "gaze_origin_xy": gaze_origin_xy,
+            "gaze_origin_z": gaze_origin_z
         }
     
     def compute_loss(self, output, batch):
@@ -56,23 +69,17 @@ class EFEModel(pl.LightningModule):
         # Compute the gaze origin loss (Heatmap MSE Loss)
         gt_heatmap = generate_2d_gaussian_heatmap_torch(batch['face_origin_2d'], self.img_size)
         gaze_origin_loss = F.mse_loss(output['gaze_origin'], gt_heatmap)
-
-        # Compute the gaze origin location (XY MSE Loss)
-        softmax_gaze_origin = F.softmax(output['gaze_origin'].view(batch['face_origin_2d'].shape[0], -1), dim=1)
-        gaze_origin_xy_idx = torch.argmax(softmax_gaze_origin, dim=1)
-        gaze_origin_xy = torch.stack([gaze_origin_xy_idx % self.img_size[1], gaze_origin_xy_idx // self.img_size[1]], dim=1)
-        gaze_origin_xy_loss = F.mse_loss(gaze_origin_xy, batch['face_origin_2d'])
+        gaze_origin_xy_loss = F.mse_loss(output['gaze_origin_xy'], batch['face_origin_2d'])
 
         # Compute the gaze z-origin location (L1 Loss)
-        # First, we apply the dot product between the softmax_gaze_origin and the depth map to get the z-origin
-        gaze_depth = output['gaze_depth'].view(batch['face_origin_2d'].shape[0], -1)
-        gaze_z_origin = torch.sum(gaze_depth * softmax_gaze_origin, dim=1)
-        gaze_z_origin_loss = F.l1_loss(gaze_z_origin, batch['face_origin_3d'][:, 2])
+        gaze_origin_z_loss = F.l1_loss(output['gaze_origin_z'], batch['face_origin_3d'][:, 2])
 
         # Compute the angular loss for the gaze direction
         # https://github.com/swook/EVE/blob/master/src/losses/angular.py#L29
-        gaze_direction_unit_vector = output['gaze_direction'] / (torch.norm(output['gaze_direction'], dim=1, keepdim=True) + 1e-6)
-        angular_loss = torch.acos(torch.sum(gaze_direction_unit_vector * batch['gaze_direction_3d'], dim=1))
+        # gaze_direction_unit_vector = output['gaze_direction'] / (torch.norm(output['gaze_direction'], dim=1, keepdim=True) + 1e-6)
+        gaze_direction_unit_vector = F.normalize(output['gaze_direction'], p=2, dim=1)
+        gaze_direction_unit_vector_gt = F.normalize(batch['gaze_direction_3d'], p=2, dim=1)
+        angular_loss = torch.acos(torch.clamp(torch.sum(gaze_direction_unit_vector * gaze_direction_unit_vector_gt, dim=1), -1.0, 1.0))
         angular_loss = torch.mean(angular_loss)
 
         # Compute the PoG MSE Loss
@@ -86,7 +93,7 @@ class EFEModel(pl.LightningModule):
         return {
             'gaze_origin_heatmap_loss': gaze_origin_loss, 
             'gaze_origin_xy_loss': gaze_origin_xy_loss,
-            'gaze_z_origin_loss': gaze_z_origin_loss,
+            'gaze_origin_z': gaze_origin_z_loss,
             'angular_loss': angular_loss
         }
 
@@ -104,8 +111,7 @@ class EFEModel(pl.LightningModule):
         for k, v in losses.items():
             self.log(f'val_{k}', v, batch_size=batch['image'].shape[0])
         
-        if batch_idx % 10:
-            self.log_tb_images(batch)
+        self.log_tb_images(batch)
 
     def log_tb_images(self, batch):
 

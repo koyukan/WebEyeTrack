@@ -29,8 +29,8 @@ if __name__ == '__main__':
     val_size = len(dataset) - train_size
 
     # Debugging, reducing the size of the dataset
-    train_size = 10
-    val_size = 50
+    train_size = int(train_size / 100)
+    val_size = int(val_size / 100)
 
     # train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
     train_dataset = torch.utils.data.Subset(dataset, range(train_size))
