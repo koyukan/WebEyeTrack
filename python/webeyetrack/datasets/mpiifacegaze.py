@@ -13,7 +13,7 @@ from torch.utils.data import Dataset
 from ..constants import GIT_ROOT
 
 from .data_protocols import Annotations, CalibrationData, Sample
-from .utils import resize_annotations
+from .utils import resize_annotations, resize_intrinsics
 
 class MPIIFaceGazeDataset(Dataset):
     
@@ -143,7 +143,7 @@ class MPIIFaceGazeDataset(Dataset):
 
         sample_dict = {
             'image': image_np,
-            'intrinsics': calibration_data.camera_matrix,
+            'intrinsics': resize_intrinsics(calibration_data.camera_matrix, image.size, (640, 480)),
         }
         sample_dict.update(asdict(sample.annotations))
         return sample_dict

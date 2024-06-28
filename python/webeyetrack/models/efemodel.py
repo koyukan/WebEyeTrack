@@ -4,8 +4,9 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import numpy as np
+import timeit
 
-from .funcs import generate_2d_gaussian_heatmap_torch, reprojection_3d
+from .funcs import generate_2d_gaussian_heatmap_torch, reprojection_3d, screen_plane_intersection
 from .unet_efficientnet_v2 import UNetEfficientNetV2Small
 from .components import ResNetBlock
 from ..vis import draw_gaze_origin, draw_gaze_direction
@@ -76,7 +77,11 @@ class EFEModel(pl.LightningModule):
 
         # Compute the PoG MSE Loss
         # This requires multiple steps: 3D reprojection and screen plane intersection
-        gaze_origin_3d = reprojection_3d(gaze_origin_xy, gaze_z_origin, batch['intrinsics'])
+        # gaze_origin_3d = reprojection_3d(gaze_origin_xy, gaze_z_origin, batch['intrinsics'])
+        # pog_mm, pog_px = screen_plane_intersection(
+        #     gaze_origin_3d, 
+        #     gaze_direction_unit_vector, 
+        # )
 
         return {
             'gaze_origin_heatmap_loss': gaze_origin_loss, 
@@ -125,5 +130,6 @@ class EFEModel(pl.LightningModule):
 if __name__ == '__main__':
     model = EFEModel()
     input_tensor = torch.randn(1, 3, 480, 640)
+    # print(timeit.timeit(lambda: model(input_tensor), number=10))
     output = model(input_tensor)
     print([o.shape for o in output.values()])

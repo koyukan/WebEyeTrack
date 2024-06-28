@@ -61,3 +61,37 @@ def reprojection_3d(xy_points, depth, intrinsic_matrices):
     xyz_points = torch.stack((X, Y, Z), dim=1)
     
     return xyz_points
+
+def get_intersect_with_zero(o, g):
+    """Intersects a given gaze ray (origin o and direction g) with z = 0."""
+    device = o.device
+
+    nn_plane_normal = torch.tensor([0, 0, 1], dtype=torch.float32, device=device).view(1, 3, 1)
+    nn_plane_other = torch.tensor([1, 0, 0], dtype=torch.float32, device=device).view(1, 3, 1)
+
+    # Define plane to intersect with
+    n = nn_plane_normal
+    a = nn_plane_other
+    g = g.view(-1, 3, 1)
+    o = o.view(-1, 3, 1)
+    numer = torch.sum(torch.mul(a - o, n), dim=1)
+
+    # Intersect with plane using provided 3D origin
+    denom = torch.sum(torch.mul(g, n), dim=1) + 1e-7
+    t = torch.div(numer, denom).view(-1, 1, 1)
+    return (o + torch.mul(t, g))[:, :2, 0]
+
+def screen_plane_intersection(o, d, ppm_w, ppm_h, screen_size):
+    
+    # Determine the intersection with the z=0 plane
+    pog_mm = get_intersect_with_zero(o, d)
+
+    # Convert to pixels
+    pog_px = torch.stack([
+        torch.clamp(pog_mm[:, 0] * ppm_w,
+                    0.0, float(screen_size[0])),
+        torch.clamp(pog_mm[:, 1] * ppm_h,
+                    0.0, float(screen_size[1]))
+    ], axis=-1)
+
+    return pog_mm, pog_px
