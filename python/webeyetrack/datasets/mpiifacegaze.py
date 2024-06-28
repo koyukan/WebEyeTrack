@@ -114,6 +114,7 @@ class MPIIFaceGazeDataset(Dataset):
                     complete_name = f"{day_folder.name}/{image.name}"
                     self.samples.append(
                         Sample(
+                            participant_id=participant_id,
                             image_fp=image,
                             annotations=annotations[complete_name]
                         )
@@ -134,11 +135,15 @@ class MPIIFaceGazeDataset(Dataset):
         # Modify the annotations to account for the image resizing
         sample.annotations = resize_annotations(sample.annotations, image.size, (640, 480))
 
+        # Get the calibration
+        calibration_data = self.participant_calibration_data[sample.participant_id]
+
         # Convert from uint8 to float32
         image_np = image_np.astype(np.float32) / 255.0
 
         sample_dict = {
             'image': image_np,
+            'intrinsics': calibration_data.camera_matrix,
         }
         sample_dict.update(asdict(sample.annotations))
         return sample_dict

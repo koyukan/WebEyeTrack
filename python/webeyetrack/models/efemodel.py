@@ -5,10 +5,13 @@ import torch.nn as nn
 from torch.nn import functional as F
 import numpy as np
 
-from .funcs import generate_2d_gaussian_heatmap_torch
+from .funcs import generate_2d_gaussian_heatmap_torch, reprojection_3d
 from .unet_efficientnet_v2 import UNetEfficientNetV2Small
 from .components import ResNetBlock
 from ..vis import draw_gaze_origin, draw_gaze_direction
+
+# References:
+# https://github.com/swook/EVE/blob/master/src/models/common.py#L129
 
 class EFEModel(pl.LightningModule):
     def __init__(self, img_size=(480, 640)):
@@ -66,9 +69,14 @@ class EFEModel(pl.LightningModule):
         gaze_z_origin_loss = F.l1_loss(gaze_z_origin, batch['face_origin_3d'][:, 2])
 
         # Compute the angular loss for the gaze direction
+        # https://github.com/swook/EVE/blob/master/src/losses/angular.py#L29
         gaze_direction_unit_vector = output['gaze_direction'] / (torch.norm(output['gaze_direction'], dim=1, keepdim=True) + 1e-6)
         angular_loss = torch.acos(torch.sum(gaze_direction_unit_vector * batch['gaze_direction_3d'], dim=1))
         angular_loss = torch.mean(angular_loss)
+
+        # Compute the PoG MSE Loss
+        # This requires multiple steps: 3D reprojection and screen plane intersection
+        gaze_origin_3d = reprojection_3d(gaze_origin_xy, gaze_z_origin, batch['intrinsics'])
 
         return {
             'gaze_origin_heatmap_loss': gaze_origin_loss, 

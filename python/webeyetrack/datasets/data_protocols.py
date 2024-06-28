@@ -30,5 +30,6 @@ class CalibrationData:
 
 @dataclass
 class Sample:
+    participant_id: str
     image_fp: pathlib.Path
     annotations: Annotations

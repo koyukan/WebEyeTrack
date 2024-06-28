@@ -57,6 +57,6 @@ if __name__ == '__main__':
     trainer = Trainer(
         max_epochs=config['train']['max_epochs'],
         logger=tb_logger,
-        callbacks=[early_stop_callback]
+        callbacks=[early_stop_callback],
     )
     trainer.fit(model, train_loader, val_loader)
