@@ -83,7 +83,7 @@ class EFEModel(pl.LightningModule):
         # Compute the gaze origin loss (Heatmap MSE Loss)
         gt_heatmap = 100*generate_2d_gaussian_heatmap_torch(batch['face_origin_2d'], self.img_size, sigma=12.0)
         gaze_origin_loss = F.mse_loss(output['gaze_origin'][:, 0], gt_heatmap)
-        # gaze_origin_xy_loss = F.mse_loss(output['gaze_origin_xy'], batch['face_origin_2d'])
+        gaze_origin_xy_loss = F.mse_loss(output['gaze_origin_xy'], batch['face_origin_2d'])
 
         # Compute the gaze z-origin location (L1 Loss)
         # gaze_origin_z_loss = F.l1_loss(output['gaze_origin_z'], batch['face_origin_3d'][:, 2])
@@ -97,13 +97,13 @@ class EFEModel(pl.LightningModule):
         # Compute the PoG MSE Loss
 
         # losses = [gaze_origin_loss, gaze_origin_xy_loss, gaze_origin_z_loss, angular_loss] 
-        losses = [gaze_origin_loss]
+        losses = [gaze_origin_loss, gaze_origin_xy_loss]
         complete_loss = torch.sum(torch.stack(losses))
 
         output = {
             'losses': {
                 'gaze_origin_heatmap_loss': gaze_origin_loss,
-                # 'gaze_origin_xy_loss': gaze_origin_xy_loss,
+                'gaze_origin_xy_loss': gaze_origin_xy_loss,
                 'complete_loss': complete_loss
             },
             'artifacts': {
@@ -153,8 +153,9 @@ class EFEModel(pl.LightningModule):
 
             # Visualize the gaze origin xy
             gaze_origin_xy = batch['face_origin_2d'][i].cpu().numpy()
-            vis_gt_gaze_origin = vis.draw_gaze_origin(img, gaze_origin_xy)
-            gaze_origin_gt.append(vis_gt_gaze_origin)
+            vis_gt_gaze_origin = vis.draw_gaze_origin(img, gaze_origin_xy, color=(0, 0, 255))
+            vis_gaze_origin = vis.draw_gaze_origin(vis_gt_gaze_origin, output['gaze_origin_xy'][i].detach().cpu().numpy(), color=(255, 0, 0))
+            gaze_origin_gt.append(vis_gaze_origin)
 
             # Visualizing the gaze origin heatmaps
             gt_gaze_origin_heatmap = losses_output['artifacts']['gaze_origin_heatmap'][i].detach().cpu().numpy()
@@ -187,7 +188,7 @@ class EFEModel(pl.LightningModule):
             # )
             gaze_direction_imgs.append(gt_gaze)
 
-        tb_logger.add_images(f"{prefix}_gt_gaze_origin", np.moveaxis(np.stack(gaze_origin_gt), -1, 1), self.current_epoch)
+        tb_logger.add_images(f"{prefix}_gaze_origin", np.moveaxis(np.stack(gaze_origin_gt), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_pred_gaze_origin_heatmaps", np.moveaxis(np.stack(gaze_origin_heatmaps), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_gt_gaze_origin_heatmaps", np.moveaxis(np.stack(gaze_origin_heatmaps_gt), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_gaze_direction", np.moveaxis(np.stack(gaze_direction_imgs), -1, 1), self.current_epoch)
