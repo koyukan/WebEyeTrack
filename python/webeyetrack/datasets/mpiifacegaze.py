@@ -82,7 +82,7 @@ class MPIIFaceGazeDataset(Dataset):
                     gaze_direction_3d = gaze_direction_3d / np.linalg.norm(gaze_direction_3d)
 
                     # Create gaze_target_2d via the direction and a fixed distance
-                    gaze_target_3d_semi = face_origin_3d + gaze_direction_3d / 5
+                    gaze_target_3d_semi = face_origin_3d + gaze_direction_3d * 100
                     gaze_target_2d, _ = cv2.projectPoints(
                         gaze_target_3d_semi, 
                         np.array([0, 0, 0], dtype=np.float32),
@@ -144,6 +144,7 @@ class MPIIFaceGazeDataset(Dataset):
         sample_dict = {
             'image': image_np,
             'intrinsics': resize_intrinsics(calibration_data.camera_matrix, image.size, (640, 480)),
+            'dist_coeffs': calibration_data.dist_coeffs,
         }
         sample_dict.update(asdict(sample.annotations))
         return sample_dict
