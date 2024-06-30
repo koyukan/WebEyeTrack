@@ -36,11 +36,11 @@ def draw_gaze_origin_heatmap(image, heatmap, alpha=0.5, cmap='jet'):
 
     return overlay
 
-def draw_gaze_origin(image, gaze_origin):
+def draw_gaze_origin(image, gaze_origin, color=(255, 0, 0)):
     # Draw gaze origin
     draw_image = image.copy()
     x, y = gaze_origin
-    cv2.circle(draw_image, (int(x), int(y)), 10, (255, 0, 0), -1)
+    cv2.circle(draw_image, (int(x), int(y)), 10, color, -1)
 
     return draw_image
 

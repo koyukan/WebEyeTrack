@@ -11,7 +11,7 @@ import numpy as np
 from torch.utils.data import Dataset
 
 from ..constants import GIT_ROOT
-
+from ..vis import draw_gaze_origin
 from .data_protocols import Annotations, CalibrationData, Sample
 from .utils import resize_annotations, resize_intrinsics
 

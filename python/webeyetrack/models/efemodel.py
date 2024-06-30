@@ -144,12 +144,17 @@ class EFEModel(pl.LightningModule):
         # Log the images (Give them different names)
         np_cpu_images = batch['image'].cpu().numpy()
 
-        # gaze_origin_imgs = []
+        gaze_origin_gt = []
         gaze_origin_heatmaps = []
         gaze_origin_heatmaps_gt = []
         gaze_direction_imgs = []
         for i in range(np_cpu_images.shape[0]):
             img = np.moveaxis(np_cpu_images[i], 0, -1)
+
+            # Visualize the gaze origin xy
+            gaze_origin_xy = batch['face_origin_2d'][i].cpu().numpy()
+            vis_gt_gaze_origin = vis.draw_gaze_origin(img, gaze_origin_xy)
+            gaze_origin_gt.append(vis_gt_gaze_origin)
 
             # Visualizing the gaze origin heatmaps
             gt_gaze_origin_heatmap = losses_output['artifacts']['gaze_origin_heatmap'][i].detach().cpu().numpy()
@@ -182,6 +187,7 @@ class EFEModel(pl.LightningModule):
             # )
             gaze_direction_imgs.append(gt_gaze)
 
+        tb_logger.add_images(f"{prefix}_gt_gaze_origin", np.moveaxis(np.stack(gaze_origin_gt), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_pred_gaze_origin_heatmaps", np.moveaxis(np.stack(gaze_origin_heatmaps), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_gt_gaze_origin_heatmaps", np.moveaxis(np.stack(gaze_origin_heatmaps_gt), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_gaze_direction", np.moveaxis(np.stack(gaze_direction_imgs), -1, 1), self.current_epoch)

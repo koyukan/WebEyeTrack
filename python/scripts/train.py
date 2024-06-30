@@ -40,7 +40,7 @@ if __name__ == '__main__':
 
     # Create the dataloaders
     train_loader = DataLoader(train_dataset, batch_size=config['train']['batch_size'], shuffle=True, num_workers=4)
-    val_loader = DataLoader(val_dataset, batch_size=config['train']['batch_size'], num_workers=4)
+    val_loader = DataLoader(val_dataset, batch_size=config['train']['batch_size'], shuffle=True, num_workers=4)
 
     # Configure EarlyStopping
     early_stop_callback = EarlyStopping(

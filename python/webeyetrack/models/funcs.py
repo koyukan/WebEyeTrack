@@ -25,7 +25,7 @@ def generate_2d_gaussian_heatmap_torch(gaze_origins, img_size, sigma=1):
     gaze_origins = gaze_origins.unsqueeze(-1).unsqueeze(-1)
     
     # Compute the Gaussian
-    heatmaps = torch.exp(-((xx - gaze_origins[:, 0]) ** 2 + (yy - gaze_origins[:, 1]) ** 2) / (2 * sigma ** 2))
+    heatmaps = torch.exp(-((xx - gaze_origins[:, 1]) ** 2 + (yy - gaze_origins[:, 0]) ** 2) / (2 * sigma ** 2))
     
     return heatmaps
 
