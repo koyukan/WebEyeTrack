@@ -92,7 +92,9 @@ class EFEModel(pl.LightningModule):
 
         # Compute the gaze z-origin location (L1 Loss)
         # if self.current_epoch == 5: import pdb; pdb.set_trace()
-        gaze_origin_z_loss = F.l1_loss(torch.log(output['gaze_origin_z']), torch.log(batch['face_origin_3d'][:, 2, None]))
+        gaze_origin_z_loss = F.l1_loss(torch.log(output['gaze_origin_z'] + 1e6), torch.log(batch['face_origin_3d'][:, 2, None] + 1e6))
+        # gaze_origin_z_loss = F.l1_loss(output['gaze_origin_z'], batch['face_origin_3d'][:, 2, None])
+        gaze_origin_z_distance = F.l1_loss(output['gaze_origin_z'], batch['face_origin_3d'][:, 2, None])
 
         # Compute the angular loss for the gaze direction
         # https://github.com/swook/EVE/blob/master/src/losses/angular.py#L29
@@ -103,7 +105,7 @@ class EFEModel(pl.LightningModule):
         # Compute the PoG MSE Loss
 
         # losses = [gaze_origin_loss, gaze_origin_xy_loss, gaze_origin_z_loss, angular_loss] 
-        losses = [gaze_origin_loss, gaze_origin_xy_loss] # gaze_origin_z_loss]
+        losses = [gaze_origin_loss, gaze_origin_xy_loss, gaze_origin_z_loss]
         complete_loss = torch.sum(torch.stack(losses))
 
         new_output = {
@@ -115,6 +117,9 @@ class EFEModel(pl.LightningModule):
             },
             'artifacts': {
                 'gaze_origin_heatmap': gt_heatmap,
+            },
+            'metrics': {
+                'gaze_origin_z_distance': gaze_origin_z_distance,
             }
         }
 
@@ -126,6 +131,8 @@ class EFEModel(pl.LightningModule):
 
         # Logging the losses
         for k, v in losses_output['losses'].items():
+            self.log(f'train_{k}', v, batch_size=batch['image'].shape[0])
+        for k, v in losses_output['metrics'].items():
             self.log(f'train_{k}', v, batch_size=batch['image'].shape[0])
 
         # if self.current_epoch == 2: import pdb; pdb.set_trace()
@@ -141,6 +148,8 @@ class EFEModel(pl.LightningModule):
         for k, v in losses_output['losses'].items():
             if k != 'complete_loss':
                 self.log(f'val_{k}', v, batch_size=batch['image'].shape[0])
+        for k, v in losses_output['metrics'].items():
+            self.log(f'val_{k}', v, batch_size=batch['image'].shape[0])
         
         self.log_tb_images('val', batch, output, losses_output)
 
