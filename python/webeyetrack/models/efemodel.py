@@ -56,8 +56,12 @@ class EFEModel(pl.LightningModule):
         gaze_origin_xy = torch.stack([gaze_origin_xy_idx % self.img_size[1], gaze_origin_xy_idx // self.img_size[1]], dim=1)
         
         # First, we apply the dot product between the softmax_gaze_origin and the depth map to get the z-origin
-        gaze_depth = gaze_depth.view(batch_size, -1)
-        gaze_origin_z = torch.sum(gaze_depth * softmax_gaze_origin, dim=1)
+        # Then, we use the gaze_origin_xy_idx to get the z-origin
+        softmax_gaze_origin_formatted = softmax_gaze_origin.view(batch_size, 1, gaze_depth.shape[2], gaze_depth.shape[3])
+        gaze_origin_z_map = torch.sum(gaze_depth * softmax_gaze_origin_formatted, dim=1)
+        gaze_origin_z = torch.gather(gaze_origin_z_map.view(batch_size, -1), 1, gaze_origin_xy_idx.unsqueeze(1))
+
+        # if self.current_epoch == 1: import pdb; pdb.set_trace()
 
         # Normalize the gaze direction
         gaze_direction = F.normalize(gaze_direction, p=2, dim=1)
@@ -81,12 +85,14 @@ class EFEModel(pl.LightningModule):
     def compute_loss(self, output, batch):
         
         # Compute the gaze origin loss (Heatmap MSE Loss)
-        gt_heatmap = 100*generate_2d_gaussian_heatmap_torch(batch['face_origin_2d'], self.img_size, sigma=12.0)
+        # if self.current_epoch == 1: import pdb; pdb.set_trace()
+        gt_heatmap = 100.0*generate_2d_gaussian_heatmap_torch(batch['face_origin_2d'], self.img_size, sigma=12.0)
         gaze_origin_loss = F.mse_loss(output['gaze_origin'][:, 0], gt_heatmap)
         gaze_origin_xy_loss = F.mse_loss(output['gaze_origin_xy'], batch['face_origin_2d'])
 
         # Compute the gaze z-origin location (L1 Loss)
-        # gaze_origin_z_loss = F.l1_loss(output['gaze_origin_z'], batch['face_origin_3d'][:, 2])
+        # if self.current_epoch == 5: import pdb; pdb.set_trace()
+        gaze_origin_z_loss = F.l1_loss(torch.log(output['gaze_origin_z']), torch.log(batch['face_origin_3d'][:, 2, None]))
 
         # Compute the angular loss for the gaze direction
         # https://github.com/swook/EVE/blob/master/src/losses/angular.py#L29
@@ -97,13 +103,14 @@ class EFEModel(pl.LightningModule):
         # Compute the PoG MSE Loss
 
         # losses = [gaze_origin_loss, gaze_origin_xy_loss, gaze_origin_z_loss, angular_loss] 
-        losses = [gaze_origin_loss, gaze_origin_xy_loss]
+        losses = [gaze_origin_loss, gaze_origin_xy_loss] # gaze_origin_z_loss]
         complete_loss = torch.sum(torch.stack(losses))
 
-        output = {
+        new_output = {
             'losses': {
                 'gaze_origin_heatmap_loss': gaze_origin_loss,
                 'gaze_origin_xy_loss': gaze_origin_xy_loss,
+                'gaze_origin_z_loss': gaze_origin_z_loss,
                 'complete_loss': complete_loss
             },
             'artifacts': {
@@ -111,7 +118,7 @@ class EFEModel(pl.LightningModule):
             }
         }
 
-        return output
+        return new_output
 
     def training_step(self, batch, batch_idx):
         output = self.forward(batch['image'], batch['intrinsics'])
@@ -148,6 +155,7 @@ class EFEModel(pl.LightningModule):
         gaze_origin_heatmaps = []
         gaze_origin_heatmaps_gt = []
         gaze_direction_imgs = []
+        gaze_depth_imgs = []
         for i in range(np_cpu_images.shape[0]):
             img = np.moveaxis(np_cpu_images[i], 0, -1)
 
@@ -165,6 +173,11 @@ class EFEModel(pl.LightningModule):
             gaze_origin_heatmap = output['gaze_origin'][i].detach().cpu().numpy()
             vis_gaze_origin_heatmap = vis.draw_gaze_origin_heatmap(img, gaze_origin_heatmap[0])
             gaze_origin_heatmaps.append(vis_gaze_origin_heatmap)
+
+            # Visualize the sparse depth map
+            gaze_depth = output['gaze_depth'][i].detach().cpu().numpy()
+            vis_gaze_depth = vis.draw_gaze_depth_map(img, gaze_depth[0])
+            gaze_depth_imgs.append(vis_gaze_depth)
 
             # Visualizing the gaze direction
             gt_gaze = vis.draw_gaze_direction(img, batch['face_origin_2d'][i], batch['gaze_target_2d'][i])
@@ -191,6 +204,7 @@ class EFEModel(pl.LightningModule):
         tb_logger.add_images(f"{prefix}_gaze_origin", np.moveaxis(np.stack(gaze_origin_gt), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_pred_gaze_origin_heatmaps", np.moveaxis(np.stack(gaze_origin_heatmaps), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_gt_gaze_origin_heatmaps", np.moveaxis(np.stack(gaze_origin_heatmaps_gt), -1, 1), self.current_epoch)
+        tb_logger.add_images(f"{prefix}_gaze_depth", np.moveaxis(np.stack(gaze_depth_imgs), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_gaze_direction", np.moveaxis(np.stack(gaze_direction_imgs), -1, 1), self.current_epoch)
 
     def configure_optimizers(self):

@@ -36,6 +36,27 @@ def draw_gaze_origin_heatmap(image, heatmap, alpha=0.5, cmap='jet'):
 
     return overlay
 
+def draw_gaze_depth_map(image, depth_map, alpha=0.5, cmap='jet'):
+    # Normalize the heatmap to be between 0 and 1
+    heatmap_normalized = Normalize()(depth_map)
+    
+    # Create a color map
+    colormap = plt.get_cmap(cmap)
+    
+    # Apply the colormap to the heatmap
+    heatmap_colored = colormap(heatmap_normalized)
+    
+    # Remove the alpha channel from the colormap output
+    heatmap_colored = heatmap_colored[:, :, :3]
+    
+    # Overlay the heatmap on the image
+    overlay = image * (1 - alpha) + heatmap_colored * alpha
+    
+    # Clip the values to be in the valid range [0, 1]
+    overlay = np.clip(overlay, 0, 1)
+
+    return overlay
+
 def draw_gaze_origin(image, gaze_origin, color=(255, 0, 0)):
     # Draw gaze origin
     draw_image = image.copy()
