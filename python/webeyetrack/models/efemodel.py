@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import numpy as np
+import cv2
 
 import matplotlib.pyplot as plt
 import matplotlib
@@ -38,7 +39,7 @@ class EFEModel(pl.LightningModule):
             nn.Linear(512, 256),
             nn.SELU(inplace=True),
             nn.Linear(256, 3),
-            nn.ReLU(inplace=True)
+            # nn.ReLU(inplace=True)
         )
 
     def forward(self, x, intrinsics):
@@ -67,7 +68,7 @@ class EFEModel(pl.LightningModule):
         gaze_direction = F.normalize(gaze_direction, p=2, dim=1)
 
         # This requires multiple steps: 3D reprojection and screen plane intersection
-        gaze_origin_3d = reprojection_3d(gaze_origin_xy, gaze_origin_z, intrinsics)
+        # gaze_origin_3d = reprojection_3d(gaze_origin_xy, gaze_origin_z, intrinsics)
         # pog_mm, pog_px = screen_plane_intersection(
         #     gaze_origin_3d, 
         #     gaze_direction_unit_vector, 
@@ -79,7 +80,7 @@ class EFEModel(pl.LightningModule):
             'gaze_direction': gaze_direction,
             "gaze_origin_xy": gaze_origin_xy,
             "gaze_origin_z": gaze_origin_z,
-            "gaze_origin_3d": gaze_origin_3d,
+            # "gaze_origin_3d": gaze_origin_3d,
         }
     
     def compute_loss(self, output, batch):
@@ -98,14 +99,15 @@ class EFEModel(pl.LightningModule):
 
         # Compute the angular loss for the gaze direction
         # https://github.com/swook/EVE/blob/master/src/losses/angular.py#L29
-        # gaze_direction_unit_vector_gt = F.normalize(batch['gaze_direction_3d'], p=2, dim=1)
-        # angular_loss = torch.acos(torch.clamp(torch.sum(output['gaze_direction'] * gaze_direction_unit_vector_gt, dim=1), -1.0, 1.0))
-        # angular_loss = torch.mean(angular_loss)
+        sim = F.cosine_similarity(output['gaze_direction'], batch['gaze_direction_3d'], dim=1, eps=1e-8)
+        sim = F.hardtanh(sim, min_val=-1.0+1e-8, max_val=1.0-1e-8)
+        angular_loss = torch.acos(sim)
+        angular_loss = torch.mean(angular_loss)
 
         # Compute the PoG MSE Loss
 
-        # losses = [gaze_origin_loss, gaze_origin_xy_loss, gaze_origin_z_loss, angular_loss] 
-        losses = [gaze_origin_loss, gaze_origin_xy_loss, gaze_origin_z_loss]
+        # Combine all losess together
+        losses = [gaze_origin_loss, gaze_origin_xy_loss, gaze_origin_z_loss, angular_loss] 
         complete_loss = torch.sum(torch.stack(losses))
 
         new_output = {
@@ -113,6 +115,7 @@ class EFEModel(pl.LightningModule):
                 'gaze_origin_heatmap_loss': gaze_origin_loss,
                 'gaze_origin_xy_loss': gaze_origin_xy_loss,
                 'gaze_origin_z_loss': gaze_origin_z_loss,
+                'gaze_angular_loss': angular_loss,
                 'complete_loss': complete_loss
             },
             'artifacts': {
@@ -189,26 +192,26 @@ class EFEModel(pl.LightningModule):
             gaze_depth_imgs.append(vis_gaze_depth)
 
             # Visualizing the gaze direction
-            gt_gaze = vis.draw_gaze_direction(img, batch['face_origin_2d'][i], batch['gaze_target_2d'][i])
+            gt_gaze = vis.draw_gaze_direction(img, batch['face_origin_2d'][i], batch['gaze_target_2d'][i], color=(0, 0, 255))
 
             # Create gaze_target_2d via the direction and a fixed distance
-            # gaze_target_3d_semi = batch['face_origin_3d'][i] + output['gaze_direction'][i] / 5
-            # gaze_target_3d_semi = gaze_target_3d_semi.cpu().numpy()
-            # gaze_target_2d, _ = cv2.projectPoints(
-            #     gaze_target_3d_semi, 
-            #     np.array([0, 0, 0], dtype=np.float32),
-            #     np.array([0, 0, 0], dtype=np.float32),
-            #     batch['intrinsics'][i].cpu().numpy(), 
-            #     batch['dist_coeffs'][i].cpu().numpy(),
-            # )
+            gaze_target_3d_semi = batch['face_origin_3d'][i] + output['gaze_direction'][i] * 100
+            gaze_target_3d_semi = gaze_target_3d_semi.detach().cpu().numpy()
+            gaze_target_2d, _ = cv2.projectPoints(
+                gaze_target_3d_semi, 
+                np.array([0, 0, 0], dtype=np.float32),
+                np.array([0, 0, 0], dtype=np.float32),
+                batch['intrinsics'][i].cpu().numpy(), 
+                batch['dist_coeffs'][i].cpu().numpy(),
+            )
 
-            # gt_pred_gaze = vis.draw_gaze_direction(
-            #     gt_gaze,
-            #     batch['face_origin_2d'][i],
-            #     gaze_target_2d.flatten(),
-            #     color=(0, 0, 255)
-            # )
-            gaze_direction_imgs.append(gt_gaze)
+            gt_pred_gaze = vis.draw_gaze_direction(
+                gt_gaze,
+                batch['face_origin_2d'][i],
+                gaze_target_2d.flatten(),
+                color=(255, 0, 0)
+            )
+            gaze_direction_imgs.append(gt_pred_gaze)
 
         tb_logger.add_images(f"{prefix}_gaze_origin", np.moveaxis(np.stack(gaze_origin_gt), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_pred_gaze_origin_heatmaps", np.moveaxis(np.stack(gaze_origin_heatmaps), -1, 1), self.current_epoch)
