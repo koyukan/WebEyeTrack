@@ -67,12 +67,12 @@ class EFEModel(pl.LightningModule):
 
         # This requires multiple steps: 3D reprojection and screen plane intersection
         gaze_origin_3d = reprojection_3d(gaze_origin_xy, gaze_origin_z, intrinsics)
-        # pog_mm, pog_px = screen_plane_intersection(
-        #     gaze_origin_3d, 
-        #     gaze_direction, 
-        #     screen_R,
-        #     screen_t
-        # )
+        pog_mm = screen_plane_intersection(
+            gaze_origin_3d.float(),
+            gaze_direction.float(),
+            screen_R,
+            screen_t
+        )
 
         return {
             'gaze_origin': gaze_origin,
@@ -81,7 +81,7 @@ class EFEModel(pl.LightningModule):
             "gaze_origin_xy": gaze_origin_xy,
             "gaze_origin_z": gaze_origin_z,
             "gaze_origin_3d": gaze_origin_3d,
-            # "pog_mm": pog_mm,
+            "pog_mm": pog_mm,
             # "pog_px": pog_px,
         }
     
@@ -168,7 +168,6 @@ class EFEModel(pl.LightningModule):
         gaze_direction_imgs = []
         gaze_depth_imgs = []
         gaze_pog_imgs = []
-        gaze_pog_imgs_2 = []
         for i in range(np_cpu_images.shape[0]):
             img = np.moveaxis(np_cpu_images[i], 0, -1)
 
@@ -221,22 +220,21 @@ class EFEModel(pl.LightningModule):
             screen_height_mm = batch['screen_height_mm'][i].detach().cpu().numpy().squeeze()
             screen_width_mm = batch['screen_width_mm'][i].detach().cpu().numpy().squeeze()
             pog_norm = np.array([pog_px[0] / screen_width_px, pog_px[1] / screen_height_px])
-            vis_pog = vis.draw_pog((screen_height_px//2, screen_width_px//2), pog_norm)
-            gaze_pog_imgs.append(vis_pog)
-            expected_pog_mm = np.array([pog_px[0] / screen_width_px * screen_width_mm, pog_px[1] / screen_height_px * screen_height_mm])
-            print(expected_pog_mm)
 
-            # Check that the math is correctly performed
-            pog_mm = screen_plane_intersection(
-                batch['face_origin_3d'][i].unsqueeze(0),
-                batch['gaze_direction_3d'][i].unsqueeze(0),
-                batch['screen_R'][i].unsqueeze(0),
-                batch['screen_t'][i].unsqueeze(0),
-            )
-            pog_mm = pog_mm.detach().cpu().numpy().squeeze()
+            vis_screen_height = screen_height_px // 2
+            vis_screen_width = screen_width_px // 2
+            pog_point = (int(vis_screen_width * pog_norm[0]), int(vis_screen_height * pog_norm[1]))
+            pog_img = np.ones((int(screen_height_px), int(screen_width_px), 3), dtype=np.uint8) * 255
+            
+            pog_mm = output['pog_mm'][i].detach().cpu().numpy().squeeze()
             pog_mm_norm = np.array([pog_mm[0] / screen_width_mm, pog_mm[1] / screen_height_mm])
-            vis_pog_gt = vis.draw_pog((screen_height_mm//2, screen_width_mm//2), pog_mm_norm, color=(0, 0, 255))
-            gaze_pog_imgs_2.append(vis_pog_gt)
+            pog_point_pred = (int(vis_screen_width * pog_mm_norm[0]), int(vis_screen_height * pog_mm_norm[1]))
+
+            # Make the center of the image black (with a white border equal to 10)
+            pog_img[10:-10, 10:-10] = 0
+            vis_gt_pog = vis.draw_pog(pog_img, pog_point, color=(0, 0, 255))
+            vis_pred_pog = vis.draw_pog(vis_gt_pog, pog_point_pred, color=(255, 0, 0))
+            gaze_pog_imgs.append(vis_pred_pog)
 
         tb_logger.add_images(f"{prefix}_gaze_origin", np.moveaxis(np.stack(gaze_origin_gt), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_pred_gaze_origin_heatmaps", np.moveaxis(np.stack(gaze_origin_heatmaps), -1, 1), self.current_epoch)
@@ -244,7 +242,6 @@ class EFEModel(pl.LightningModule):
         tb_logger.add_images(f"{prefix}_gaze_depth", np.moveaxis(np.stack(gaze_depth_imgs), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_gaze_direction", np.moveaxis(np.stack(gaze_direction_imgs), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_pog", np.moveaxis(np.stack(gaze_pog_imgs), -1, 1), self.current_epoch)
-        tb_logger.add_images(f"{prefix}_pog_test", np.moveaxis(np.stack(gaze_pog_imgs_2), -1, 1), self.current_epoch)
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=1e-3)

@@ -74,10 +74,8 @@ def draw_gaze_direction(image, gaze_origin, gaze_dst, color=(255, 0, 0)):
 
     return draw_image
 
-def draw_pog(image_size, pog, color=(255,0,0)):
+def draw_pog(img, pog, color=(255,0,0)):
     # Draw point of gaze (POG)
-    image = np.zeros((int(image_size[1]), int(image_size[0]), 3), dtype=np.uint8)
     x, y = pog
-    cv2.circle(image, (int(x * image_size[0]), int(y * image_size[1])), 10, color, -1)
-
-    return image
+    cv2.circle(img, (int(x), int(y)), 10, color, -1)
+    return img
