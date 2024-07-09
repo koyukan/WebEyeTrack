@@ -15,13 +15,9 @@ def compute_point_of_gaze(gaze_origin, gaze_direction, screen_rotation, screen_t
     R_inv = np.linalg.inv(R)
     o_s = np.dot(R_inv, o - t)
     r_s = np.dot(R_inv, r)
-    # o_s = np.dot(R, o) - t
-    # r_s = np.dot(R, r)
 
     # Calculate the distance to the screen plane
     lambda_ = np.dot((a_s - o_s), n_s) / np.dot(r_s, n_s)
-    # lambda_ = np.dot((o_s - a_s), n_s) / np.dot(r_s, n_s)
-    # lambda_ = np.dot(r_s, n_s) / np.dot((a_s - o_s), n_s)
     print(f"Distance to screen plane: {lambda_}")
 
     # Find the point of gaze
@@ -31,17 +27,13 @@ def compute_point_of_gaze(gaze_origin, gaze_direction, screen_rotation, screen_t
 
     return p
 
-# def flip_y_axis(p):
-#     p[1] = p[1] * -1
-
 # Example usage
-gaze_origin = [0, 0, 0]  # Example values
-# gaze_direction = [0, 0, 1]
-gaze_direction = np.array([0, 0.2, 0.8])
+gaze_origin = [0, -0.5, 1]
+gaze_direction = np.array([0, -0.2, -0.8])
 gaze_direction = gaze_direction / np.linalg.norm(gaze_direction)
 screen_rvec = [0, 0, 0] # degrees
 screen_rotation = R.from_rotvec(np.radians(screen_rvec)).as_matrix() 
-screen_translation = [0, 0, 1]
+screen_translation = [0, -0.5, 0]
 screen_normal = [0, 0, -1]
 screen_point = [0, 0, 0]
 
@@ -49,9 +41,6 @@ p = compute_point_of_gaze(gaze_origin, gaze_direction, screen_rotation, screen_t
 print("Point of Gaze:", p)
 
 # Convert the point of gaze to the camera coordinate system to visualize it
-# R = np.linalg.inv(screen_rotation)
-# t = -np.dot(R, screen_translation)
-# p_c = np.dot(R, p - t)
 p_c = np.dot(screen_rotation, p) + screen_translation
 
 # Visualization with trimesh
@@ -76,13 +65,18 @@ scene.add_geometry(screen)
 
 # Add gaze direction
 gaze_vector = np.array(gaze_direction)
-gaze_line = trimesh.load_path([gaze_origin, gaze_origin + gaze_vector])
+gaze_line = trimesh.load_path([gaze_origin, gaze_origin + gaze_vector * 0.5])
 scene.add_geometry(gaze_line)
 
 # Add point of gaze
 point_gaze_sphere = trimesh.creation.icosphere(radius=0.02, color=(255,0,0))
 point_gaze_sphere.apply_translation(p_c)
 scene.add_geometry(point_gaze_sphere)
+
+# Add point of gaze origin
+point_gaze_origin = trimesh.creation.icosphere(radius=0.02, color=(0,0,255))
+point_gaze_origin.apply_translation(gaze_origin)
+scene.add_geometry(point_gaze_origin)
 
 # Show the scene
 scene.show()
