@@ -1,5 +1,6 @@
 import numpy as np
 import trimesh
+from scipy.spatial.transform import Rotation as R
 
 def compute_point_of_gaze(gaze_origin, gaze_direction, screen_rotation, screen_translation, screen_normal, screen_point):
     # Convert inputs to numpy arrays
@@ -11,11 +12,15 @@ def compute_point_of_gaze(gaze_origin, gaze_direction, screen_rotation, screen_t
     a_s = np.array(screen_point, dtype=np.float32)
 
     # Transform gaze origin and direction to screen coordinates
-    o_s = np.dot(R, o) + t
-    r_s = np.dot(R, r)
+    R_inv = np.linalg.inv(R)
+    o_s = np.dot(R_inv, o - t)
+    r_s = np.dot(R_inv, r)
+    # o_s = np.dot(R, o) - t
+    # r_s = np.dot(R, r)
 
     # Calculate the distance to the screen plane
     lambda_ = np.dot((a_s - o_s), n_s) / np.dot(r_s, n_s)
+    # lambda_ = np.dot((o_s - a_s), n_s) / np.dot(r_s, n_s)
     # lambda_ = np.dot(r_s, n_s) / np.dot((a_s - o_s), n_s)
     print(f"Distance to screen plane: {lambda_}")
 
@@ -34,9 +39,11 @@ gaze_origin = [0, 0, 0]  # Example values
 # gaze_direction = [0, 0, 1]
 gaze_direction = np.array([0, 0.2, 0.8])
 gaze_direction = gaze_direction / np.linalg.norm(gaze_direction)
-screen_rotation = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+# screen_rotation = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+screen_rvec = [0, 0, 0] # degrees
+screen_rotation = R.from_rotvec(np.radians(screen_rvec)).as_matrix() 
 screen_translation = [0, 0, 1]
-screen_normal = [0, 0, 1]
+screen_normal = [0, 0, -1]
 screen_point = [0, 0, 0]
 
 p = compute_point_of_gaze(gaze_origin, gaze_direction, screen_rotation, screen_translation, screen_normal, screen_point)
