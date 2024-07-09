@@ -68,11 +68,11 @@ class EFEModel(pl.LightningModule):
         gaze_direction = F.normalize(gaze_direction, p=2, dim=1)
 
         # This requires multiple steps: 3D reprojection and screen plane intersection
-        # gaze_origin_3d = reprojection_3d(gaze_origin_xy, gaze_origin_z, intrinsics)
-        # pog_mm, pog_px = screen_plane_intersection(
-        #     gaze_origin_3d, 
-        #     gaze_direction_unit_vector, 
-        # )
+        gaze_origin_3d = reprojection_3d(gaze_origin_xy, gaze_origin_z, intrinsics)
+        pog_mm, pog_px = screen_plane_intersection(
+            gaze_origin_3d, 
+            gaze_direction, 
+        )
 
         return {
             'gaze_origin': gaze_origin,
@@ -80,21 +80,20 @@ class EFEModel(pl.LightningModule):
             'gaze_direction': gaze_direction,
             "gaze_origin_xy": gaze_origin_xy,
             "gaze_origin_z": gaze_origin_z,
-            # "gaze_origin_3d": gaze_origin_3d,
+            "gaze_origin_3d": gaze_origin_3d,
+            "pog_mm": pog_mm,
+            "pog_px": pog_px,
         }
     
     def compute_loss(self, output, batch):
         
         # Compute the gaze origin loss (Heatmap MSE Loss)
-        # if self.current_epoch == 1: import pdb; pdb.set_trace()
         gt_heatmap = 100.0*generate_2d_gaussian_heatmap_torch(batch['face_origin_2d'], self.img_size, sigma=12.0)
         gaze_origin_loss = F.mse_loss(output['gaze_origin'][:, 0], gt_heatmap)
         gaze_origin_xy_loss = F.mse_loss(output['gaze_origin_xy'], batch['face_origin_2d'])
 
         # Compute the gaze z-origin location (L1 Loss)
-        # if self.current_epoch == 5: import pdb; pdb.set_trace()
         gaze_origin_z_loss = F.l1_loss(torch.log(output['gaze_origin_z'] + 1e6), torch.log(batch['face_origin_3d'][:, 2, None] + 1e6))
-        # gaze_origin_z_loss = F.l1_loss(output['gaze_origin_z'], batch['face_origin_3d'][:, 2, None])
         gaze_origin_z_distance = F.l1_loss(output['gaze_origin_z'], batch['face_origin_3d'][:, 2, None])
 
         # Compute the angular loss for the gaze direction

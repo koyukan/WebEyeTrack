@@ -53,9 +53,9 @@ def reprojection_3d(xy_points, depth, intrinsic_matrices):
     y = xy_points[:, 1]
     
     # Reproject to 3D
-    X = (x - cx) * depth / fx
-    Y = (y - cy) * depth / fy
-    Z = depth
+    X = (x - cx) * depth[:, 0] / fx
+    Y = (y - cy) * depth[:, 0] / fy
+    Z = depth[:, 0]
     
     # Stack to get the final 3D points
     xyz_points = torch.stack((X, Y, Z), dim=1)
