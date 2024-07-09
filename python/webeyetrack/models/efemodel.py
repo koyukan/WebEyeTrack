@@ -19,10 +19,11 @@ from .. import vis
 # https://github.com/swook/EVE/blob/master/src/models/common.py#L129
 
 class EFEModel(pl.LightningModule):
-    def __init__(self, img_size=(480, 640)):
+    def __init__(self, config, img_size=(480, 640)):
         super().__init__()
 
-        # Save the image size
+        # Save parameters
+        self.config = config
         self.img_size = img_size
 
         # Create components
@@ -42,7 +43,7 @@ class EFEModel(pl.LightningModule):
             # nn.ReLU(inplace=True)
         )
 
-    def forward(self, x, intrinsics, screen_R, screen_t):
+    def forward(self, x):
         batch_size = x.shape[0]
 
         # Predict
@@ -65,36 +66,26 @@ class EFEModel(pl.LightningModule):
         # Normalize the gaze direction
         gaze_direction = F.normalize(gaze_direction, p=2, dim=1)
 
-        # This requires multiple steps: 3D reprojection and screen plane intersection
-        gaze_origin_3d = reprojection_3d(gaze_origin_xy, gaze_origin_z, intrinsics)
-        pog_mm = screen_plane_intersection(
-            gaze_origin_3d.float(),
-            gaze_direction.float(),
-            screen_R,
-            screen_t
-        )
-
         return {
             'gaze_origin': gaze_origin,
             'gaze_depth': gaze_depth,
             'gaze_direction': gaze_direction,
             "gaze_origin_xy": gaze_origin_xy,
             "gaze_origin_z": gaze_origin_z,
-            "gaze_origin_3d": gaze_origin_3d,
-            "pog_mm": pog_mm,
-            # "pog_px": pog_px,
         }
     
     def compute_loss(self, output, batch):
-        
+ 
         # Compute the gaze origin loss (Heatmap MSE Loss)
-        gt_heatmap = 100.0*generate_2d_gaussian_heatmap_torch(batch['face_origin_2d'], self.img_size, sigma=12.0)
+        # gt_heatmap = 100.0*generate_2d_gaussian_heatmap_torch(batch['face_origin_2d'], self.img_size, sigma=12.0)
+        gt_heatmap = 100*generate_2d_gaussian_heatmap_torch(batch['face_origin_2d'], self.img_size, sigma=12.0)
         gaze_origin_loss = F.mse_loss(output['gaze_origin'][:, 0], gt_heatmap)
         gaze_origin_xy_loss = F.mse_loss(output['gaze_origin_xy'], batch['face_origin_2d'])
 
         # Compute the gaze z-origin location (L1 Loss)
-        gaze_origin_z_loss = F.l1_loss(torch.log(output['gaze_origin_z'] + 1e6), torch.log(batch['face_origin_3d'][:, 2, None] + 1e6))
-        gaze_origin_z_distance = F.l1_loss(output['gaze_origin_z'], batch['face_origin_3d'][:, 2, None])
+        # gaze_origin_z_loss = F.l1_loss(torch.log(output['gaze_origin_z'] + 1e6), torch.log(batch['face_origin_3d'][:, 2, None] + 1e6))
+        gaze_origin_z_loss = F.l1_loss(output['gaze_origin_z'], batch['face_origin_3d'][:, 2, None])
+        # gaze_origin_z_distance = F.l1_loss(output['gaze_origin_z'], batch['face_origin_3d'][:, 2, None])
 
         # Compute the angular loss for the gaze direction
         # https://github.com/swook/EVE/blob/master/src/losses/angular.py#L29
@@ -104,9 +95,26 @@ class EFEModel(pl.LightningModule):
         angular_loss = torch.mean(angular_loss)
 
         # Compute the PoG MSE Loss
+        # This requires multiple steps: 3D reprojection and screen plane intersection
+        gaze_origin_3d = reprojection_3d(output['gaze_origin_xy'], output['gaze_origin_z'], batch['intrinsics'])
+        pog_mm = screen_plane_intersection(
+            gaze_origin_3d.float(),
+            output['gaze_direction'].float(),
+            batch['screen_R'],
+            batch['screen_t']
+        )
+        pog_norm = torch.stack([pog_mm[:, 0] / batch['screen_width_mm'][:, 0], pog_mm[:, 1] / batch['screen_height_mm'][:, 0]], dim=1)[:,:,0]
+        pog_px = torch.stack([pog_norm[:, 0] * batch['screen_width_px'][:, 0], pog_norm[:, 1] * batch['screen_height_px'][:, 0]], dim=1)[:,:,0]
+        pog_loss = F.mse_loss(pog_px, batch['pog_px'])
 
         # Combine all losess together
-        losses = [gaze_origin_loss, gaze_origin_xy_loss, gaze_origin_z_loss, angular_loss] 
+        losses = [
+            gaze_origin_loss * self.config['train']['loss_coefs']['xy_heatmap_loss'], 
+            gaze_origin_xy_loss * self.config['train']['loss_coefs']['xy_loss'], 
+            gaze_origin_z_loss * self.config['train']['loss_coefs']['z_loss'], 
+            angular_loss * self.config['train']['loss_coefs']['angular_loss'], 
+            pog_loss * self.config['train']['loss_coefs']['pog_loss']
+        ] 
         complete_loss = torch.sum(torch.stack(losses))
 
         new_output = {
@@ -115,20 +123,22 @@ class EFEModel(pl.LightningModule):
                 'gaze_origin_xy_loss': gaze_origin_xy_loss,
                 'gaze_origin_z_loss': gaze_origin_z_loss,
                 'gaze_angular_loss': angular_loss,
+                'pog_loss': pog_loss,
                 'complete_loss': complete_loss
             },
             'artifacts': {
                 'gaze_origin_heatmap': gt_heatmap,
+                'pog_px': pog_px,
             },
             'metrics': {
-                'gaze_origin_z_distance': gaze_origin_z_distance,
+                # 'gaze_origin_z_distance': gaze_origin_z_distance,
             }
         }
 
         return new_output
 
     def training_step(self, batch, batch_idx):
-        output = self.forward(batch['image'], batch['intrinsics'], batch['screen_R'], batch['screen_t'])
+        output = self.forward(batch['image'])
         losses_output = self.compute_loss(output, batch)
 
         # Logging the losses
@@ -137,13 +147,12 @@ class EFEModel(pl.LightningModule):
         for k, v in losses_output['metrics'].items():
             self.log(f'train_{k}', v, batch_size=batch['image'].shape[0])
 
-        # if self.current_epoch == 2: import pdb; pdb.set_trace()
         self.log_tb_images('train', batch, output, losses_output)
         
         return {'loss': losses_output['losses']['complete_loss'], 'log': losses_output['losses']}
 
     def validation_step(self, batch, batch_idx):
-        output = self.forward(batch['image'], batch['intrinsics'], batch['screen_R'], batch['screen_t'])
+        output = self.forward(batch['image'])
         losses_output = self.compute_loss(output, batch)
 
         self.log('val_loss', losses_output['losses']['complete_loss'])
@@ -221,14 +230,16 @@ class EFEModel(pl.LightningModule):
             screen_width_mm = batch['screen_width_mm'][i].detach().cpu().numpy().squeeze()
             pog_norm = np.array([pog_px[0] / screen_width_px, pog_px[1] / screen_height_px])
 
-            vis_screen_height = screen_height_px // 2
-            vis_screen_width = screen_width_px // 2
+            vis_screen_height = screen_height_px // 4
+            vis_screen_width = screen_width_px // 4
             pog_point = (int(vis_screen_width * pog_norm[0]), int(vis_screen_height * pog_norm[1]))
             pog_img = np.ones((int(screen_height_px), int(screen_width_px), 3), dtype=np.uint8) * 255
             
-            pog_mm = output['pog_mm'][i].detach().cpu().numpy().squeeze()
-            pog_mm_norm = np.array([pog_mm[0] / screen_width_mm, pog_mm[1] / screen_height_mm])
-            pog_point_pred = (int(vis_screen_width * pog_mm_norm[0]), int(vis_screen_height * pog_mm_norm[1]))
+            pog_px_pred = losses_output['artifacts']['pog_px'][i].detach().cpu().numpy().squeeze()
+            pog_norm_pred = np.array([pog_px_pred[0] / screen_width_px, pog_px_pred[1] / screen_height_px])
+            pog_point_pred = (int(vis_screen_width * pog_norm_pred[0]), int(vis_screen_height * pog_norm_pred[1]))
+            # pog_mm_norm = np.array([pog_mm[0] / screen_width_mm, pog_mm[1] / screen_height_mm])
+            # pog_point_pred = (int(vis_screen_width * pog_mm_norm[0]), int(vis_screen_height * pog_mm_norm[1]))
 
             # Make the center of the image black (with a white border equal to 10)
             pog_img[10:-10, 10:-10] = 0

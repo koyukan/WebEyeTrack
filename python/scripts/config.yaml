@@ -4,4 +4,10 @@ datasets:
 train:
   train_size: 0.8
   batch_size: 1
-  max_epochs: 20
+  max_epochs: 100
+  loss_coefs:
+    xy_heatmap_loss: 1.0
+    xy_loss: 1.0
+    z_loss: 0
+    angular_loss: 1.0
+    pog_loss: 0
