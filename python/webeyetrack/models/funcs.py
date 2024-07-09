@@ -29,6 +29,55 @@ def generate_2d_gaussian_heatmap_torch(gaze_origins, img_size, sigma=1):
     
     return heatmaps
 
+def rodrigues_rotation_matrix_batch(rotation_vectors):
+    """
+    Convert a batch of rotation vectors to rotation matrices using the Rodrigues' rotation formula.
+
+    Args:
+        rotation_vectors (torch.Tensor): A tensor of shape (N, 3) representing the batch of rotation vectors (axis-angle).
+
+    Returns:
+        torch.Tensor: A tensor of shape (N, 3, 3) representing the batch of rotation matrices.
+    """
+    batch_size = rotation_vectors.shape[0]
+    theta = torch.norm(rotation_vectors, dim=1, keepdim=True)
+    r = rotation_vectors / (theta + 1e-8)  # Prevent division by zero
+    r = r.unsqueeze(2)  # Shape (N, 3, 1)
+    
+    zero = torch.zeros(batch_size, 1, 1, dtype=torch.float32, device=rotation_vectors.device)
+    K = torch.cat([
+        zero, -r[:, 2:3], r[:, 1:2],
+        r[:, 2:3], zero, -r[:, 0:1],
+        -r[:, 1:2], r[:, 0:1], zero
+    ], dim=1).view(batch_size, 3, 3)  # Shape (N, 3, 3)
+    
+    I = torch.eye(3, device=rotation_vectors.device).unsqueeze(0).repeat(batch_size, 1, 1)  # Shape (N, 3, 3)
+    K2 = torch.bmm(K, K)
+    
+    sin_theta = torch.sin(theta).view(batch_size, 1, 1)
+    cos_theta = torch.cos(theta).view(batch_size, 1, 1)
+    
+    R = I + sin_theta * K + (1 - cos_theta) * K2
+    
+    return R
+
+
+def inverse_rotation_matrix_batch(rotation_matrices):
+    """
+    Compute the inverse of a batch of rotation matrices.
+
+    Args:
+        rotation_matrices (torch.Tensor): A tensor of shape (N, 3, 3) representing the batch of rotation matrices.
+
+    Returns:
+        torch.Tensor: A tensor of shape (N, 3, 3) representing the batch of inverse rotation matrices.
+    """
+    # Compute the transpose of each rotation matrix
+    inverse_matrices = rotation_matrices.transpose(1, 2)
+    
+    return inverse_matrices
+
+
 def reprojection_3d(xy_points, depth, intrinsic_matrices):
     """
     Reproject 2D points with depth information to 3D points using the camera intrinsics.
@@ -67,7 +116,7 @@ def get_intersect_with_zero(o, g):
     device = o.device
 
     nn_plane_normal = torch.tensor([0, 0, 1], dtype=torch.float32, device=device).view(1, 3, 1)
-    nn_plane_other = torch.tensor([1, 0, 0], dtype=torch.float32, device=device).view(1, 3, 1)
+    nn_plane_other = torch.tensor([0, 0, 0], dtype=torch.float32, device=device).view(1, 3, 1)
 
     # Define plane to intersect with
     n = nn_plane_normal
@@ -79,19 +128,19 @@ def get_intersect_with_zero(o, g):
     # Intersect with plane using provided 3D origin
     denom = torch.sum(torch.mul(g, n), dim=1) + 1e-7
     t = torch.div(numer, denom).view(-1, 1, 1)
-    return (o + torch.mul(t, g))[:, :2, 0]
+    return (o + torch.mul(t, g))
 
-def screen_plane_intersection(o, d, ppm_w, ppm_h, screen_size):
+def screen_plane_intersection(o, d, screen_R, screen_t):
     
     # Determine the intersection with the z=0 plane
-    pog_mm = get_intersect_with_zero(o, d)
+    p = get_intersect_with_zero(o, d)
 
-    # Convert to pixels
-    pog_px = torch.stack([
-        torch.clamp(pog_mm[:, 0] * ppm_w,
-                    0.0, float(screen_size[0])),
-        torch.clamp(pog_mm[:, 1] * ppm_h,
-                    0.0, float(screen_size[1]))
-    ], axis=-1)
+    # Then convert the point p in camera coordinates to screen coordinates
+    R_matrix = rodrigues_rotation_matrix_batch(screen_R[:, : ,0])
+    inv_R_matrix = inverse_rotation_matrix_batch(R_matrix)
+    pog_mm = torch.matmul(inv_R_matrix, p - screen_t)
 
-    return pog_mm, pog_px
+    # Drop the z coordinate
+    pog_mm = pog_mm[:, :2, 0]
+
+    return pog_mm

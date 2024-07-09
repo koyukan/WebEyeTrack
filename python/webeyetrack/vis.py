@@ -73,3 +73,11 @@ def draw_gaze_direction(image, gaze_origin, gaze_dst, color=(255, 0, 0)):
     cv2.arrowedLine(draw_image, (int(x), int(y)), (int(dx), int(dy)), color, 2)
 
     return draw_image
+
+def draw_pog(image_size, pog, color=(255,0,0)):
+    # Draw point of gaze (POG)
+    image = np.zeros((int(image_size[1]), int(image_size[0]), 3), dtype=np.uint8)
+    x, y = pog
+    cv2.circle(image, (int(x * image_size[0]), int(y * image_size[1])), 10, color, -1)
+
+    return image

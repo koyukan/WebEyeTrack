@@ -42,7 +42,7 @@ class EFEModel(pl.LightningModule):
             # nn.ReLU(inplace=True)
         )
 
-    def forward(self, x, intrinsics):
+    def forward(self, x, intrinsics, screen_R, screen_t):
         batch_size = x.shape[0]
 
         # Predict
@@ -62,17 +62,17 @@ class EFEModel(pl.LightningModule):
         gaze_origin_z_map = torch.sum(gaze_depth * softmax_gaze_origin_formatted, dim=1)
         gaze_origin_z = torch.gather(gaze_origin_z_map.view(batch_size, -1), 1, gaze_origin_xy_idx.unsqueeze(1))
 
-        # if self.current_epoch == 1: import pdb; pdb.set_trace()
-
         # Normalize the gaze direction
         gaze_direction = F.normalize(gaze_direction, p=2, dim=1)
 
         # This requires multiple steps: 3D reprojection and screen plane intersection
         gaze_origin_3d = reprojection_3d(gaze_origin_xy, gaze_origin_z, intrinsics)
-        pog_mm, pog_px = screen_plane_intersection(
-            gaze_origin_3d, 
-            gaze_direction, 
-        )
+        # pog_mm, pog_px = screen_plane_intersection(
+        #     gaze_origin_3d, 
+        #     gaze_direction, 
+        #     screen_R,
+        #     screen_t
+        # )
 
         return {
             'gaze_origin': gaze_origin,
@@ -81,8 +81,8 @@ class EFEModel(pl.LightningModule):
             "gaze_origin_xy": gaze_origin_xy,
             "gaze_origin_z": gaze_origin_z,
             "gaze_origin_3d": gaze_origin_3d,
-            "pog_mm": pog_mm,
-            "pog_px": pog_px,
+            # "pog_mm": pog_mm,
+            # "pog_px": pog_px,
         }
     
     def compute_loss(self, output, batch):
@@ -128,7 +128,7 @@ class EFEModel(pl.LightningModule):
         return new_output
 
     def training_step(self, batch, batch_idx):
-        output = self.forward(batch['image'], batch['intrinsics'])
+        output = self.forward(batch['image'], batch['intrinsics'], batch['screen_R'], batch['screen_t'])
         losses_output = self.compute_loss(output, batch)
 
         # Logging the losses
@@ -143,7 +143,7 @@ class EFEModel(pl.LightningModule):
         return {'loss': losses_output['losses']['complete_loss'], 'log': losses_output['losses']}
 
     def validation_step(self, batch, batch_idx):
-        output = self.forward(batch['image'], batch['intrinsics'])
+        output = self.forward(batch['image'], batch['intrinsics'], batch['screen_R'], batch['screen_t'])
         losses_output = self.compute_loss(output, batch)
 
         self.log('val_loss', losses_output['losses']['complete_loss'])
@@ -167,6 +167,8 @@ class EFEModel(pl.LightningModule):
         gaze_origin_heatmaps_gt = []
         gaze_direction_imgs = []
         gaze_depth_imgs = []
+        gaze_pog_imgs = []
+        gaze_pog_imgs_2 = []
         for i in range(np_cpu_images.shape[0]):
             img = np.moveaxis(np_cpu_images[i], 0, -1)
 
@@ -212,11 +214,38 @@ class EFEModel(pl.LightningModule):
             )
             gaze_direction_imgs.append(gt_pred_gaze)
 
+            # Draw the PoG Image
+            pog_px = batch['pog_px'][i].detach().cpu().numpy()
+            screen_height_px = batch['screen_height_px'][i].detach().cpu().numpy().squeeze()
+            screen_width_px = batch['screen_width_px'][i].detach().cpu().numpy().squeeze()
+            screen_height_mm = batch['screen_height_mm'][i].detach().cpu().numpy().squeeze()
+            screen_width_mm = batch['screen_width_mm'][i].detach().cpu().numpy().squeeze()
+            pog_norm = np.array([pog_px[0] / screen_width_px, pog_px[1] / screen_height_px])
+            vis_pog = vis.draw_pog((screen_height_px//2, screen_width_px//2), pog_norm)
+            gaze_pog_imgs.append(vis_pog)
+            expected_pog_mm = np.array([pog_px[0] / screen_width_px * screen_width_mm, pog_px[1] / screen_height_px * screen_height_mm])
+            print(expected_pog_mm)
+
+            # Check that the math is correctly performed
+            pog_mm = screen_plane_intersection(
+                batch['face_origin_3d'][i].unsqueeze(0),
+                output['gaze_direction'][i].unsqueeze(0),
+                batch['screen_R'][i].unsqueeze(0),
+                batch['screen_t'][i].unsqueeze(0),
+            )
+            import pdb; pdb.set_trace()
+            pog_mm = pog_mm.detach().cpu().numpy().squeeze()
+            pog_mm_norm = np.array([pog_mm[0] / screen_width_mm, pog_mm[1] / screen_height_mm])
+            vis_pog_gt = vis.draw_pog((screen_height_mm//2, screen_width_mm//2), pog_mm_norm, color=(0, 0, 255))
+            gaze_pog_imgs_2.append(vis_pog_gt)
+
         tb_logger.add_images(f"{prefix}_gaze_origin", np.moveaxis(np.stack(gaze_origin_gt), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_pred_gaze_origin_heatmaps", np.moveaxis(np.stack(gaze_origin_heatmaps), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_gt_gaze_origin_heatmaps", np.moveaxis(np.stack(gaze_origin_heatmaps_gt), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_gaze_depth", np.moveaxis(np.stack(gaze_depth_imgs), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_gaze_direction", np.moveaxis(np.stack(gaze_direction_imgs), -1, 1), self.current_epoch)
+        tb_logger.add_images(f"{prefix}_pog", np.moveaxis(np.stack(gaze_pog_imgs), -1, 1), self.current_epoch)
+        tb_logger.add_images(f"{prefix}_pog_test", np.moveaxis(np.stack(gaze_pog_imgs_2), -1, 1), self.current_epoch)
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=1e-3)

@@ -145,6 +145,12 @@ class MPIIFaceGazeDataset(Dataset):
             'image': image_np,
             'intrinsics': resize_intrinsics(calibration_data.camera_matrix, image.size, (640, 480)),
             'dist_coeffs': calibration_data.dist_coeffs,
+            'screen_R': calibration_data.monitor_rvecs.astype(np.float32),
+            'screen_t': calibration_data.monitor_tvecs.astype(np.float32),
+            'screen_height_mm': calibration_data.monitor_height_mm.astype(np.float32),
+            'screen_height_px': calibration_data.monitor_height_px.astype(np.float32),
+            'screen_width_mm': calibration_data.monitor_width_mm.astype(np.float32),
+            'screen_width_px': calibration_data.monitor_width_px.astype(np.float32)
         }
         sample_dict.update(asdict(sample.annotations))
         return sample_dict
