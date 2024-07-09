@@ -39,7 +39,6 @@ gaze_origin = [0, 0, 0]  # Example values
 # gaze_direction = [0, 0, 1]
 gaze_direction = np.array([0, 0.2, 0.8])
 gaze_direction = gaze_direction / np.linalg.norm(gaze_direction)
-# screen_rotation = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
 screen_rvec = [0, 0, 0] # degrees
 screen_rotation = R.from_rotvec(np.radians(screen_rvec)).as_matrix() 
 screen_translation = [0, 0, 1]
@@ -50,10 +49,10 @@ p = compute_point_of_gaze(gaze_origin, gaze_direction, screen_rotation, screen_t
 print("Point of Gaze:", p)
 
 # Convert the point of gaze to the camera coordinate system to visualize it
-R = np.linalg.inv(screen_rotation)
-t = -np.dot(R, screen_translation)
-p_c = np.dot(R, p - t)
-# p_c[1] = p_c[1]*-1
+# R = np.linalg.inv(screen_rotation)
+# t = -np.dot(R, screen_translation)
+# p_c = np.dot(R, p - t)
+p_c = np.dot(screen_rotation, p) + screen_translation
 
 # Visualization with trimesh
 scene = trimesh.Scene()
@@ -76,7 +75,7 @@ screen.apply_transform(transform)
 scene.add_geometry(screen)
 
 # Add gaze direction
-gaze_vector = np.array(gaze_direction) * 0.5
+gaze_vector = np.array(gaze_direction)
 gaze_line = trimesh.load_path([gaze_origin, gaze_origin + gaze_vector])
 scene.add_geometry(gaze_line)
 
