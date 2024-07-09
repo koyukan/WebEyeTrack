@@ -131,16 +131,26 @@ def get_intersect_with_zero(o, g):
     return (o + torch.mul(t, g))
 
 def screen_plane_intersection(o, d, screen_R, screen_t):
-    
-    # Determine the intersection with the z=0 plane
-    p = get_intersect_with_zero(o, d)
 
-    # Then convert the point p in camera coordinates to screen coordinates
+    # Obtain rotation and inverse matrix matrix 
     R_matrix = rodrigues_rotation_matrix_batch(screen_R[:, : ,0])
     inv_R_matrix = inverse_rotation_matrix_batch(R_matrix)
-    pog_mm = torch.matmul(inv_R_matrix, p - screen_t)
 
-    # Drop the z coordinate
-    pog_mm = pog_mm[:, :2, 0]
+    # Transform gaze origin and direction to screen coordinates
+    o_s = torch.bmm(inv_R_matrix, (o - screen_t[:,:,0]).unsqueeze(-1)).squeeze(-1)
+    d_s = torch.bmm(inv_R_matrix, d.unsqueeze(-1)).squeeze(-1)
+    
+    # Screen plane
+    a_s = torch.tensor([0, 0, 0], dtype=torch.float32, device=o.device).view(1, 3) # point
+    n_s = torch.tensor([0, 0, 1], dtype=torch.float32, device=o.device).view(1, 3) # normal
+
+    # Calculate the distance to the screen plane
+    lambda_ = torch.sum((a_s - o_s) * n_s, dim=1) / torch.sum(d_s * n_s, dim=1)
+
+    # Calculate the intersection point
+    p = o_s + lambda_.unsqueeze(-1) * d_s
+
+    # Keep only the x and y coordinates
+    pog_mm = p[:, :2]
 
     return pog_mm

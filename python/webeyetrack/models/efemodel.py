@@ -229,11 +229,10 @@ class EFEModel(pl.LightningModule):
             # Check that the math is correctly performed
             pog_mm = screen_plane_intersection(
                 batch['face_origin_3d'][i].unsqueeze(0),
-                output['gaze_direction'][i].unsqueeze(0),
+                batch['gaze_direction_3d'][i].unsqueeze(0),
                 batch['screen_R'][i].unsqueeze(0),
                 batch['screen_t'][i].unsqueeze(0),
             )
-            import pdb; pdb.set_trace()
             pog_mm = pog_mm.detach().cpu().numpy().squeeze()
             pog_mm_norm = np.array([pog_mm[0] / screen_width_mm, pog_mm[1] / screen_height_mm])
             vis_pog_gt = vis.draw_pog((screen_height_mm//2, screen_width_mm//2), pog_mm_norm, color=(0, 0, 255))
