@@ -370,6 +370,58 @@ const Webcam = forwardRef<WebcamApi, WebcamProps>(({ videoTextureSrc, autostart 
 });
 
 //
+// Screen Video
+//
+
+type ScreenApi = {
+  videoTextureApiRef: RefObject<VideoTextureApi>;
+};
+
+type ScreenProps = {
+  videoTextureSrc?: VideoTextureSrc;
+  autostart?: boolean;
+};
+
+const ScreenVideo = forwardRef<ScreenApi, ScreenProps>(({ videoTextureSrc, autostart = true }, fref) => {
+  const videoTextureApiRef = useRef<VideoTextureApi>(null);
+
+  const faceControls = useFaceControls();
+
+  const stream: MediaStream | null = suspend(async () => {
+    return !videoTextureSrc
+      ? await navigator.mediaDevices.getDisplayMedia({
+          video: { displaySurface: "monitor" },
+        })
+      : Promise.resolve(null);
+  }, [videoTextureSrc]);
+
+  useEffect(() => {
+    faceControls.dispatchEvent({ type: "stream", stream });
+
+    return () => {
+      stream?.getTracks().forEach((track) => track.stop());
+      clear([videoTextureSrc]);
+    };
+  }, [stream, faceControls, videoTextureSrc]);
+
+  // ref-api
+  const api = useMemo<WebcamApi>(
+    () => ({
+      videoTextureApiRef,
+    }),
+    []
+  );
+  useImperativeHandle(fref, () => api, [api]);
+
+  return (
+    // <Suspense fallback={null}>
+    <VideoTexture ref={videoTextureApiRef} src={videoTextureSrc || stream!} start={autostart} />
+    // </Suspense>
+  );
+});
+
+
+//
 // VideoTexture
 //
 
