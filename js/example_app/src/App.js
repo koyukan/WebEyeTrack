@@ -9,7 +9,7 @@ import { suspend } from 'suspend-react'
 import { FaceLandmarker } from './components/FaceLandmarker'
 import { FaceControls } from './components/FaceControls'
 
-import { Laptop } from './Laptop'
+import { Laptop } from './Laptop.jsx'
 
 const city = import('@pmndrs/assets/hdri/city.exr')
 

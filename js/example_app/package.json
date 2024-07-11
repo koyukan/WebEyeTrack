@@ -4,7 +4,6 @@
   "description": "Control camera with your head/eyes",
   "keywords": [],
   "main": "src/index.js",
-  "type": "module",
   "dependencies": {
     "@mediapipe/tasks-vision": "0.10.0",
     "@pmndrs/assets": "1.6.0",
