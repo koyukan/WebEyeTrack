@@ -9,7 +9,6 @@ import { suspend } from 'suspend-react'
 import { FaceLandmarker } from './components/FaceLandmarker'
 import { FaceControls } from './components/FaceControls'
 
-import { Laptop } from './Laptop.jsx'
 import { Screen } from './Screen.jsx'
 
 const city = import('@pmndrs/assets/hdri/city.exr')
@@ -70,7 +69,15 @@ function Scene() {
   const faceControlsApiRef = useRef()
 
   const screenMatRef = useRef(null)
-  const onVideoFrame = useCallback(
+  const onWebcamVideoFrame = useCallback(
+    (e) => {
+      controls.detect(e.texture.source.data, e.time)
+
+      // screenMatRef.current.map = e.texture
+    },
+    [controls]
+  )
+  const onScreenVideoFrame = useCallback(
     (e) => {
       controls.detect(e.texture.source.data, e.time)
 
@@ -108,7 +115,8 @@ function Scene() {
           webcamVideoTextureSrc={gui.webcamVideoTextureSrc}
           manualUpdate
           manualDetect
-          onVideoFrame={onVideoFrame}
+          onWebcamVideoFrame={onWebcamVideoFrame}
+          onScreenVideoFrame={onScreenVideoFrame}
           smoothTime={gui.smoothTime}
           offset={gui.offset}
           offsetScalar={gui.offsetScalar}
@@ -130,13 +138,9 @@ function Scene() {
         />
       </group>
 
-      {/* <Laptop flipHorizontal>
-        <meshStandardMaterial ref={screenMatRef} side={THREE.DoubleSide} transparent opacity={0.9} />
-      </Laptop> */}
       <Screen flipHorizontal>
         <meshStandardMaterial ref={screenMatRef} side={THREE.DoubleSide} transparent opacity={0.9} />
       </Screen>
-      {/* <Plant position={[-0.25, 0, -0.2]} scale={0.5} /> */}
 
       {/* <axesHelper /> */}
       <Ground />
@@ -162,16 +166,4 @@ function Ground() {
     infiniteGrid: true
   }
   return <Grid args={[10, 10]} {...gridConfig} />
-}
-
-const Plant = (props) => {
-  const { nodes, materials } = useGLTF('https://storage.googleapis.com/abernier-portfolio/potted_plant.glb')
-  return (
-    <group {...props} dispose={null}>
-      <group rotation={[-Math.PI / 2, 0, 0]}>
-        <mesh castShadow receiveShadow geometry={nodes.Object_2.geometry} material={materials.model_u1_v1} />
-        <mesh castShadow receiveShadow geometry={nodes.Object_3.geometry} material={materials.model_u1_v1} />
-      </group>
-    </group>
-  )
 }
