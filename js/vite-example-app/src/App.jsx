@@ -10,6 +10,7 @@ import { FaceLandmarker } from './components/FaceLandmarker'
 import { FaceControls } from './components/FaceControls'
 
 import { Laptop } from './Laptop.jsx'
+import { Screen } from './Screen.jsx'
 
 const city = import('@pmndrs/assets/hdri/city.exr')
 
@@ -30,7 +31,7 @@ function Scene() {
   const vids = ['https://storage.googleapis.com/abernier-portfolio/metahumans.mp4', 'https://storage.googleapis.com/abernier-portfolio/metahumans2.mp4']
 
   const gui = useControls({
-    camera: { value: 'user', options: ['user', 'cc'] },
+    camera: { value: 'cc', options: ['user', 'cc'] },
     webcam: folder({
       webcam: true,
       autostart: true,
@@ -129,10 +130,13 @@ function Scene() {
         />
       </group>
 
-      <Laptop flipHorizontal>
+      {/* <Laptop flipHorizontal>
         <meshStandardMaterial ref={screenMatRef} side={THREE.DoubleSide} transparent opacity={0.9} />
-      </Laptop>
-      <Plant position={[-0.25, 0, -0.2]} scale={0.5} />
+      </Laptop> */}
+      <Screen flipHorizontal>
+        <meshStandardMaterial ref={screenMatRef} side={THREE.DoubleSide} transparent opacity={0.9} />
+      </Screen>
+      {/* <Plant position={[-0.25, 0, -0.2]} scale={0.5} /> */}
 
       {/* <axesHelper /> */}
       <Ground />
