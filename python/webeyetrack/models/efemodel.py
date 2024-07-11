@@ -60,8 +60,9 @@ class EFEModel(pl.LightningModule):
         # First, we apply the dot product between the softmax_gaze_origin and the depth map to get the z-origin
         # Then, we use the gaze_origin_xy_idx to get the z-origin
         softmax_gaze_origin_formatted = softmax_gaze_origin.view(batch_size, 1, gaze_depth.shape[2], gaze_depth.shape[3])
-        gaze_origin_z_map = torch.sum(gaze_depth * softmax_gaze_origin_formatted, dim=1)
-        gaze_origin_z = torch.gather(gaze_origin_z_map.view(batch_size, -1), 1, gaze_origin_xy_idx.unsqueeze(1))
+        # gaze_origin_z_map = torch.sum(gaze_depth * softmax_gaze_origin_formatted, dim=1)
+        # gaze_origin_z = torch.gather(gaze_origin_z_map.view(batch_size, -1), 1, gaze_origin_xy_idx.unsqueeze(1))
+        gaze_origin_z = torch.sum(gaze_depth * softmax_gaze_origin_formatted, dim=(2, 3))
 
         # Normalize the gaze direction
         gaze_direction = F.normalize(gaze_direction, p=2, dim=1)
@@ -78,7 +79,7 @@ class EFEModel(pl.LightningModule):
  
         # Compute the gaze origin loss (Heatmap MSE Loss)
         # gt_heatmap = 100.0*generate_2d_gaussian_heatmap_torch(batch['face_origin_2d'], self.img_size, sigma=12.0)
-        gt_heatmap = 100*generate_2d_gaussian_heatmap_torch(batch['face_origin_2d'], self.img_size, sigma=12.0)
+        gt_heatmap = self.config['train']['heatmap_coef']*generate_2d_gaussian_heatmap_torch(batch['face_origin_2d'], self.img_size, sigma=12.0)
         gaze_origin_loss = F.mse_loss(output['gaze_origin'][:, 0], gt_heatmap)
         gaze_origin_xy_loss = F.mse_loss(output['gaze_origin_xy'], batch['face_origin_2d'])
 
@@ -171,9 +172,9 @@ class EFEModel(pl.LightningModule):
         # Log the images (Give them different names)
         np_cpu_images = batch['image'].cpu().numpy()
 
-        gaze_origin_gt = []
+        gaze_origin = []
         gaze_origin_heatmaps = []
-        gaze_origin_heatmaps_gt = []
+        # gaze_origin_heatmaps_gt = []
         gaze_direction_imgs = []
         gaze_depth_imgs = []
         gaze_pog_imgs = []
@@ -184,16 +185,17 @@ class EFEModel(pl.LightningModule):
             gaze_origin_xy = batch['face_origin_2d'][i].cpu().numpy()
             vis_gt_gaze_origin = vis.draw_gaze_origin(img, gaze_origin_xy, color=(0, 0, 255))
             vis_gaze_origin = vis.draw_gaze_origin(vis_gt_gaze_origin, output['gaze_origin_xy'][i].detach().cpu().numpy(), color=(255, 0, 0))
-            gaze_origin_gt.append(vis_gaze_origin)
+            gaze_origin.append(vis_gaze_origin)
 
             # Visualizing the gaze origin heatmaps
             gt_gaze_origin_heatmap = losses_output['artifacts']['gaze_origin_heatmap'][i].detach().cpu().numpy()
             vis_gt_gaze_origin_heatmap = vis.draw_gaze_origin_heatmap(img, gt_gaze_origin_heatmap)
-            gaze_origin_heatmaps_gt.append(vis_gt_gaze_origin_heatmap)
-
             gaze_origin_heatmap = output['gaze_origin'][i].detach().cpu().numpy()
             vis_gaze_origin_heatmap = vis.draw_gaze_origin_heatmap(img, gaze_origin_heatmap[0])
-            gaze_origin_heatmaps.append(vis_gaze_origin_heatmap)
+
+            # Concatenate the heatmaps together
+            vis_gaze_origin_heatmaps = np.concatenate([vis_gt_gaze_origin_heatmap, vis_gaze_origin_heatmap], axis=1)
+            gaze_origin_heatmaps.append(vis_gaze_origin_heatmaps)
 
             # Visualize the sparse depth map
             gaze_depth = output['gaze_depth'][i].detach().cpu().numpy()
@@ -247,9 +249,9 @@ class EFEModel(pl.LightningModule):
             vis_pred_pog = vis.draw_pog(vis_gt_pog, pog_point_pred, color=(255, 0, 0))
             gaze_pog_imgs.append(vis_pred_pog)
 
-        tb_logger.add_images(f"{prefix}_gaze_origin", np.moveaxis(np.stack(gaze_origin_gt), -1, 1), self.current_epoch)
+        tb_logger.add_images(f"{prefix}_gaze_origin", np.moveaxis(np.stack(gaze_origin), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_pred_gaze_origin_heatmaps", np.moveaxis(np.stack(gaze_origin_heatmaps), -1, 1), self.current_epoch)
-        tb_logger.add_images(f"{prefix}_gt_gaze_origin_heatmaps", np.moveaxis(np.stack(gaze_origin_heatmaps_gt), -1, 1), self.current_epoch)
+        # tb_logger.add_images(f"{prefix}_gt_gaze_origin_heatmaps", np.moveaxis(np.stack(gaze_origin_heatmaps_gt), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_gaze_depth", np.moveaxis(np.stack(gaze_depth_imgs), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_gaze_direction", np.moveaxis(np.stack(gaze_direction_imgs), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_pog", np.moveaxis(np.stack(gaze_pog_imgs), -1, 1), self.current_epoch)
