@@ -46,6 +46,8 @@ export type FaceControlsProps = {
   autostart?: boolean;
   /** Enable/disable the webcam, default: true */
   webcam?: boolean;
+  /** Enable/disable the webcam, default: false */
+  screen?: boolean;
   /** A custom video URL or mediaStream, default: undefined */
   webcamVideoTextureSrc?: VideoTextureSrc;
   /** Disable the rAF camera position/rotation update, default: false */
@@ -103,6 +105,7 @@ export const FaceControls = forwardRef<FaceControlsApi, FaceControlsProps>(
       camera,
       autostart = true,
       webcam = true,
+      screen = false,
       webcamVideoTextureSrc,
       manualUpdate = false,
       manualDetect = false,
@@ -308,9 +311,11 @@ export const FaceControls = forwardRef<FaceControlsApi, FaceControlsProps>(
         )}
 
         {/* Screen */}
-        <Suspense fallback={null}>
-          <ScreenVideo ref={screenApiRef} autostart={autostart} videoTextureSrc={webcamVideoTextureSrc}/>
-        </Suspense>
+        {screen && (
+          <Suspense fallback={null}>
+            <ScreenVideo ref={screenApiRef} autostart={autostart} videoTextureSrc={webcamVideoTextureSrc}/>
+          </Suspense>
+        )}
 
         <Facemesh
           ref={facemeshApiRef}

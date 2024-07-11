@@ -31,6 +31,7 @@ function Scene() {
 
   const gui = useControls({
     camera: { value: 'cc', options: ['user', 'cc'] },
+    screen: false,
     webcam: folder({
       webcam: true,
       autostart: true,
@@ -111,6 +112,7 @@ function Scene() {
           ref={faceControlsApiRef}
           autostart={gui.autostart}
           makeDefault
+          screen={gui.screen}
           webcam={gui.webcam}
           webcamVideoTextureSrc={gui.webcamVideoTextureSrc}
           manualUpdate
