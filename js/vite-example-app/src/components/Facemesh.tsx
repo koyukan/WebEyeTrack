@@ -454,7 +454,7 @@ export const FacemeshEye = React.forwardRef<FacemeshEyeApi, FacemeshEyeProps>(({
               <Line
                 points={[
                   [0, 0, 0],
-                  [0, 0, -2],
+                  [0, 0, -100],
                 ]}
                 lineWidth={1}
                 color={color}
