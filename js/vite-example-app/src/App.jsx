@@ -80,8 +80,8 @@ function Scene() {
   )
   const onScreenVideoFrame = useCallback(
     (e) => {
-      controls.detect(e.texture.source.data, e.time)
-
+      // controls.detect(e.texture.source.data, e.time)
+      // console.log("Screen")
       screenMatRef.current.map = e.texture
     },
     [controls]
@@ -140,8 +140,8 @@ function Scene() {
         />
       </group>
 
-      <Screen flipHorizontal>
-        <meshStandardMaterial ref={screenMatRef} side={THREE.DoubleSide} transparent opacity={0.9} />
+      <Screen>
+        <meshStandardMaterial ref={screenMatRef} side={THREE.DoubleSide} transparent opacity={0.9}/>
       </Screen>
 
       {/* <axesHelper /> */}

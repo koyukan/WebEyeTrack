@@ -275,7 +275,6 @@ export const FaceControls = forwardRef<FaceControlsApi, FaceControlsProps>(
         if (onWebcamVideoFrame) onWebcamVideoFrame(e);
       };
       const onScreenVideoFrameCb = (e: THREE.Event) => {
-        if (!manualDetect) detect(e.texture.source.data, e.time);
         if (onScreenVideoFrame) onScreenVideoFrame(e);
       }
 
@@ -286,7 +285,7 @@ export const FaceControls = forwardRef<FaceControlsApi, FaceControlsProps>(
         api.removeEventListener("webcamVideoFrame", onWebcamVideoFrameCb);
         api.removeEventListener("screenVideoFrame", onScreenVideoFrameCb);
       };
-    }, [api, detect, faceLandmarker, manualDetect, onWebcamVideoFrame]);
+    }, [api, detect, faceLandmarker, manualDetect, onWebcamVideoFrame, onScreenVideoFrame]);
 
     // `controls` global state
     useEffect(() => {
@@ -306,7 +305,7 @@ export const FaceControls = forwardRef<FaceControlsApi, FaceControlsProps>(
         {/* Webcam */}
         {webcam && (
           <Suspense fallback={null}>
-            {/* <Webcam ref={webcamApiRef} autostart={autostart} videoTextureSrc={webcamVideoTextureSrc} /> */}
+            <Webcam ref={webcamApiRef} autostart={autostart} videoTextureSrc={webcamVideoTextureSrc} />
           </Suspense>
         )}
 
