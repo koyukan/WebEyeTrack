@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import React, { forwardRef, useRef, useEffect } from 'react';
-import { Line } from '@react-three/drei';
+import { Line, Plane } from '@react-three/drei';
 import { useThree } from '@react-three/fiber';
 
 const { DEG2RAD } = THREE.MathUtils;
 
 export const Camera = forwardRef(({
+  children,
   scale = 1,
   aspect = 1,
   transform = { position: [0, 0, 0], rotation: [0, 0, 0] },
@@ -54,6 +55,12 @@ export const Camera = forwardRef(({
 
   const frustumPoints = applyTransformation(calculateFrustumPoints(), transform.position, transform.rotation);
 
+  let imagePlanePosition = frustumPoints[4].clone();
+  imagePlanePosition.x = 0.5 * (frustumPoints[4].x + frustumPoints[3].x);
+  imagePlanePosition.y = 0.5 * (frustumPoints[4].y + frustumPoints[1].y);
+  let imagePlaneWidth = frustumPoints[4].distanceTo(frustumPoints[3]);
+  let imagePlaneHeight = frustumPoints[4].distanceTo(frustumPoints[1]);
+
   return (
     <group {...props}>
       {/* Lines from the camera origin to the near plane */}
@@ -73,6 +80,9 @@ export const Camera = forwardRef(({
       <Line points={[frustumPoints[2], frustumPoints[3]]} color="red" />
       <Line points={[frustumPoints[3], frustumPoints[4]]} color="red" />
       <Line points={[frustumPoints[4], frustumPoints[1]]} color="red" />
+      <Plane args={[imagePlaneWidth,imagePlaneHeight]} position={imagePlanePosition} scale-x={-1}>
+        {children}
+      </Plane>
 
       {/* Far plane lines */}
       <Line points={[frustumPoints[5], frustumPoints[6]]} color="red" />

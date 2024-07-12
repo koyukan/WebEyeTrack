@@ -81,11 +81,13 @@ function Scene() {
   const faceControlsApiRef = useRef()
 
   const screenMatRef = useRef(null)
+  const webcamMatRef = useRef(null)
   const onWebcamVideoFrame = useCallback(
     (e) => {
       controls.detect(e.texture.source.data, e.time)
 
       // screenMatRef.current.map = e.texture
+      webcamMatRef.current.map = e.texture
     },
     [controls]
   )
@@ -159,7 +161,9 @@ function Scene() {
         scale={1}
         aspect={1}
         transform={{ position: [0, h, -h/2], rotation: [180, 0, 0] }}
-      />
+      >
+        <meshStandardMaterial ref={webcamMatRef} side={THREE.DoubleSide} transparent opacity={0.9}/>
+      </Camera>
 
       <Ground />
       <CameraControls />
