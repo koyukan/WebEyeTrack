@@ -312,7 +312,7 @@ export const FaceControls = forwardRef<FaceControlsApi, FaceControlsProps>(
         {/* Screen */}
         {screen && (
           <Suspense fallback={null}>
-            <ScreenVideo ref={screenApiRef} autostart={autostart} videoTextureSrc={webcamVideoTextureSrc}/>
+            <ScreenVideo ref={screenApiRef} autostart={autostart} videoTextureSrc={""}/>
           </Suspense>
         )}
 
