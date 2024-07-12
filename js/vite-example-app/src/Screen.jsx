@@ -14,15 +14,11 @@ export const Screen = forwardRef(({ children, flipHorizontal = false, ...props }
 
   // px to cm
   const pxToCm = 0.000264583333;
-  
   const w = screenWidth * pxToCm
   const h = screenHeight * pxToCm
   const d = 0.01
 
-  // const { openAngle } = useControls({
-  //   Laptop: folder({ openAngle: { value: 94, min: 0, max: 120 } }),
-  // });
-  const openAngle = 94
+  const openAngle = 90
 
   const d2 = d / 10
 

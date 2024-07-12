@@ -10,6 +10,7 @@ import { FaceLandmarker } from './components/FaceLandmarker'
 import { FaceControls } from './components/FaceControls'
 
 import { Screen } from './Screen.jsx'
+import { Camera } from './Camera.jsx'
 
 const city = import('@pmndrs/assets/hdri/city.exr')
 
@@ -28,6 +29,16 @@ export default function App() {
 
 function Scene() {
   const vids = ['https://storage.googleapis.com/abernier-portfolio/metahumans.mp4', 'https://storage.googleapis.com/abernier-portfolio/metahumans2.mp4']
+
+  // Screen dimensions
+  const screenWidth = screen.width;
+  const screenHeight = screen.height;
+  // console.log(`Screen Width: ${screenWidth}px, Screen Height: ${screenHeight}px`);
+
+  // px to cm
+  const pxToCm = 0.000264583333;
+  const w = screenWidth * pxToCm
+  const h = screenHeight * pxToCm
 
   const gui = useControls({
     camera: { value: 'cc', options: ['user', 'cc'] },
@@ -144,9 +155,13 @@ function Scene() {
         <meshStandardMaterial ref={screenMatRef} side={THREE.DoubleSide} transparent opacity={0.9}/>
       </Screen>
 
-      {/* <axesHelper /> */}
-      <Ground />
+      <Camera 
+        scale={1}
+        aspect={1}
+        transform={{ position: [0, h, -h/2], rotation: [180, 0, 0] }}
+      />
 
+      <Ground />
       <CameraControls />
 
       <Environment files={suspend(city).default} />
