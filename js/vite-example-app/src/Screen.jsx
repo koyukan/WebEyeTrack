@@ -24,10 +24,12 @@ export const Screen = forwardRef(({ children, flipHorizontal = false, ...props }
 
   return (
     <group {...props}>
-      <group position-z={-h / 2}>
+      {/* <group position-z={-h / 2}> */}
+      <group >
         {/* Lid */}
-        <group position-y={d / 2} rotation-x={(90 - openAngle) * DEG2RAD}>
-          <Box args={[w, h, d2]} position-y={h / 2} position-z={-d2 / 2}>
+        <group rotation-x={(90 - openAngle) * DEG2RAD}>
+          {/* <Box args={[w, h, d2]} position-y={h / 2} position-z={-d2 / 2}> */}
+          <Box args={[w, h, d2]} position-y={-h/2} position-z={-d2 / 2}>
             <meshStandardMaterial color="gray" side={THREE.DoubleSide} />
             <Plane args={[w, h]} position-z={d2 / 2 + 0.0001}>
               <meshStandardMaterial color="black" />

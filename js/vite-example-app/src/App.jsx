@@ -26,19 +26,19 @@ export default function App() {
     </>
   )
 }
+  
+// Screen dimensions
+const screenWidth = screen.width;
+const screenHeight = screen.height;
+// console.log(`Screen Width: ${screenWidth}px, Screen Height: ${screenHeight}px`);
+
+// px to cm
+const pxToCm = 0.000264583333;
+const w = screenWidth * pxToCm
+const h = screenHeight * pxToCm
 
 function Scene() {
   const vids = ['https://storage.googleapis.com/abernier-portfolio/metahumans.mp4', 'https://storage.googleapis.com/abernier-portfolio/metahumans2.mp4']
-
-  // Screen dimensions
-  const screenWidth = screen.width;
-  const screenHeight = screen.height;
-  // console.log(`Screen Width: ${screenWidth}px, Screen Height: ${screenHeight}px`);
-
-  // px to cm
-  const pxToCm = 0.000264583333;
-  const w = screenWidth * pxToCm
-  const h = screenHeight * pxToCm
 
   const gui = useControls({
     camera: { value: 'cc', options: ['user', 'cc'] },
@@ -64,11 +64,11 @@ function Scene() {
     offsetScalar: { value: 60, min: 0, max: 500 },
     eyes: true,
     eyesAsOrigin: false,
-    origin: { value: 0, optional: true, disabled: true, min: 0, max: 477, step: 1 },
-    depth: { value: 0.15, min: 0, max: 1, optional: true, disabled: true },
+    origin: { value: 0, optional: true, disabled: false, min: 0, max: 477, step: 1 },
+    depth: { value: 0.15, min: 0, max: 1, optional: true, disabled: false},
     player: folder({
       rotation: [0, 0, 0],
-      position: [-0, 0.2, 0]
+      position: [-0, 0, 0]
     })
   })
 
@@ -85,16 +85,12 @@ function Scene() {
   const onWebcamVideoFrame = useCallback(
     (e) => {
       controls.detect(e.texture.source.data, e.time)
-
-      // screenMatRef.current.map = e.texture
       webcamMatRef.current.map = e.texture
     },
     [controls]
   )
   const onScreenVideoFrame = useCallback(
     (e) => {
-      // controls.detect(e.texture.source.data, e.time)
-      // console.log("Screen")
       screenMatRef.current.map = e.texture
     },
     [controls]
@@ -161,7 +157,9 @@ function Scene() {
       <Camera 
         scale={1}
         aspect={1}
-        transform={{ position: [0, h, -h/2], rotation: [180, 0, 0] }}
+        // transform={{ position: [0, h, -h/2], rotation: [180, 0, 0] }}
+        // transform={{ position: [0, h, 0], rotation: [180, 0, 0] }}
+        transform={{ position: [0, 0, 0], rotation: [180, 0, 0] }}
       >
         <meshStandardMaterial ref={webcamMatRef} side={THREE.DoubleSide} transparent opacity={0.9}/>
       </Camera>
@@ -185,7 +183,8 @@ function Ground() {
     fadeDistance: 10,
     fadeStrength: 2,
     followCamera: false,
-    infiniteGrid: true
+    infiniteGrid: true,
+    position: [0, -h, 0],
   }
   return <Grid args={[10, 10]} {...gridConfig} />
 }
