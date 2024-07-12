@@ -113,7 +113,7 @@ export const FaceControls = forwardRef<FaceControlsApi, FaceControlsProps>(
       onScreenVideoFrame,
       smoothTime = 0.25,
       offset = true,
-      offsetScalar = 80,
+      offsetScalar = 10,
       eyes = false,
       eyesAsOrigin = true,
       depth = 0.15,

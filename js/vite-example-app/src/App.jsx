@@ -61,7 +61,7 @@ function Scene() {
     }),
     smoothTime: { value: 0.45, min: 0.000001, max: 1 },
     offset: true,
-    offsetScalar: { value: 60, min: 0, max: 500 },
+    offsetScalar: { value: 10, min: 1, max: 500 },
     eyes: true,
     eyesAsOrigin: false,
     origin: { value: 0, optional: true, disabled: false, min: 0, max: 477, step: 1 },

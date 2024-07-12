@@ -5,6 +5,10 @@ import { useThree } from "@react-three/fiber";
 import { Line } from "@react-three/drei";
 import { DEG2RAD } from "three/src/math/MathUtils";
 
+const VIDEO_HEIGHT = 480
+const VIDEO_WIDTH = 640
+const IMAGE_SIZE = [VIDEO_WIDTH, VIDEO_HEIGHT]
+
 export type MediaPipeFaceMesh = typeof FacemeshDatas.SAMPLE_FACE;
 
 export type MediaPipePoints =
@@ -79,6 +83,25 @@ function mean(v1: THREE.Vector3, v2: THREE.Vector3) {
   return v1.clone().add(v2).multiplyScalar(0.5);
 }
 
+const HUMAN_IRIS_RADIUS = 11.8; // in mm (example value, adjust as needed)
+
+function estimateDepth(irisDiameter, irisCenter, focalLengthPixel, imageSize) {
+  const origin = imageSize.map((size) => size / 2.0);
+  const y = Math.sqrt(Math.pow(origin[0] - irisCenter[0], 2) + Math.pow(origin[1] - irisCenter[1], 2));
+  const x = Math.sqrt(Math.pow(focalLengthPixel, 2) + Math.pow(y, 2));
+  const depthMm = (HUMAN_IRIS_RADIUS * x) / irisDiameter;
+  const depthCm = depthMm / 10.0;
+  return depthCm;
+}
+
+function projectTo2D(point3D, focalLength, principalPoint) {
+  const [X, Y, Z] = point3D;
+  const [c_x, c_y] = principalPoint;
+  const x_2D = (focalLength * X) / Z + c_x;
+  const y_2D = (focalLength * Y) / Z + c_y;
+  return [x_2D, y_2D];
+}
+
 export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
   (
     {
@@ -133,6 +156,61 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
 
       faceGeometry.setFromPoints(points as THREE.Vector3[]);
       faceGeometry.setDrawRange(0, FacemeshDatas.TRIANGULATION.length);
+
+      //
+      // Compute Depth based on Iris
+      //
+      const leftEyeLandmarks = [263, 362, 386, 374, 380]
+
+      // Compute the xy points of the eye contour
+      const xyPoints = leftEyeLandmarks.map((i) => {
+        const p = points[i];
+        return [p.x * VIDEO_WIDTH, p.y * VIDEO_HEIGHT];
+      });
+
+      // Compute the iris center
+      const irisCenter = [0, 0];
+      for (let i = 0; i < xyPoints.length; i++) {
+        irisCenter[0] += xyPoints[i][0];
+        irisCenter[1] += xyPoints[i][1];
+      }
+      irisCenter[0] /= xyPoints.length;
+
+      // Compute the iris diameter
+      let maxDistance = 0
+      for (let i = 0; i < xyPoints.length; i++) {
+        for (let j = i+1; j < xyPoints.length; j++) {
+          const distance = Math.sqrt(Math.pow(xyPoints[i][0] - xyPoints[j][0], 2) + Math.pow(xyPoints[i][1] - xyPoints[j][1], 2));
+          if (distance > maxDistance) {
+            maxDistance = distance;
+          }
+        }
+      }
+      const depth = estimateDepth(maxDistance/1.8, irisCenter, VIDEO_WIDTH, IMAGE_SIZE);
+      console.log("Depth (cm): ", depth);
+
+      // Compute the depth
+      // First, project the center to the image
+      // const irisCenter = projectTo2D(sphere.center.toArray(), VIDEO_WIDTH/2, [VIDEO_WIDTH/2, VIDEO_HEIGHT/2]);
+      // let newPoints = [];
+      // for (let i = 0; i < eyeContourPoints.length; i++) {
+      //   const p = projectTo2D(eyeContourPoints[i].toArray(), VIDEO_WIDTH/2, [VIDEO_WIDTH/2, VIDEO_HEIGHT/2]);
+      //   newPoints.push(p);
+      //   console.log("Projected point: ", p);
+      // }
+      // Compute the iris diameter
+      // let maxDistance = 0
+      // for (let i = 0; i < newPoints.length; i++) {
+      //   for (let j = i+1; j < newPoints.length; j++) {
+      //     const distance = Math.sqrt(Math.pow(newPoints[i][0] - newPoints[j][0], 2) + Math.pow(newPoints[i][1] - newPoints[j][1], 2));
+      //     if (distance > maxDistance) {
+      //       maxDistance = distance;
+      //     }
+      //   }
+      // }
+      // // const irisCenter = new THREE.Vector2(sphere.center.x * VIDEO_WIDTH, sphere.center.y * VIDEO_HEIGHT);
+      // const depth = estimateDepth(maxDistance, irisCenter, VIDEO_WIDTH, IMAGE_SIZE);
+      // console.log("Depth (cm): ", depth);
 
       //
       // A. compute sightDir vector
@@ -226,17 +304,17 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
       }
 
       // 4. re-scale
-      if (scaleRef.current) {
-        let scale = 1;
-        if (width || height || depth) {
-          faceGeometry.boundingBox!.getSize(bboxSize);
-          if (width) scale = width / bboxSize.x; // fit in width
-          if (height) scale = height / bboxSize.y; // fit in height
-          if (depth) scale = depth / bboxSize.z; // fit in depth
-        }
+      // if (scaleRef.current) {
+      //   let scale = 1;
+      //   if (width || height || depth) {
+      //     faceGeometry.boundingBox!.getSize(bboxSize);
+      //     // if (width) scale = width / bboxSize.x; // fit in width
+      //     // if (height) scale = height / bboxSize.y; // fit in height
+      //     if (depth) scale = depth / bboxSize.z; // fit in depth
+      //   }
 
-        scaleRef.current.scale.setScalar(scale !== 1 ? scale : 1);
-      }
+      //   scaleRef.current.scale.setScalar(scale !== 1 ? scale : 1);
+      // }
 
       faceGeometry.computeVertexNormals();
       faceGeometry.attributes.position.needsUpdate = true;
