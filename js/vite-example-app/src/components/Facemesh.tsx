@@ -94,12 +94,103 @@ function estimateDepth(irisDiameter, irisCenter, focalLengthPixel, imageSize) {
   return depthCm;
 }
 
-function projectTo2D(point3D, focalLength, principalPoint) {
-  const [X, Y, Z] = point3D;
-  const [c_x, c_y] = principalPoint;
-  const x_2D = (focalLength * X) / Z + c_x;
-  const y_2D = (focalLength * Y) / Z + c_y;
-  return [x_2D, y_2D];
+function getConvexHull(points) {
+  // Sort the points lexicographically (tuples compare by x first, then by y)
+  points.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+
+  // Build the lower hull
+  const lower = [];
+  for (let i = 0; i < points.length; i++) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], points[i]) <= 0) {
+      lower.pop();
+    }
+    lower.push(points[i]);
+  }
+
+  // Build the upper hull
+  const upper = [];
+  for (let i = points.length - 1; i >= 0; i--) {
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], points[i]) <= 0) {
+      upper.pop();
+    }
+    upper.push(points[i]);
+  }
+
+  // Concatenate lower and upper hull to get the full hull (remove last point of each half because it's repeated at the beginning of the other half)
+  upper.pop();
+  lower.pop();
+  return lower.concat(upper);
+}
+
+function cross(o, a, b) {
+  return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+}
+
+function minEnclosingCircle(points) {
+  if (points.length === 0) {
+    return { center: [0, 0], radius: 0 };
+  }
+
+  // Start with a single point
+  let circle = { center: points[0], radius: 0 };
+
+  for (let i = 1; i < points.length; i++) {
+    if (!isPointInCircle(circle, points[i])) {
+      circle = makeCircleOnePoint(points.slice(0, i + 1), points[i]);
+    }
+  }
+
+  return circle;
+}
+
+function makeCircleOnePoint(points, p) {
+  let circle = { center: p, radius: 0 };
+
+  for (let i = 0; i < points.length; i++) {
+    if (!isPointInCircle(circle, points[i])) {
+      circle = makeCircleTwoPoints(points.slice(0, i + 1), p, points[i]);
+    }
+  }
+
+  return circle;
+}
+
+function makeCircleTwoPoints(points, p1, p2) {
+  const center = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
+  let radius = distance(p1, p2) / 2;
+
+  let circle = { center, radius };
+
+  for (let i = 0; i < points.length; i++) {
+    if (!isPointInCircle(circle, points[i])) {
+      circle = makeCircleThreePoints(p1, p2, points[i]);
+    }
+  }
+
+  return circle;
+}
+
+function makeCircleThreePoints(p1, p2, p3) {
+  const A = p2[0] - p1[0];
+  const B = p2[1] - p1[1];
+  const C = p3[0] - p1[0];
+  const D = p3[1] - p1[1];
+  const E = A * (p1[0] + p2[0]) + B * (p1[1] + p2[1]);
+  const F = C * (p1[0] + p3[0]) + D * (p1[1] + p3[1]);
+  const G = 2 * (A * (p3[1] - p2[1]) - B * (p3[0] - p2[0]));
+
+  const center = [(D * E - B * F) / G, (A * F - C * E) / G];
+  const radius = distance(center, p1);
+
+  return { center, radius };
+}
+
+function isPointInCircle(circle, point) {
+  return distance(circle.center, point) <= circle.radius;
+}
+
+function distance(p1, p2) {
+  return Math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2);
 }
 
 export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
@@ -168,25 +259,31 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
         return [p.x * VIDEO_WIDTH, p.y * VIDEO_HEIGHT];
       });
 
-      // Compute the iris center
-      const irisCenter = [0, 0];
-      for (let i = 0; i < xyPoints.length; i++) {
-        irisCenter[0] += xyPoints[i][0];
-        irisCenter[1] += xyPoints[i][1];
-      }
-      irisCenter[0] /= xyPoints.length;
+      // Compute the convex hull of the 2D points
+      const hull = getConvexHull(xyPoints);
 
-      // Compute the iris diameter
-      let maxDistance = 0
-      for (let i = 0; i < xyPoints.length; i++) {
-        for (let j = i+1; j < xyPoints.length; j++) {
-          const distance = Math.sqrt(Math.pow(xyPoints[i][0] - xyPoints[j][0], 2) + Math.pow(xyPoints[i][1] - xyPoints[j][1], 2));
-          if (distance > maxDistance) {
-            maxDistance = distance;
-          }
-        }
-      }
-      const depth = estimateDepth(maxDistance/1.8, irisCenter, VIDEO_WIDTH, IMAGE_SIZE);
+      // Compute the minimum enclosing circle
+      const { center, radius } = minEnclosingCircle(hull);
+
+      // Compute the iris center
+      // const irisCenter = [0, 0];
+      // for (let i = 0; i < xyPoints.length; i++) {
+      //   irisCenter[0] += xyPoints[i][0];
+      //   irisCenter[1] += xyPoints[i][1];
+      // }
+      // irisCenter[0] /= xyPoints.length;
+
+      // // Compute the iris diameter
+      // let maxDistance = 0
+      // for (let i = 0; i < xyPoints.length; i++) {
+      //   for (let j = i+1; j < xyPoints.length; j++) {
+      //     const distance = Math.sqrt(Math.pow(xyPoints[i][0] - xyPoints[j][0], 2) + Math.pow(xyPoints[i][1] - xyPoints[j][1], 2));
+      //     if (distance > maxDistance) {
+      //       maxDistance = distance;
+      //     }
+      //   }
+      // }
+      const depth = estimateDepth(radius/1.7, center, VIDEO_WIDTH, IMAGE_SIZE);
       console.log("Depth (cm): ", depth);
 
       // Compute the depth
