@@ -14,9 +14,10 @@ export const Screen = forwardRef(({ children, flipHorizontal = false, ...props }
 
   // px to cm
   // const pxToCm = 0.000264583333;
+  const pxToCm = 0.01536458;
   const pxToM = 0.0001536458;
-  const w = screenWidth * pxToM
-  const h = screenHeight * pxToM
+  const w = screenWidth * pxToCm
+  const h = screenHeight * pxToCm
   const d = 0.01
 
   const openAngle = 90

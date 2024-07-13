@@ -9,6 +9,24 @@ const VIDEO_HEIGHT = 480
 const VIDEO_WIDTH = 640
 const IMAGE_SIZE = [VIDEO_WIDTH, VIDEO_HEIGHT]
 
+const fov = 70;  // Example field of view in degrees
+
+// Compute the focal lengths based on the field of view
+const fovRadians = THREE.MathUtils.degToRad(fov);
+const fx = VIDEO_WIDTH / (2 * Math.tan(fovRadians / 2));
+const fy = VIDEO_HEIGHT / (2 * Math.tan(fovRadians / 2));
+
+// Set the principal point at the center of the image
+const cx = VIDEO_WIDTH / 2;
+const cy = VIDEO_HEIGHT / 2;
+
+// Create the intrinsic matrix
+const intrinsicMatrix = new THREE.Matrix3().set(
+  fx, 0, cx,
+  0, fy, cy,
+  0, 0, 1
+);
+
 export type MediaPipeFaceMesh = typeof FacemeshDatas.SAMPLE_FACE;
 
 export type MediaPipePoints =
@@ -213,6 +231,31 @@ function updateFaceTransformationMatrix(faceMatrix, averageDepthCm, scalingFacto
   return newFaceMatrix;
 }
 
+function reprojection3D(x, y, z, intrinsicMatrix) {
+  // Extract intrinsic parameters
+  const fx = intrinsicMatrix.elements[0];
+  const fy = intrinsicMatrix.elements[4];
+  const cx = intrinsicMatrix.elements[6];
+  const cy = intrinsicMatrix.elements[7];
+
+  // Reproject to 3D
+  const diff = x - cx
+  const diff1 = diff * z
+  const diff2 = diff1 / fx
+  const X1 = (x - cx) * z / fx;
+  const Y1 = (y - cy) * z / fy;
+  return new THREE.Vector3(X1, Y1, z);
+}
+
+function computeCentroid(points) {
+  const centroid = new THREE.Vector3();
+  points.forEach(point => {
+    centroid.add(point);
+  });
+  centroid.divideScalar(points.length);
+  return centroid;
+}
+
 export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
   (
     {
@@ -265,7 +308,15 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
       const faceGeometry = meshRef.current?.geometry;
       if (!faceGeometry) return;
 
-      faceGeometry.setFromPoints(points as THREE.Vector3[]);
+      // 
+      // Normalize points (making the face fit in a 1x1x1 cube, dividing by the width of the face)
+      //
+      // const facePoints: THREE.Vector3[] = points as THREE.Vector3[];
+      const facePoints = points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+      const faceWidth = facePoints[10].distanceTo(facePoints[234]);
+      facePoints.forEach((p) => p.divideScalar(faceWidth));
+
+      faceGeometry.setFromPoints(facePoints);
       faceGeometry.setDrawRange(0, FacemeshDatas.TRIANGULATION.length);
 
       //
@@ -294,17 +345,39 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
 
       const leftDepth = estimateDepth(leftCircle.radius/1.7, leftCircle.center, VIDEO_WIDTH, IMAGE_SIZE);
       const rightDepth = estimateDepth(rightCircle.radius/1.7, rightCircle.center, VIDEO_WIDTH, IMAGE_SIZE);
-      const averageDepth = (leftDepth + rightDepth) / 2;
 
-      // Compute the scaling factor with respect to the facialTransformationMatrix
-      const originalDepth = (facialTransformationMatrix?.data[14] || 0) * -1;
-      const scalingFactor = averageDepth / originalDepth;
+      // Reproject the 2D eye points to the 3D in cm
+      const leftCentroidCm = reprojection3D(leftCircle.center[0], leftCircle.center[1], leftDepth, intrinsicMatrix);
+      const righCentroidCm = reprojection3D(rightCircle.center[0], rightCircle.center[1], rightDepth, intrinsicMatrix);
+
+      // Compute the 3D points of eyes in canonical face coordinate space
+      const leftXYZPoints = leftEyeLandmarks.map((i) => {
+        const p = points[i];
+        return new THREE.Vector3(p.x, p.y, p.z);
+      })
+      const rightXYZPoints = rightEyeLandmarks.map((i) => {
+        const p = points[i];
+        return new THREE.Vector3(p.x, p.y, p.z);
+      })
+      const leftCentroidCf = computeCentroid(leftXYZPoints);
+      const rightCentroidCf = computeCentroid(rightXYZPoints);
+
+      // Compute the xyz scaling based on the inter-pupillary distance (separated by dimension)
+      const interPupillaryDistanceCf = new THREE.Vector3().subVectors(leftCentroidCf, rightCentroidCf);
+      const interPupillaryDistanceCm = new THREE.Vector3().subVectors(leftCentroidCm, righCentroidCm);
+      // const interPupillaryDistanceCf = leftCentroidCf.distanceTo(rightCentroidCf);
+      // const interPupillaryDistanceCm = leftCentroidCm.distanceTo(righCentroidCm);
+      const scalingFactor = new THREE.Vector3().copy(interPupillaryDistanceCm).divide(interPupillaryDistanceCf);
+      // const scalingFactor = interPupillaryDistanceCm / interPupillaryDistanceCf;
 
       if (facialTransformationMatrix) {
         // from facialTransformationMatrix
         transform.matrix.fromArray(facialTransformationMatrix.data);
-        // transform.matrix = updateFaceTransformationMatrix(transform.matrix, averageDepth, scalingFactor);
         transform.matrix.decompose(transform.position, transform.quaternion, transform.scale);
+
+        // Update the scale of the face transformation matrix
+        // transform.scale.set(1, 1, 1);
+        // transform.matrix.makeScale(scalingFactor.x, scalingFactor.y, scalingFactor.z);
 
         // Rotation: y and z axes are inverted
         transform.rotation.y *= -1;
@@ -315,7 +388,8 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
         if (offset) {
           transform.position.y *= -1;
           transform.position.z *= -1;
-          offsetRef.current?.position.copy(transform.position.divideScalar(offsetScalar));
+          // offsetRef.current?.position.copy(transform.position.divideScalar(offsetScalar));
+          offsetRef.current?.position.set(0, 0, 0); // reset
         } else {
           offsetRef.current?.position.set(0, 0, 0); // reset
         }
