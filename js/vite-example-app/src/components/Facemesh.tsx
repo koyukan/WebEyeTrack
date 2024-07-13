@@ -193,6 +193,22 @@ function distance(p1, p2) {
   return Math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2);
 }
 
+function updateFaceTransformationMatrix(faceMatrix, averageDepthCm, scalingFactor) {
+  // Create a scaling matrix
+  const scaleMatrix = new THREE.Matrix4().makeScale(scalingFactor, scalingFactor, scalingFactor);
+  
+  // Create a translation matrix
+  const translationMatrix = new THREE.Matrix4().makeTranslation(0, 0, -averageDepthCm);
+
+  // Apply the scaling and translation to the face transformation matrix
+  // faceMatrix.multiplyMatrices(translationMatrix, scaleMatrix);
+  // faceMatrix.multiplyMatrices(scaleMatrix);
+  const oldFaceMatrix = faceMatrix.clone();
+  const newFaceMatrix = faceMatrix.multiply(scaleMatrix);
+
+  return faceMatrix;
+}
+
 export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
   (
     {
@@ -252,73 +268,38 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
       // Compute Depth based on Iris
       //
       const leftEyeLandmarks = [263, 362, 386, 374, 380]
+      const rightEyeLandmarks = [33, 133, 159, 145, 153]
 
       // Compute the xy points of the eye contour
-      const xyPoints = leftEyeLandmarks.map((i) => {
+      const leftXYPoints = leftEyeLandmarks.map((i) => {
+        const p = points[i];
+        return [p.x * VIDEO_WIDTH, p.y * VIDEO_HEIGHT];
+      });
+      const rightXYPoints = rightEyeLandmarks.map((i) => {
         const p = points[i];
         return [p.x * VIDEO_WIDTH, p.y * VIDEO_HEIGHT];
       });
 
       // Compute the convex hull of the 2D points
-      const hull = getConvexHull(xyPoints);
+      const leftHull = getConvexHull(leftXYPoints);
+      const rightHull = getConvexHull(rightXYPoints);
 
       // Compute the minimum enclosing circle
-      const { center, radius } = minEnclosingCircle(hull);
+      const leftCircle = minEnclosingCircle(leftHull);
+      const rightCircle = minEnclosingCircle(rightHull);
 
-      // Compute the iris center
-      // const irisCenter = [0, 0];
-      // for (let i = 0; i < xyPoints.length; i++) {
-      //   irisCenter[0] += xyPoints[i][0];
-      //   irisCenter[1] += xyPoints[i][1];
-      // }
-      // irisCenter[0] /= xyPoints.length;
+      const leftDepth = estimateDepth(leftCircle.radius/1.7, leftCircle.center, VIDEO_WIDTH, IMAGE_SIZE);
+      const rightDepth = estimateDepth(rightCircle.radius/1.7, rightCircle.center, VIDEO_WIDTH, IMAGE_SIZE);
+      const averageDepth = (leftDepth + rightDepth) / 2;
 
-      // // Compute the iris diameter
-      // let maxDistance = 0
-      // for (let i = 0; i < xyPoints.length; i++) {
-      //   for (let j = i+1; j < xyPoints.length; j++) {
-      //     const distance = Math.sqrt(Math.pow(xyPoints[i][0] - xyPoints[j][0], 2) + Math.pow(xyPoints[i][1] - xyPoints[j][1], 2));
-      //     if (distance > maxDistance) {
-      //       maxDistance = distance;
-      //     }
-      //   }
-      // }
-      const depth = estimateDepth(radius/1.7, center, VIDEO_WIDTH, IMAGE_SIZE);
-      console.log("Depth (cm): ", depth);
-
-      // Compute the depth
-      // First, project the center to the image
-      // const irisCenter = projectTo2D(sphere.center.toArray(), VIDEO_WIDTH/2, [VIDEO_WIDTH/2, VIDEO_HEIGHT/2]);
-      // let newPoints = [];
-      // for (let i = 0; i < eyeContourPoints.length; i++) {
-      //   const p = projectTo2D(eyeContourPoints[i].toArray(), VIDEO_WIDTH/2, [VIDEO_WIDTH/2, VIDEO_HEIGHT/2]);
-      //   newPoints.push(p);
-      //   console.log("Projected point: ", p);
-      // }
-      // Compute the iris diameter
-      // let maxDistance = 0
-      // for (let i = 0; i < newPoints.length; i++) {
-      //   for (let j = i+1; j < newPoints.length; j++) {
-      //     const distance = Math.sqrt(Math.pow(newPoints[i][0] - newPoints[j][0], 2) + Math.pow(newPoints[i][1] - newPoints[j][1], 2));
-      //     if (distance > maxDistance) {
-      //       maxDistance = distance;
-      //     }
-      //   }
-      // }
-      // // const irisCenter = new THREE.Vector2(sphere.center.x * VIDEO_WIDTH, sphere.center.y * VIDEO_HEIGHT);
-      // const depth = estimateDepth(maxDistance, irisCenter, VIDEO_WIDTH, IMAGE_SIZE);
-      // console.log("Depth (cm): ", depth);
-
-      //
-      // A. compute sightDir vector
-      //
-      //  - either from `facialTransformationMatrix` if available
-      //  - or from `verticalTri`
-      //
+      // Compute the scaling factor with respect to the facialTransformationMatrix
+      const originalDepth = (facialTransformationMatrix?.data[14] || 0) * -1;
+      const scalingFactor = averageDepth / originalDepth;
 
       if (facialTransformationMatrix) {
         // from facialTransformationMatrix
         transform.matrix.fromArray(facialTransformationMatrix.data);
+        transform.matrix = updateFaceTransformationMatrix(transform.matrix, averageDepth, scalingFactor);
         transform.matrix.decompose(transform.position, transform.quaternion, transform.scale);
 
         // Rotation: y and z axes are inverted
