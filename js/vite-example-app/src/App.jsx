@@ -33,8 +33,9 @@ const screenHeight = screen.height;
 // console.log(`Screen Width: ${screenWidth}px, Screen Height: ${screenHeight}px`);
 
 // px to cm
-const pxToM = 0.0001536458
-const pxToCm = 0.01536458;
+const pxToCm = 0.000264583333;
+// const pxToM = 0.0001536458
+// const pxToCm = 0.01536458;
 const w = screenWidth * pxToCm
 const h = screenHeight * pxToCm
 
@@ -62,7 +63,7 @@ function Scene() {
     }),
     smoothTime: { value: 0.45, min: 0.000001, max: 1 },
     offset: true,
-    offsetScalar: { value: 10, min: 1, max: 500 },
+    offsetScalar: { value: 60, min: 1, max: 500 },
     eyes: true,
     eyesAsOrigin: false,
     origin: { value: 0, optional: true, disabled: false, min: 0, max: 477, step: 1 },

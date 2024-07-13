@@ -313,8 +313,8 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
       //
       // const facePoints: THREE.Vector3[] = points as THREE.Vector3[];
       const facePoints = points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
-      const faceWidth = facePoints[10].distanceTo(facePoints[234]);
-      facePoints.forEach((p) => p.divideScalar(faceWidth));
+      // const faceWidth = facePoints[10].distanceTo(facePoints[234]);
+      // facePoints.forEach((p) => p.divideScalar(faceWidth));
 
       //
       // Compute Depth based on Iris
@@ -343,6 +343,7 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
       const leftDepth = estimateDepth(leftCircle.radius/1.7, leftCircle.center, VIDEO_WIDTH, IMAGE_SIZE);
       const rightDepth = estimateDepth(rightCircle.radius/1.7, rightCircle.center, VIDEO_WIDTH, IMAGE_SIZE);
       const averageDepth = (leftDepth + rightDepth) / 2;
+      // console.log("Average Depth: ", averageDepth);
 
       // Reproject the 2D eye points to the 3D in cm
       const leftCentroidCm = reprojection3D(leftCircle.center[0], leftCircle.center[1], averageDepth, intrinsicMatrix);
@@ -365,13 +366,23 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
       scalingFactor.multiplyScalar(0.3);
       scalingFactor.z = 10
 
+      // Compute the new translation vector based on the distance between the eye centroids
+      const leftTranslation = new THREE.Vector3().subVectors(leftCentroidCm, leftCentroidCf);
+      const rightTranslation = new THREE.Vector3().subVectors(righCentroidCm, rightCentroidCf);
+      const averageTranslation = new THREE.Vector3().addVectors(leftTranslation, rightTranslation).divideScalar(2);
+      // console.log(averageTranslation)
+
       // Apply the scaling factor the facePoints
-      facePoints.forEach((p) => p.multiply(scalingFactor));
+      // facePoints.forEach((p) => p.multiply(scalingFactor));
 
       if (facialTransformationMatrix) {
         // from facialTransformationMatrix
         transform.matrix.fromArray(facialTransformationMatrix.data);
         transform.matrix.decompose(transform.position, transform.quaternion, transform.scale);
+
+        // Set the new translation
+        // transform.scale.set(1, 1, 1);
+        // transform.position.set(averageTranslation.x, averageTranslation.y, averageTranslation.z);
 
         // Update the scale of the face transformation matrix
         // transform.scale.set(1, 1, 1);
@@ -386,8 +397,9 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
         if (offset) {
           transform.position.y *= -1;
           transform.position.z *= -1;
-          // offsetRef.current?.position.copy(transform.position.divideScalar(offsetScalar));
-          offsetRef.current?.position.set(0, 0, 0); // reset
+          offsetRef.current?.position.copy(transform.position.divideScalar(offsetScalar));
+          // offsetRef.current?.position.copy(transform.position);
+          // offsetRef.current?.position.set(0, 0, 0); // reset
         } else {
           offsetRef.current?.position.set(0, 0, 0); // reset
         }
@@ -419,7 +431,7 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
       faceGeometry.computeBoundingBox();
       if (debug) invalidate(); // invalidate to force re-render for box3Helper (after .computeBoundingBox())
       faceGeometry.center();
-      console.log(faceGeometry.boundingBox)
+      // console.log(faceGeometry.boundingBox)
 
       // 2. rotate back + rotate outerRef (once 1.)
       faceGeometry.applyQuaternion(sightDirQuaternionInverse);
@@ -656,7 +668,7 @@ export const FacemeshEye = React.forwardRef<FacemeshEyeApi, FacemeshEyeProps>(({
 
         const hfov = FacemeshEyeDefaults.fov.horizontal * DEG2RAD;
         const vfov = FacemeshEyeDefaults.fov.vertical * DEG2RAD;
-        const rx = hfov * 0.5 * (lookDown - lookUp*1.1);
+        const rx = hfov * 0.5 * (lookDown - lookUp);
         const ry = vfov * 0.5 * (lookIn - lookOut) * (side === "left" ? 1 : -1);
         rotation.set(rx, ry, 0);
 
