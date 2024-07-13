@@ -33,9 +33,10 @@ const screenHeight = screen.height;
 // console.log(`Screen Width: ${screenWidth}px, Screen Height: ${screenHeight}px`);
 
 // px to cm
-const pxToCm = 0.000264583333;
-const w = screenWidth * pxToCm
-const h = screenHeight * pxToCm
+// const pxToCm = 0.000264583333;
+const pxToM = 0.0001536458
+const w = screenWidth * pxToM
+const h = screenHeight * pxToM
 
 function Scene() {
   const vids = ['https://storage.googleapis.com/abernier-portfolio/metahumans.mp4', 'https://storage.googleapis.com/abernier-portfolio/metahumans2.mp4']

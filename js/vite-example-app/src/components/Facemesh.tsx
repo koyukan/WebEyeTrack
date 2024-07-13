@@ -195,18 +195,22 @@ function distance(p1, p2) {
 
 function updateFaceTransformationMatrix(faceMatrix, averageDepthCm, scalingFactor) {
   // Create a scaling matrix
-  const scaleMatrix = new THREE.Matrix4().makeScale(scalingFactor, scalingFactor, scalingFactor);
+  // const scaleMatrix = new THREE.Matrix4().makeScale(scalingFactor, scalingFactor, scalingFactor);
+  const scaleVector = new THREE.Vector3(scalingFactor, scalingFactor, scalingFactor);
   
   // Create a translation matrix
-  const translationMatrix = new THREE.Matrix4().makeTranslation(0, 0, -averageDepthCm);
+  // const translationMatrix = new THREE.Matrix4().makeTranslation(0, 0, -averageDepthCm);
 
   // Apply the scaling and translation to the face transformation matrix
   // faceMatrix.multiplyMatrices(translationMatrix, scaleMatrix);
   // faceMatrix.multiplyMatrices(scaleMatrix);
   const oldFaceMatrix = faceMatrix.clone();
-  const newFaceMatrix = faceMatrix.multiply(scaleMatrix);
+  const newTranslation = new THREE.Vector3(0, 0, -averageDepthCm);
+  // const newFaceMatrix = oldFaceMatrix.multiply(scaleMatrix);
+  // const newFaceMatrix = oldFaceMatrix.multiplyScalar(scalingFactor)
+  const newFaceMatrix = oldFaceMatrix.scale(scaleVector);
 
-  return faceMatrix;
+  return newFaceMatrix;
 }
 
 export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
@@ -299,7 +303,7 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
       if (facialTransformationMatrix) {
         // from facialTransformationMatrix
         transform.matrix.fromArray(facialTransformationMatrix.data);
-        transform.matrix = updateFaceTransformationMatrix(transform.matrix, averageDepth, scalingFactor);
+        // transform.matrix = updateFaceTransformationMatrix(transform.matrix, averageDepth, scalingFactor);
         transform.matrix.decompose(transform.position, transform.quaternion, transform.scale);
 
         // Rotation: y and z axes are inverted
