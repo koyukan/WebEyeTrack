@@ -476,7 +476,7 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
 
       // 2. rotate back + rotate outerRef (once 1.)
       faceGeometry.applyQuaternion(sightDirQuaternionInverse);
-      outerRef.current?.setRotationFromQuaternion(sightDirQuaternion);
+      // outerRef.current?.setRotationFromQuaternion(sightDirQuaternion);
 
       // 3. 👀 eyes
       if (eyes) {
@@ -499,7 +499,7 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
             }
 
             // Compute the point-of-gaze
-            // const eyeRightSphere = eyeRightRef.current._computeSphere(faceGeometry);
+            const eyeRightSphere = eyeRightRef.current._computeSphere(faceGeometry);
             const eyeLeftSphere = eyeLeftRef.current._computeSphere(faceGeometry);
 
             // Multiply the metric scale
@@ -507,7 +507,7 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
             // eyeLeftSphere.center.multiplyScalar(metricScale);
 
             // Apply transformation to the eye sphere
-            // eyeRightSphere.center.applyMatrix4(transform.matrix);
+            eyeRightSphere.center.applyMatrix4(transform.matrix);
             eyeLeftSphere.center.applyMatrix4(transform.matrix);
             // Compute the 3D points of eyes in canonical face coordinate space
             // const leftXYZPoints = leftEyeLandmarks.map((i) => {
@@ -527,7 +527,7 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
             // rightPOGRef.current?.position.copy(rightCentroidCf);
             // leftPOGRef.current?.position.copy(leftCentroidCf);
             // rightPOGRef.current?.position.copy(eyeRightSphere.center);
-            leftPOGRef.current?.position.copy(eyeLeftSphere.center);
+            // leftPOGRef.current?.position.copy(eyeLeftSphere.center);
 
             // Debugging, set the eye spheres
             // rightPOGRef.current?.position.copy(rightCentroidCf);
@@ -546,15 +546,18 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
               leftGazeVector.applyQuaternion(eyeLeftRef.current.irisDirRef.current.quaternion);
             }
 
+            // Debugging, checking the gaze vector
+            // leftPOGRef.current?.setRotationFromQuaternion(eyeLeftRef.current.irisDirRef.current?.quaternion);
+
             // Compute the intersection with the face plane
             const facePlaneNormal = new THREE.Vector3(0, 0, 1);
             const facePlanePoint = new THREE.Vector3(0, 0, 0);
-            // const rightIntersection = get_intersection_with_plane(facePlaneNormal, facePlanePoint, rightGazeVector, rightCentroidCf);
+            const rightIntersection = get_intersection_with_plane(facePlaneNormal, facePlanePoint, rightGazeVector, eyeRightSphere.center);
             const leftIntersection = get_intersection_with_plane(facePlaneNormal, facePlanePoint, leftGazeVector, eyeLeftSphere.center);
 
             // Update the PoG ref
-            // rightPOGRef.current?.position.copy(rightIntersection);
-            // leftPOGRef.current?.position.copy(leftIntersection);
+            rightPOGRef.current?.position.copy(rightIntersection);
+            leftPOGRef.current?.position.copy(leftIntersection);
 
           }
         }
@@ -632,29 +635,20 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
     const one = bbox?.getSize(meshBboxSize).z || 1;
     return (
       <group {...props}>
-        {/* <group ref={rightPOGRef}>
+
+        <group ref={rightPOGRef}>
           <Sphere>
             <meshBasicMaterial color="#00ff00" />
           </Sphere>
-        </group> */}
-
+        </group>
         <group ref={leftPOGRef}>
           <Sphere>
             <meshBasicMaterial color="red" />
           </Sphere>
-
-          <Line
-            points={[
-              [0, 0, 0],
-              [0, 0, -100],
-            ]}
-            lineWidth={1}
-            color={"red"}
-          />
         </group>
 
         <group ref={offsetRef}>
- 
+         
           <group ref={outerRef}>
 
             <group ref={scaleRef}>
