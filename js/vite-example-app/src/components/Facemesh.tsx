@@ -4,7 +4,6 @@ import * as THREE from "three";
 import { useThree } from "@react-three/fiber";
 import { Line, Sphere } from "@react-three/drei";
 import { DEG2RAD } from "three/src/math/MathUtils";
-import { solvePnP } from "./solvePnP.js";
 
 const VIDEO_HEIGHT = 480
 const VIDEO_WIDTH = 640
@@ -500,13 +499,42 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
             }
 
             // Compute the point-of-gaze
-            const eyeRightSphere = eyeRightRef.current._computeSphere(faceGeometry);
+            // const eyeRightSphere = eyeRightRef.current._computeSphere(faceGeometry);
             const eyeLeftSphere = eyeLeftRef.current._computeSphere(faceGeometry);
 
+            // Multiply the metric scale
+            // eyeRightSphere.center.multiplyScalar(metricScale);
+            // eyeLeftSphere.center.multiplyScalar(metricScale);
+
             // Apply transformation to the eye sphere
-            eyeRightSphere.center.applyMatrix4(transform.matrix);
+            // eyeRightSphere.center.applyMatrix4(transform.matrix);
             eyeLeftSphere.center.applyMatrix4(transform.matrix);
-            // console.log(eyeRightSphere.center)
+            // Compute the 3D points of eyes in canonical face coordinate space
+            // const leftXYZPoints = leftEyeLandmarks.map((i) => {
+            //   return facePoints[i];
+            // })
+            // const rightXYZPoints = rightEyeLandmarks.map((i) => {
+            //   return facePoints[i];
+            // })
+            // const leftCentroidCf = computeCentroid(leftXYZPoints);
+            // const rightCentroidCf = computeCentroid(rightXYZPoints);
+            // leftCentroidCf.applyMatrix4(transform.matrix);
+
+            // Only the translation of the transformation matrix
+            // const translationMatrix = new THREE.Matrix4().makeTranslation(0, 0, -averageDepth);
+            // leftCentroidCf.add(transform.position);
+
+            // rightPOGRef.current?.position.copy(rightCentroidCf);
+            // leftPOGRef.current?.position.copy(leftCentroidCf);
+            // rightPOGRef.current?.position.copy(eyeRightSphere.center);
+            leftPOGRef.current?.position.copy(eyeLeftSphere.center);
+
+            // Debugging, set the eye spheres
+            // rightPOGRef.current?.position.copy(rightCentroidCf);
+            // console.log("Left Centroid: ", leftCentroidCf);
+            // leftPOGRef.current?.position.copy(leftCentroidCf);
+            // rightPOGRef.current?.position.copy(eyeRightSphere.center);
+            // leftPOGRef.current?.position.copy(eyeLeftSphere.center);
 
             // Compute the gaze vector
             const rightGazeVector = new THREE.Vector3(0, 0, -1);
@@ -521,32 +549,32 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
             // Compute the intersection with the face plane
             const facePlaneNormal = new THREE.Vector3(0, 0, 1);
             const facePlanePoint = new THREE.Vector3(0, 0, 0);
-            const rightIntersection = get_intersection_with_plane(facePlaneNormal, facePlanePoint, rightGazeVector, eyeRightSphere.center);
+            // const rightIntersection = get_intersection_with_plane(facePlaneNormal, facePlanePoint, rightGazeVector, rightCentroidCf);
             const leftIntersection = get_intersection_with_plane(facePlaneNormal, facePlanePoint, leftGazeVector, eyeLeftSphere.center);
 
             // Update the PoG ref
-            rightPOGRef.current?.position.copy(rightIntersection);
-            leftPOGRef.current?.position.copy(leftIntersection);
+            // rightPOGRef.current?.position.copy(rightIntersection);
+            // leftPOGRef.current?.position.copy(leftIntersection);
 
           }
         }
       }
 
       // 3. origin
-      if (originRef.current) {
-        if (origin !== undefined) {
-          if (typeof origin === "number") {
-            const position = faceGeometry.getAttribute("position") as THREE.BufferAttribute;
-            _origin.set(-position.getX(origin), -position.getY(origin), -position.getZ(origin));
-          } else if (origin.isVector3) {
-            _origin.copy(origin);
-          }
-        } else {
-          _origin.setScalar(0);
-        }
+      // if (originRef.current) {
+      //   if (origin !== undefined) {
+      //     if (typeof origin === "number") {
+      //       const position = faceGeometry.getAttribute("position") as THREE.BufferAttribute;
+      //       _origin.set(-position.getX(origin), -position.getY(origin), -position.getZ(origin));
+      //     } else if (origin.isVector3) {
+      //       _origin.copy(origin);
+      //     }
+      //   } else {
+      //     _origin.setScalar(0);
+      //   }
 
-        originRef.current.position.copy(_origin);
-      }
+      //   originRef.current.position.copy(_origin);
+      // }
 
       // 4. re-scale
       // if (scaleRef.current) {
@@ -604,21 +632,31 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
     const one = bbox?.getSize(meshBboxSize).z || 1;
     return (
       <group {...props}>
-
-        <group ref={rightPOGRef}>
-          <Sphere>
-            <meshBasicMaterial color="red" />
-          </Sphere>
-        </group>
-        
-        <group ref={leftPOGRef}>
+        {/* <group ref={rightPOGRef}>
           <Sphere>
             <meshBasicMaterial color="#00ff00" />
           </Sphere>
+        </group> */}
+
+        <group ref={leftPOGRef}>
+          <Sphere>
+            <meshBasicMaterial color="red" />
+          </Sphere>
+
+          <Line
+            points={[
+              [0, 0, 0],
+              [0, 0, -100],
+            ]}
+            lineWidth={1}
+            color={"red"}
+          />
         </group>
 
         <group ref={offsetRef}>
+ 
           <group ref={outerRef}>
+
             <group ref={scaleRef}>
               {debug ? (
                 <>
@@ -632,8 +670,9 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
                   />
                 </>
               ) : null}
-
+                
               <group ref={originRef}>
+
                 {eyes && faceBlendshapes && (
                   <group name="eyes">
                     <FacemeshEye side="left" ref={eyeRightRef} debug={debug} />
@@ -787,6 +826,12 @@ export const FacemeshEye = React.forwardRef<FacemeshEyeApi, FacemeshEyeProps>(({
         <group ref={irisDirRef}>
           <>
             {debug && (
+              <>
+
+              {/* <Sphere>
+                <meshBasicMaterial color="white" />
+              </Sphere> */}
+
               <Line
                 points={[
                   [0, 0, 0],
@@ -795,6 +840,8 @@ export const FacemeshEye = React.forwardRef<FacemeshEyeApi, FacemeshEyeProps>(({
                 lineWidth={1}
                 color={color}
               />
+
+              </>
             )}
           </>
         </group>
