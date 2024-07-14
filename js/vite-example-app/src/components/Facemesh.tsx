@@ -2,7 +2,7 @@
 import * as React from "react";
 import * as THREE from "three";
 import { useThree } from "@react-three/fiber";
-import { Line } from "@react-three/drei";
+import { Line, Sphere } from "@react-three/drei";
 import { DEG2RAD } from "three/src/math/MathUtils";
 import { solvePnP } from "./solvePnP.js";
 
@@ -257,6 +257,14 @@ function computeCentroid(points) {
   return centroid;
 }
 
+function get_intersection_with_plane(plane_normal, plane_point, ray_vector, ray_point) {
+  const diff = new THREE.Vector3().subVectors(plane_point, ray_point);
+  const prod1 = diff.dot(plane_normal);
+  const prod2 = ray_vector.dot(plane_normal);
+  const prod3 = prod1 / prod2;
+  return new THREE.Vector3().addVectors(ray_point, ray_vector.clone().multiplyScalar(prod3));
+}
+
 export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
   (
     {
@@ -291,6 +299,7 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
     const meshRef = React.useRef<THREE.Mesh>(null);
     const eyeRightRef = React.useRef<FacemeshEyeApi>(null);
     const eyeLeftRef = React.useRef<FacemeshEyeApi>(null);
+    const pogRef = React.useRef<THREE.Group>(null);
 
     const [sightDir] = React.useState(() => new THREE.Vector3());
     const [transform] = React.useState(() => new THREE.Object3D());
@@ -427,6 +436,10 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
         } else {
           offsetRef.current?.position.set(0, 0, 0); // reset
         }
+
+        // Update the matrix based on the scale and position
+        transform.matrix.compose(transform.position, transform.quaternion, transform.scale);
+
       } else {
         // normal to verticalTri
         normal(
@@ -484,6 +497,29 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
               eyeRightRef.current._update(faceGeometry, faceBlendshapes);
               eyeLeftRef.current._update(faceGeometry, faceBlendshapes);
             }
+
+            // Compute the point-of-gaze
+            const eyeRightSphere = eyeRightRef.current._computeSphere(faceGeometry);
+
+            // Apply transformation to the eye sphere
+            eyeRightSphere.center.applyMatrix4(transform.matrix);
+            // console.log(eyeRightSphere.center)
+
+            // Compute the gaze vector
+            const gazeVector = new THREE.Vector3(0, 0, -1);
+            if (eyeRightRef.current.irisDirRef.current) {
+              gazeVector.applyQuaternion(eyeRightRef.current.irisDirRef.current.quaternion);
+            }
+            // console.log(gazeVector)
+
+            // Compute the intersection with the face plane
+            const facePlaneNormal = new THREE.Vector3(0, 0, 1);
+            const facePlanePoint = new THREE.Vector3(0, 0, 0);
+            const intersection = get_intersection_with_plane(facePlaneNormal, facePlanePoint, gazeVector, eyeRightSphere.center);
+
+            // Update the PoG ref
+            pogRef.current?.position.copy(intersection);
+
           }
         }
       }
@@ -560,6 +596,13 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
     const one = bbox?.getSize(meshBboxSize).z || 1;
     return (
       <group {...props}>
+
+        <group ref={pogRef}>
+          <Sphere>
+            <meshBasicMaterial color="red" />
+          </Sphere>
+        </group>
+
         <group ref={offsetRef}>
           <group ref={outerRef}>
             <group ref={scaleRef}>
