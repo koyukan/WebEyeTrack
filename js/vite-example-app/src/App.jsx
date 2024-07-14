@@ -14,6 +14,14 @@ import { Camera } from './Camera.jsx'
 
 const city = import('@pmndrs/assets/hdri/city.exr')
 
+function px2cm(px) {
+  var n = 0;
+  var cpi = 2.54; // centimeters per inch
+  var dpi = 96; // dots per inch
+  var ppd = window.devicePixelRatio; // pixels per dot
+  return (px * cpi / (dpi * ppd)).toFixed(n);
+}
+
 export default function App() {
   return (
     <>
@@ -30,16 +38,8 @@ export default function App() {
 // Screen dimensions
 const screenWidth = screen.width;
 const screenHeight = screen.height;
-// console.log(`Screen Width: ${screenWidth}px, Screen Height: ${screenHeight}px`);
-
-// px to cm
-// const pxToCm = 0.000264583333;
-// const pxToM = 0.0001536458
-const pxToCm = 0.01536458;
-// const w = screenWidth * pxToCm
-// const h = screenHeight * pxToCm
-const w = 36; // cm
-const h = 81; // cm
+const w = px2cm(screenWidth);
+const h = px2cm(screenHeight);
 
 function Scene() {
   const vids = ['https://storage.googleapis.com/abernier-portfolio/metahumans.mp4', 'https://storage.googleapis.com/abernier-portfolio/metahumans2.mp4']

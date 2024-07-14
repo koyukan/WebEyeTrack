@@ -5,21 +5,21 @@ import { useControls, folder } from 'leva'
 
 const { DEG2RAD } = THREE.MathUtils
 
+function px2cm(px) {
+  var n = 0;
+  var cpi = 2.54; // centimeters per inch
+  var dpi = 96; // dots per inch
+  var ppd = window.devicePixelRatio; // pixels per dot
+  return (px * cpi / (dpi * ppd)).toFixed(n);
+}
+
 export const Screen = forwardRef(({ children, flipHorizontal = false, ...props }, fref) => {
   
   // Screen dimensions
   const screenWidth = screen.width;
   const screenHeight = screen.height;
-  // console.log(`Screen Width: ${screenWidth}px, Screen Height: ${screenHeight}px`);
-
-  // px to cm
-  // const pxToCm = 0.000264583333;
-  const pxToCm = 0.01536458;
-  // const pxToM = 0.0001536458;
-  // const w = screenWidth * pxToCm
-  // const h = screenHeight * pxToCm
-  const w = 81;
-  const h = 36;
+  const w = px2cm(screenWidth);
+  const h = px2cm(screenHeight);
   const d = 0.1
 
   const openAngle = 90

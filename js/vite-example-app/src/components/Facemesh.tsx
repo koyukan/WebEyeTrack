@@ -390,7 +390,7 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
       // Estimate the depth based on the inter-pupillary distance
       const focalLength = VIDEO_WIDTH / 2;
       const estimateDepth = 3.1 * (focalLength * realWorldIPD) / eyeDistance;
-      console.log("Estimated Depth: ", estimateDepth);
+      // console.log("Estimated Depth: ", estimateDepth);
 
       if (facialTransformationMatrix) {
         // from facialTransformationMatrix
