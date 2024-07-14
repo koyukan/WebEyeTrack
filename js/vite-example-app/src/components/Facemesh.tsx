@@ -341,14 +341,14 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
       const leftCircle = minEnclosingCircle(leftHull);
       const rightCircle = minEnclosingCircle(rightHull);
 
-      const leftDepth = estimateDepth(leftCircle.radius/1.7, leftCircle.center, VIDEO_WIDTH, IMAGE_SIZE);
-      const rightDepth = estimateDepth(rightCircle.radius/1.7, rightCircle.center, VIDEO_WIDTH, IMAGE_SIZE);
-      const averageDepth = (leftDepth + rightDepth) / 2;
+      // const leftDepth = estimateDepth(leftCircle.radius/1.7, leftCircle.center, VIDEO_WIDTH, IMAGE_SIZE);
+      // const rightDepth = estimateDepth(rightCircle.radius/1.7, rightCircle.center, VIDEO_WIDTH, IMAGE_SIZE);
+      // const averageDepth = (leftDepth + rightDepth) / 2;
       // console.log("Average Depth: ", averageDepth);
 
       // Reproject the 2D eye points to the 3D in cm
-      const leftCentroidCm = reprojection3D(leftCircle.center[0], leftCircle.center[1], averageDepth, intrinsicMatrix);
-      const righCentroidCm = reprojection3D(rightCircle.center[0], rightCircle.center[1], averageDepth, intrinsicMatrix);
+      // const leftCentroidCm = reprojection3D(leftCircle.center[0], leftCircle.center[1], averageDepth, intrinsicMatrix);
+      // const righCentroidCm = reprojection3D(rightCircle.center[0], rightCircle.center[1], averageDepth, intrinsicMatrix);
 
       // Compute the 3D points of eyes in canonical face coordinate space
       const leftXYZPoints = leftEyeLandmarks.map((i) => {
@@ -380,14 +380,17 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
       facePoints.forEach((p) => p.multiplyScalar(metricScale));
       // console.log(metricScale)
 
-      // Perform solvePnP to determine the metric transformation matrix
-      const imagePoints = points.map((p) => new THREE.Vector2(p.x * VIDEO_WIDTH, p.y * VIDEO_HEIGHT));
-      // const result = solvePnP(imagePoints, facePoints, intrinsicMatrix);
-      // console.log(result.translation)
-      // const transformationMatrix = solvePnP(imagePoints, modelPoints, cameraMatrix, distCoeffs);
-      // const rtMatrix = new THREE.Matrix4().fromArray(transformationMatrix.data32F);
-      // console.log(rtMatrix)
-      // console.log(transformationMatrix)
+      // Estimate the depth by leveraging the inter-pupillary distance 
+      const leftEye2D = new THREE.Vector2(leftCircle.center[0], leftCircle.center[1]);
+      const rightEye2D = new THREE.Vector2(rightCircle.center[0], rightCircle.center[1]);
+      
+      // Compute the pixel distance between the eyes
+      const eyeDistance = leftEye2D.distanceTo(rightEye2D);
+
+      // Estimate the depth based on the inter-pupillary distance
+      const focalLength = VIDEO_WIDTH / 2;
+      const estimateDepth = 3.1 * (focalLength * realWorldIPD) / eyeDistance;
+      console.log("Estimated Depth: ", estimateDepth);
 
       if (facialTransformationMatrix) {
         // from facialTransformationMatrix
@@ -397,6 +400,7 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
 
         // Set the new translation
         transform.scale.set(1, 1, 1);
+        transform.position.set(0, 0, -estimateDepth);
         // transform.scale.set(metricScale, metricScale, metricScale);
         // transform.position.set(averageTranslation.x, averageTranslation.y, averageTranslation.z);
 
