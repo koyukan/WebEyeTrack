@@ -592,6 +592,14 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
       //   scaleRef.current.scale.setScalar(scale !== 1 ? scale : 1);
       // }
 
+      // UV Mapping
+      const uv = new Float32Array(facePoints.length * 2);
+
+      for (let i = 0; i < points.length; i++) {
+        uv[i * 2] = points[i].x * VIDEO_WIDTH;
+        uv[i * 2 + 1] = points[i].y * VIDEO_HEIGHT;
+      }
+
       faceGeometry.computeVertexNormals();
       faceGeometry.attributes.position.needsUpdate = true;
     }, [
