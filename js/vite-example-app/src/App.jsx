@@ -33,11 +33,13 @@ const screenHeight = screen.height;
 // console.log(`Screen Width: ${screenWidth}px, Screen Height: ${screenHeight}px`);
 
 // px to cm
-const pxToCm = 0.000264583333;
+// const pxToCm = 0.000264583333;
 // const pxToM = 0.0001536458
-// const pxToCm = 0.01536458;
-const w = screenWidth * pxToCm
-const h = screenHeight * pxToCm
+const pxToCm = 0.01536458;
+// const w = screenWidth * pxToCm
+// const h = screenHeight * pxToCm
+const w = 36; // cm
+const h = 81; // cm
 
 function Scene() {
   const vids = ['https://storage.googleapis.com/abernier-portfolio/metahumans.mp4', 'https://storage.googleapis.com/abernier-portfolio/metahumans2.mp4']
@@ -63,7 +65,7 @@ function Scene() {
     }),
     smoothTime: { value: 0.45, min: 0.000001, max: 1 },
     offset: true,
-    offsetScalar: { value: 60, min: 1, max: 500 },
+    offsetScalar: { value: 1, min: 1, max: 500 },
     eyes: true,
     eyesAsOrigin: false,
     origin: { value: 0, optional: true, disabled: false, min: 0, max: 477, step: 1 },
@@ -154,17 +156,20 @@ function Scene() {
       </group>
 
       <Screen>
-        <meshStandardMaterial ref={screenMatRef} side={THREE.DoubleSide} transparent opacity={0.9}/>
+        <meshStandardMaterial ref={screenMatRef} side={THREE.DoubleSide} transparent opacity={1}/>
       </Screen>
 
       <Camera 
-        scale={1}
+        scale={10}
         aspect={1}
         // transform={{ position: [0, h, -h/2], rotation: [180, 0, 0] }}
         // transform={{ position: [0, h, 0], rotation: [180, 0, 0] }}
         transform={{ position: [0, 0, 0], rotation: [180, 0, 0] }}
       >
-        <meshStandardMaterial ref={webcamMatRef} side={THREE.DoubleSide} transparent opacity={0.9}/>
+        {webcamMatRef &&
+          <meshStandardMaterial ref={webcamMatRef} side={THREE.DoubleSide} transparent opacity={0.9}/>
+        }
+        {/* <meshStandardMaterial ref={webcamMatRef} transparent opacity={0.9}/> */}
       </Camera>
 
       <Ground />

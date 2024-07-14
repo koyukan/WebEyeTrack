@@ -14,7 +14,7 @@ export const Camera = forwardRef(({
 }, fref) => {
  
   const calculateFrustumPoints = () => {
-    const near = 0.1 * scale;
+    const near = 0.3 * scale;
     const far = 1 * scale;
     const fov = 75 * DEG2RAD;
     const heightNear = 2 * Math.tan(fov / 2) * near;

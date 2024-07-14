@@ -360,20 +360,23 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
       const rightCentroidCf = computeCentroid(rightXYZPoints);
 
       // Compute the xyz scaling based on the inter-pupillary distance (separated by dimension)
-      const interPupillaryDistanceCf = new THREE.Vector3().subVectors(leftCentroidCf, rightCentroidCf);
-      const interPupillaryDistanceCm = new THREE.Vector3().subVectors(leftCentroidCm, righCentroidCm);
-      const scalingFactor = new THREE.Vector3().copy(interPupillaryDistanceCm).divide(interPupillaryDistanceCf);
-      scalingFactor.multiplyScalar(0.3);
-      scalingFactor.z = 10
+      // const interPupillaryDistanceCf = new THREE.Vector3().subVectors(leftCentroidCf, rightCentroidCf);
+      const canonicalIPD = leftCentroidCf.distanceTo(rightCentroidCf);
+      const realWorldIPD = 6.3;
+      const metricScale = realWorldIPD / canonicalIPD;
+      // const interPupillaryDistanceCm = new THREE.Vector3().subVectors(leftCentroidCm, righCentroidCm);
+      // const scalingFactor = new THREE.Vector3().copy(interPupillaryDistanceCm).divide(interPupillaryDistanceCf);
+      // scalingFactor.multiplyScalar(0.3);
+      // scalingFactor.z = 10
 
       // Compute the new translation vector based on the distance between the eye centroids
-      const leftTranslation = new THREE.Vector3().subVectors(leftCentroidCm, leftCentroidCf);
-      const rightTranslation = new THREE.Vector3().subVectors(righCentroidCm, rightCentroidCf);
-      const averageTranslation = new THREE.Vector3().addVectors(leftTranslation, rightTranslation).divideScalar(2);
+      // const leftTranslation = new THREE.Vector3().subVectors(leftCentroidCm, leftCentroidCf);
+      // const rightTranslation = new THREE.Vector3().subVectors(righCentroidCm, rightCentroidCf);
+      // const averageTranslation = new THREE.Vector3().addVectors(leftTranslation, rightTranslation).divideScalar(2);
       // console.log(averageTranslation)
 
       // Apply the scaling factor the facePoints
-      // facePoints.forEach((p) => p.multiply(scalingFactor));
+      facePoints.forEach((p) => p.multiplyScalar(metricScale));
 
       if (facialTransformationMatrix) {
         // from facialTransformationMatrix
@@ -381,7 +384,8 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
         transform.matrix.decompose(transform.position, transform.quaternion, transform.scale);
 
         // Set the new translation
-        // transform.scale.set(1, 1, 1);
+        transform.scale.set(1, 1, 1);
+        // transform.scale.set(metricScale, metricScale, metricScale);
         // transform.position.set(averageTranslation.x, averageTranslation.y, averageTranslation.z);
 
         // Update the scale of the face transformation matrix
@@ -432,6 +436,10 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
       if (debug) invalidate(); // invalidate to force re-render for box3Helper (after .computeBoundingBox())
       faceGeometry.center();
       // console.log(faceGeometry.boundingBox)
+      const faceHeight = faceGeometry.boundingBox!.getSize(new THREE.Vector3()).y;
+      const faceWidth = faceGeometry.boundingBox!.getSize(new THREE.Vector3()).x;
+      console.log("Face Height: ", faceHeight);
+      console.log("Face Width: ", faceWidth);
 
       // 2. rotate back + rotate outerRef (once 1.)
       faceGeometry.applyQuaternion(sightDirQuaternionInverse);
