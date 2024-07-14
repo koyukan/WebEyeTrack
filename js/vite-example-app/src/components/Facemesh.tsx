@@ -398,9 +398,13 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
         transform.matrix.decompose(transform.position, transform.quaternion, transform.scale);
         // console.log(transform.position)
 
+        // Compute the z-axis scale factor
+        const scalingFactor = estimateDepth / transform.position.z;
+
         // Set the new translation
         transform.scale.set(1, 1, 1);
-        transform.position.set(0, 0, -estimateDepth);
+        // transform.position.set(0, 0, -estimateDepth);
+        transform.position.multiplyScalar(-scalingFactor);
         // transform.scale.set(metricScale, metricScale, metricScale);
         // transform.position.set(averageTranslation.x, averageTranslation.y, averageTranslation.z);
 
