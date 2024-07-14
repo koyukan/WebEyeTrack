@@ -17,7 +17,7 @@ const city = import('@pmndrs/assets/hdri/city.exr')
 export default function App() {
   return (
     <>
-      <Canvas shadows camera={{ position: [-0.6, 0.1, 0.6], near: 0.01 }}>
+      <Canvas shadows camera={{ position: [-60, 10, 60], near: 0.01 }}>
         <FaceLandmarker>
           <Scene />
         </FaceLandmarker>

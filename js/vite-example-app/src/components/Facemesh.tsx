@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { useThree } from "@react-three/fiber";
 import { Line } from "@react-three/drei";
 import { DEG2RAD } from "three/src/math/MathUtils";
+import { solvePnP } from "./solvePnP.js";
 
 const VIDEO_HEIGHT = 480
 const VIDEO_WIDTH = 640
@@ -377,11 +378,22 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
 
       // Apply the scaling factor the facePoints
       facePoints.forEach((p) => p.multiplyScalar(metricScale));
+      // console.log(metricScale)
+
+      // Perform solvePnP to determine the metric transformation matrix
+      const imagePoints = points.map((p) => new THREE.Vector2(p.x * VIDEO_WIDTH, p.y * VIDEO_HEIGHT));
+      // const result = solvePnP(imagePoints, facePoints, intrinsicMatrix);
+      // console.log(result.translation)
+      // const transformationMatrix = solvePnP(imagePoints, modelPoints, cameraMatrix, distCoeffs);
+      // const rtMatrix = new THREE.Matrix4().fromArray(transformationMatrix.data32F);
+      // console.log(rtMatrix)
+      // console.log(transformationMatrix)
 
       if (facialTransformationMatrix) {
         // from facialTransformationMatrix
         transform.matrix.fromArray(facialTransformationMatrix.data);
         transform.matrix.decompose(transform.position, transform.quaternion, transform.scale);
+        // console.log(transform.position)
 
         // Set the new translation
         transform.scale.set(1, 1, 1);
@@ -438,8 +450,8 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
       // console.log(faceGeometry.boundingBox)
       const faceHeight = faceGeometry.boundingBox!.getSize(new THREE.Vector3()).y;
       const faceWidth = faceGeometry.boundingBox!.getSize(new THREE.Vector3()).x;
-      console.log("Face Height: ", faceHeight);
-      console.log("Face Width: ", faceWidth);
+      // console.log("Face Height: ", faceHeight);
+      // console.log("Face Width: ", faceWidth);
 
       // 2. rotate back + rotate outerRef (once 1.)
       faceGeometry.applyQuaternion(sightDirQuaternionInverse);
