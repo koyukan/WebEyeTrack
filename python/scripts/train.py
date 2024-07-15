@@ -13,6 +13,12 @@ from webeyetrack.models import EFEModel
 
 FILE_DIR = pathlib.Path(__file__).parent
 
+def dict2mdtable(d, key='Name', val='Value'):
+    rows = [f'| {key} | {val} |']
+    rows += ['|--|--|']
+    rows += [f'| {k} | {v} |' for k, v in d.items()]
+    return "  \n".join(rows)
+
 with open(FILE_DIR / 'config.yaml', 'r') as f:
     config = yaml.safe_load(f)
 
@@ -29,8 +35,8 @@ if __name__ == '__main__':
     val_size = len(dataset) - train_size
 
     # Debugging, reducing the size of the dataset
-    train_size = int(train_size / 200)
-    val_size = int(val_size / 20 )
+    # train_size = int(train_size / 200)
+    # val_size = int(val_size / 20 )
     # train_size = 1
     # val_size = 1
 
@@ -54,6 +60,10 @@ if __name__ == '__main__':
     # Create TensorBoard Logger
     model_name = 'EFE'
     tb_logger = pl.loggers.TensorBoardLogger('lightning_logs/', name=model_name)
+
+    # Log the hyperparameters
+    tb_logger.log_hyperparams(config['train'])
+    # tb_logger.add_text('Hyperparameters', dict2mdtable(config['train']), 0)
 
     # Create a trainer
     trainer = Trainer(
