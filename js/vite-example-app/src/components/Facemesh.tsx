@@ -2,8 +2,30 @@
 import * as React from "react";
 import * as THREE from "three";
 import { useThree } from "@react-three/fiber";
-import { Line } from "@react-three/drei";
+import { Line, Sphere } from "@react-three/drei";
 import { DEG2RAD } from "three/src/math/MathUtils";
+
+const VIDEO_HEIGHT = 480
+const VIDEO_WIDTH = 640
+const IMAGE_SIZE = [VIDEO_WIDTH, VIDEO_HEIGHT]
+
+const fov = 70;  // Example field of view in degrees
+
+// Compute the focal lengths based on the field of view
+const fovRadians = THREE.MathUtils.degToRad(fov);
+const fx = VIDEO_WIDTH / (2 * Math.tan(fovRadians / 2));
+const fy = VIDEO_HEIGHT / (2 * Math.tan(fovRadians / 2));
+
+// Set the principal point at the center of the image
+const cx = VIDEO_WIDTH / 2;
+const cy = VIDEO_HEIGHT / 2;
+
+// Create the intrinsic matrix
+const intrinsicMatrix = new THREE.Matrix3().set(
+  fx, 0, cx,
+  0, fy, cy,
+  0, 0, 1
+);
 
 export type MediaPipeFaceMesh = typeof FacemeshDatas.SAMPLE_FACE;
 
@@ -79,6 +101,169 @@ function mean(v1: THREE.Vector3, v2: THREE.Vector3) {
   return v1.clone().add(v2).multiplyScalar(0.5);
 }
 
+const HUMAN_IRIS_RADIUS = 11.8; // in mm (example value, adjust as needed)
+
+function estimateDepth(irisDiameter, irisCenter, focalLengthPixel, imageSize) {
+  const origin = imageSize.map((size) => size / 2.0);
+  const y = Math.sqrt(Math.pow(origin[0] - irisCenter[0], 2) + Math.pow(origin[1] - irisCenter[1], 2));
+  const x = Math.sqrt(Math.pow(focalLengthPixel, 2) + Math.pow(y, 2));
+  const depthMm = (HUMAN_IRIS_RADIUS * x) / irisDiameter;
+  const depthCm = depthMm / 10.0;
+  return depthCm;
+}
+
+function getConvexHull(points) {
+  // Sort the points lexicographically (tuples compare by x first, then by y)
+  points.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+
+  // Build the lower hull
+  const lower = [];
+  for (let i = 0; i < points.length; i++) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], points[i]) <= 0) {
+      lower.pop();
+    }
+    lower.push(points[i]);
+  }
+
+  // Build the upper hull
+  const upper = [];
+  for (let i = points.length - 1; i >= 0; i--) {
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], points[i]) <= 0) {
+      upper.pop();
+    }
+    upper.push(points[i]);
+  }
+
+  // Concatenate lower and upper hull to get the full hull (remove last point of each half because it's repeated at the beginning of the other half)
+  upper.pop();
+  lower.pop();
+  return lower.concat(upper);
+}
+
+function cross(o, a, b) {
+  return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+}
+
+function minEnclosingCircle(points) {
+  if (points.length === 0) {
+    return { center: [0, 0], radius: 0 };
+  }
+
+  // Start with a single point
+  let circle = { center: points[0], radius: 0 };
+
+  for (let i = 1; i < points.length; i++) {
+    if (!isPointInCircle(circle, points[i])) {
+      circle = makeCircleOnePoint(points.slice(0, i + 1), points[i]);
+    }
+  }
+
+  return circle;
+}
+
+function makeCircleOnePoint(points, p) {
+  let circle = { center: p, radius: 0 };
+
+  for (let i = 0; i < points.length; i++) {
+    if (!isPointInCircle(circle, points[i])) {
+      circle = makeCircleTwoPoints(points.slice(0, i + 1), p, points[i]);
+    }
+  }
+
+  return circle;
+}
+
+function makeCircleTwoPoints(points, p1, p2) {
+  const center = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
+  let radius = distance(p1, p2) / 2;
+
+  let circle = { center, radius };
+
+  for (let i = 0; i < points.length; i++) {
+    if (!isPointInCircle(circle, points[i])) {
+      circle = makeCircleThreePoints(p1, p2, points[i]);
+    }
+  }
+
+  return circle;
+}
+
+function makeCircleThreePoints(p1, p2, p3) {
+  const A = p2[0] - p1[0];
+  const B = p2[1] - p1[1];
+  const C = p3[0] - p1[0];
+  const D = p3[1] - p1[1];
+  const E = A * (p1[0] + p2[0]) + B * (p1[1] + p2[1]);
+  const F = C * (p1[0] + p3[0]) + D * (p1[1] + p3[1]);
+  const G = 2 * (A * (p3[1] - p2[1]) - B * (p3[0] - p2[0]));
+
+  const center = [(D * E - B * F) / G, (A * F - C * E) / G];
+  const radius = distance(center, p1);
+
+  return { center, radius };
+}
+
+function isPointInCircle(circle, point) {
+  return distance(circle.center, point) <= circle.radius;
+}
+
+function distance(p1, p2) {
+  return Math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2);
+}
+
+function updateFaceTransformationMatrix(faceMatrix, averageDepthCm, scalingFactor) {
+  // Create a scaling matrix
+  // const scaleMatrix = new THREE.Matrix4().makeScale(scalingFactor, scalingFactor, scalingFactor);
+  const scaleVector = new THREE.Vector3(scalingFactor, scalingFactor, scalingFactor);
+  
+  // Create a translation matrix
+  // const translationMatrix = new THREE.Matrix4().makeTranslation(0, 0, -averageDepthCm);
+
+  // Apply the scaling and translation to the face transformation matrix
+  // faceMatrix.multiplyMatrices(translationMatrix, scaleMatrix);
+  // faceMatrix.multiplyMatrices(scaleMatrix);
+  const oldFaceMatrix = faceMatrix.clone();
+  const newTranslation = new THREE.Vector3(0, 0, -averageDepthCm);
+  // const newFaceMatrix = oldFaceMatrix.multiply(scaleMatrix);
+  // const newFaceMatrix = oldFaceMatrix.multiplyScalar(scalingFactor)
+  const newFaceMatrix = oldFaceMatrix.scale(scaleVector);
+
+  return newFaceMatrix;
+}
+
+function reprojection3D(x, y, z, intrinsicMatrix) {
+  // Extract intrinsic parameters
+  const fx = intrinsicMatrix.elements[0];
+  const fy = intrinsicMatrix.elements[4];
+  const cx = intrinsicMatrix.elements[6];
+  const cy = intrinsicMatrix.elements[7];
+
+  // Reproject to 3D
+  const diff = x - cx
+  const diff1 = diff * z
+  const diff2 = diff1 / fx
+  const X1 = (x - cx) * z / fx;
+  const Y1 = (y - cy) * z / fy;
+  return new THREE.Vector3(X1, Y1, z);
+}
+
+function computeCentroid(points) {
+  const centroid = new THREE.Vector3();
+  points.forEach(point => {
+    centroid.add(point);
+  });
+  centroid.divideScalar(points.length);
+  return centroid;
+}
+
+function get_intersection_with_plane(plane_normal, plane_point, ray_vector, ray_point) {
+  const diff = new THREE.Vector3().subVectors(plane_point, ray_point);
+  const prod1 = diff.dot(plane_normal);
+  const prod2 = ray_vector.dot(plane_normal);
+  const prod3 = prod1 / prod2;
+  return new THREE.Vector3().addVectors(ray_point, ray_vector.clone().multiplyScalar(prod3));
+}
+
 export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
   (
     {
@@ -113,6 +298,8 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
     const meshRef = React.useRef<THREE.Mesh>(null);
     const eyeRightRef = React.useRef<FacemeshEyeApi>(null);
     const eyeLeftRef = React.useRef<FacemeshEyeApi>(null);
+    const rightPOGRef = React.useRef<THREE.Group>(null);
+    const leftPOGRef = React.useRef<THREE.Group>(null);
 
     const [sightDir] = React.useState(() => new THREE.Vector3());
     const [transform] = React.useState(() => new THREE.Object3D());
@@ -131,20 +318,108 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
       const faceGeometry = meshRef.current?.geometry;
       if (!faceGeometry) return;
 
-      faceGeometry.setFromPoints(points as THREE.Vector3[]);
-      faceGeometry.setDrawRange(0, FacemeshDatas.TRIANGULATION.length);
+      // 
+      // Normalize points (making the face fit in a 1x1x1 cube, dividing by the width of the face)
+      //
+      // const facePoints: THREE.Vector3[] = points as THREE.Vector3[];
+      const facePoints = points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+      // const faceWidth = facePoints[10].distanceTo(facePoints[234]);
+      // facePoints.forEach((p) => p.divideScalar(faceWidth));
 
       //
-      // A. compute sightDir vector
+      // Compute Depth based on Iris
       //
-      //  - either from `facialTransformationMatrix` if available
-      //  - or from `verticalTri`
-      //
+      const leftEyeLandmarks = [263, 362, 386, 374, 380]
+      const rightEyeLandmarks = [33, 133, 159, 145, 153]
+
+      // Compute the xy points of the eye contour
+      const leftXYPoints = leftEyeLandmarks.map((i) => {
+        const p = points[i];
+        return [p.x * VIDEO_WIDTH, p.y * VIDEO_HEIGHT];
+      });
+      const rightXYPoints = rightEyeLandmarks.map((i) => {
+        const p = points[i];
+        return [p.x * VIDEO_WIDTH, p.y * VIDEO_HEIGHT];
+      });
+
+      // Compute the convex hull of the 2D points
+      const leftHull = getConvexHull(leftXYPoints);
+      const rightHull = getConvexHull(rightXYPoints);
+
+      // Compute the minimum enclosing circle
+      const leftCircle = minEnclosingCircle(leftHull);
+      const rightCircle = minEnclosingCircle(rightHull);
+
+      // const leftDepth = estimateDepth(leftCircle.radius/1.7, leftCircle.center, VIDEO_WIDTH, IMAGE_SIZE);
+      // const rightDepth = estimateDepth(rightCircle.radius/1.7, rightCircle.center, VIDEO_WIDTH, IMAGE_SIZE);
+      // const averageDepth = (leftDepth + rightDepth) / 2;
+      // console.log("Average Depth: ", averageDepth);
+
+      // Reproject the 2D eye points to the 3D in cm
+      // const leftCentroidCm = reprojection3D(leftCircle.center[0], leftCircle.center[1], averageDepth, intrinsicMatrix);
+      // const righCentroidCm = reprojection3D(rightCircle.center[0], rightCircle.center[1], averageDepth, intrinsicMatrix);
+
+      // Compute the 3D points of eyes in canonical face coordinate space
+      const leftXYZPoints = leftEyeLandmarks.map((i) => {
+        return facePoints[i];
+      })
+      const rightXYZPoints = rightEyeLandmarks.map((i) => {
+        return facePoints[i];
+      })
+      const leftCentroidCf = computeCentroid(leftXYZPoints);
+      const rightCentroidCf = computeCentroid(rightXYZPoints);
+
+      // Compute the xyz scaling based on the inter-pupillary distance (separated by dimension)
+      // const interPupillaryDistanceCf = new THREE.Vector3().subVectors(leftCentroidCf, rightCentroidCf);
+      const canonicalIPD = leftCentroidCf.distanceTo(rightCentroidCf);
+      const realWorldIPD = 6.3;
+      const metricScale = realWorldIPD / canonicalIPD;
+      // const interPupillaryDistanceCm = new THREE.Vector3().subVectors(leftCentroidCm, righCentroidCm);
+      // const scalingFactor = new THREE.Vector3().copy(interPupillaryDistanceCm).divide(interPupillaryDistanceCf);
+      // scalingFactor.multiplyScalar(0.3);
+      // scalingFactor.z = 10
+
+      // Compute the new translation vector based on the distance between the eye centroids
+      // const leftTranslation = new THREE.Vector3().subVectors(leftCentroidCm, leftCentroidCf);
+      // const rightTranslation = new THREE.Vector3().subVectors(righCentroidCm, rightCentroidCf);
+      // const averageTranslation = new THREE.Vector3().addVectors(leftTranslation, rightTranslation).divideScalar(2);
+      // console.log(averageTranslation)
+
+      // Apply the scaling factor the facePoints
+      facePoints.forEach((p) => p.multiplyScalar(metricScale));
+      // console.log(metricScale)
+
+      // Estimate the depth by leveraging the inter-pupillary distance 
+      const leftEye2D = new THREE.Vector2(leftCircle.center[0], leftCircle.center[1]);
+      const rightEye2D = new THREE.Vector2(rightCircle.center[0], rightCircle.center[1]);
+      
+      // Compute the pixel distance between the eyes
+      const eyeDistance = leftEye2D.distanceTo(rightEye2D);
+
+      // Estimate the depth based on the inter-pupillary distance
+      const focalLength = VIDEO_WIDTH / 2;
+      const estimateDepth = 3.1 * (focalLength * realWorldIPD) / eyeDistance;
+      // console.log("Estimated Depth: ", estimateDepth);
 
       if (facialTransformationMatrix) {
         // from facialTransformationMatrix
         transform.matrix.fromArray(facialTransformationMatrix.data);
         transform.matrix.decompose(transform.position, transform.quaternion, transform.scale);
+        // console.log(transform.position)
+
+        // Compute the z-axis scale factor
+        const scalingFactor = estimateDepth / transform.position.z;
+
+        // Set the new translation
+        transform.scale.set(1, 1, 1);
+        // transform.position.set(0, 0, -estimateDepth);
+        transform.position.multiplyScalar(-scalingFactor);
+        // transform.scale.set(metricScale, metricScale, metricScale);
+        // transform.position.set(averageTranslation.x, averageTranslation.y, averageTranslation.z);
+
+        // Update the scale of the face transformation matrix
+        // transform.scale.set(1, 1, 1);
+        // transform.matrix.makeScale(scalingFactor.x, scalingFactor.y, scalingFactor.z);
 
         // Rotation: y and z axes are inverted
         transform.rotation.y *= -1;
@@ -155,10 +430,16 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
         if (offset) {
           transform.position.y *= -1;
           transform.position.z *= -1;
-          offsetRef.current?.position.copy(transform.position.divideScalar(offsetScalar));
+          // offsetRef.current?.position.copy(transform.position.divideScalar(offsetScalar));
+          offsetRef.current?.position.copy(transform.position);
+          // offsetRef.current?.position.set(0, 0, 0); // reset
         } else {
           offsetRef.current?.position.set(0, 0, 0); // reset
         }
+
+        // Update the matrix based on the scale and position
+        transform.matrix.compose(transform.position, transform.quaternion, transform.scale);
+
       } else {
         // normal to verticalTri
         normal(
@@ -177,14 +458,25 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
       // B. geometry (straightened)
       //
 
+      //
+      // Apply the face geometry
+      //
+      faceGeometry.setFromPoints(facePoints);
+      faceGeometry.setDrawRange(0, FacemeshDatas.TRIANGULATION.length);
+
       // 1. center (before rotate back)
       faceGeometry.computeBoundingBox();
       if (debug) invalidate(); // invalidate to force re-render for box3Helper (after .computeBoundingBox())
       faceGeometry.center();
+      // console.log(faceGeometry.boundingBox)
+      const faceHeight = faceGeometry.boundingBox!.getSize(new THREE.Vector3()).y;
+      const faceWidth = faceGeometry.boundingBox!.getSize(new THREE.Vector3()).x;
+      // console.log("Face Height: ", faceHeight);
+      // console.log("Face Width: ", faceWidth);
 
       // 2. rotate back + rotate outerRef (once 1.)
       faceGeometry.applyQuaternion(sightDirQuaternionInverse);
-      outerRef.current?.setRotationFromQuaternion(sightDirQuaternion);
+      // outerRef.current?.setRotationFromQuaternion(sightDirQuaternion);
 
       // 3. 👀 eyes
       if (eyes) {
@@ -205,37 +497,107 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
               eyeRightRef.current._update(faceGeometry, faceBlendshapes);
               eyeLeftRef.current._update(faceGeometry, faceBlendshapes);
             }
+
+            // Compute the point-of-gaze
+            const eyeRightSphere = eyeRightRef.current._computeSphere(faceGeometry);
+            const eyeLeftSphere = eyeLeftRef.current._computeSphere(faceGeometry);
+
+            // Multiply the metric scale
+            // eyeRightSphere.center.multiplyScalar(metricScale);
+            // eyeLeftSphere.center.multiplyScalar(metricScale);
+
+            // Apply transformation to the eye sphere
+            eyeRightSphere.center.applyMatrix4(transform.matrix);
+            eyeLeftSphere.center.applyMatrix4(transform.matrix);
+            // Compute the 3D points of eyes in canonical face coordinate space
+            // const leftXYZPoints = leftEyeLandmarks.map((i) => {
+            //   return facePoints[i];
+            // })
+            // const rightXYZPoints = rightEyeLandmarks.map((i) => {
+            //   return facePoints[i];
+            // })
+            // const leftCentroidCf = computeCentroid(leftXYZPoints);
+            // const rightCentroidCf = computeCentroid(rightXYZPoints);
+            // leftCentroidCf.applyMatrix4(transform.matrix);
+
+            // Only the translation of the transformation matrix
+            // const translationMatrix = new THREE.Matrix4().makeTranslation(0, 0, -averageDepth);
+            // leftCentroidCf.add(transform.position);
+
+            // rightPOGRef.current?.position.copy(rightCentroidCf);
+            // leftPOGRef.current?.position.copy(leftCentroidCf);
+            // rightPOGRef.current?.position.copy(eyeRightSphere.center);
+            // leftPOGRef.current?.position.copy(eyeLeftSphere.center);
+
+            // Debugging, set the eye spheres
+            // rightPOGRef.current?.position.copy(rightCentroidCf);
+            // console.log("Left Centroid: ", leftCentroidCf);
+            // leftPOGRef.current?.position.copy(leftCentroidCf);
+            // rightPOGRef.current?.position.copy(eyeRightSphere.center);
+            // leftPOGRef.current?.position.copy(eyeLeftSphere.center);
+
+            // Compute the gaze vector
+            const rightGazeVector = new THREE.Vector3(0, 0, -1);
+            if (eyeRightRef.current.irisDirRef.current) {
+              rightGazeVector.applyQuaternion(eyeRightRef.current.irisDirRef.current.quaternion);
+            }
+            const leftGazeVector = new THREE.Vector3(0, 0, -1);
+            if (eyeLeftRef.current.irisDirRef.current) {
+              leftGazeVector.applyQuaternion(eyeLeftRef.current.irisDirRef.current.quaternion);
+            }
+
+            // Debugging, checking the gaze vector
+            // leftPOGRef.current?.setRotationFromQuaternion(eyeLeftRef.current.irisDirRef.current?.quaternion);
+
+            // Compute the intersection with the face plane
+            const facePlaneNormal = new THREE.Vector3(0, 0, 1);
+            const facePlanePoint = new THREE.Vector3(0, 0, 0);
+            const rightIntersection = get_intersection_with_plane(facePlaneNormal, facePlanePoint, rightGazeVector, eyeRightSphere.center);
+            const leftIntersection = get_intersection_with_plane(facePlaneNormal, facePlanePoint, leftGazeVector, eyeLeftSphere.center);
+
+            // Update the PoG ref
+            rightPOGRef.current?.position.copy(rightIntersection);
+            leftPOGRef.current?.position.copy(leftIntersection);
+
           }
         }
       }
 
       // 3. origin
-      if (originRef.current) {
-        if (origin !== undefined) {
-          if (typeof origin === "number") {
-            const position = faceGeometry.getAttribute("position") as THREE.BufferAttribute;
-            _origin.set(-position.getX(origin), -position.getY(origin), -position.getZ(origin));
-          } else if (origin.isVector3) {
-            _origin.copy(origin);
-          }
-        } else {
-          _origin.setScalar(0);
-        }
+      // if (originRef.current) {
+      //   if (origin !== undefined) {
+      //     if (typeof origin === "number") {
+      //       const position = faceGeometry.getAttribute("position") as THREE.BufferAttribute;
+      //       _origin.set(-position.getX(origin), -position.getY(origin), -position.getZ(origin));
+      //     } else if (origin.isVector3) {
+      //       _origin.copy(origin);
+      //     }
+      //   } else {
+      //     _origin.setScalar(0);
+      //   }
 
-        originRef.current.position.copy(_origin);
-      }
+      //   originRef.current.position.copy(_origin);
+      // }
 
       // 4. re-scale
-      if (scaleRef.current) {
-        let scale = 1;
-        if (width || height || depth) {
-          faceGeometry.boundingBox!.getSize(bboxSize);
-          if (width) scale = width / bboxSize.x; // fit in width
-          if (height) scale = height / bboxSize.y; // fit in height
-          if (depth) scale = depth / bboxSize.z; // fit in depth
-        }
+      // if (scaleRef.current) {
+      //   let scale = 1;
+      //   if (width || height || depth) {
+      //     faceGeometry.boundingBox!.getSize(bboxSize);
+      //     // if (width) scale = width / bboxSize.x; // fit in width
+      //     // if (height) scale = height / bboxSize.y; // fit in height
+      //     if (depth) scale = depth / bboxSize.z; // fit in depth
+      //   }
 
-        scaleRef.current.scale.setScalar(scale !== 1 ? scale : 1);
+      //   scaleRef.current.scale.setScalar(scale !== 1 ? scale : 1);
+      // }
+
+      // UV Mapping
+      const uv = new Float32Array(facePoints.length * 2);
+
+      for (let i = 0; i < points.length; i++) {
+        uv[i * 2] = points[i].x * VIDEO_WIDTH;
+        uv[i * 2 + 1] = points[i].y * VIDEO_HEIGHT;
       }
 
       faceGeometry.computeVertexNormals();
@@ -281,8 +643,22 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
     const one = bbox?.getSize(meshBboxSize).z || 1;
     return (
       <group {...props}>
+
+        <group ref={rightPOGRef}>
+          <Sphere>
+            <meshBasicMaterial color="#00ff00" />
+          </Sphere>
+        </group>
+        <group ref={leftPOGRef}>
+          <Sphere>
+            <meshBasicMaterial color="red" />
+          </Sphere>
+        </group>
+
         <group ref={offsetRef}>
+         
           <group ref={outerRef}>
+
             <group ref={scaleRef}>
               {debug ? (
                 <>
@@ -296,8 +672,9 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
                   />
                 </>
               ) : null}
-
+                
               <group ref={originRef}>
+
                 {eyes && faceBlendshapes && (
                   <group name="eyes">
                     <FacemeshEye side="left" ref={eyeRightRef} debug={debug} />
@@ -451,14 +828,22 @@ export const FacemeshEye = React.forwardRef<FacemeshEyeApi, FacemeshEyeProps>(({
         <group ref={irisDirRef}>
           <>
             {debug && (
+              <>
+
+              {/* <Sphere>
+                <meshBasicMaterial color="white" />
+              </Sphere> */}
+
               <Line
                 points={[
                   [0, 0, 0],
-                  [0, 0, -2],
+                  [0, 0, -100],
                 ]}
                 lineWidth={1}
                 color={color}
               />
+
+              </>
             )}
           </>
         </group>
