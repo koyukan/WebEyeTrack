@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef, useState, useEffect } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Grid, Environment, CameraControls, PerspectiveCamera, useHelper, Stats, useGLTF } from '@react-three/drei'
 import { useControls, buttonGroup, folder } from 'leva'
@@ -12,6 +12,7 @@ import { FaceControls } from './components/FaceControls'
 import { Calibration } from "./Calibration.jsx"
 import { Screen } from './Screen.jsx'
 import { Camera } from './Camera.jsx'
+import GazeDot from './GazeDot.jsx'
 
 const city = import('@pmndrs/assets/hdri/city.exr')
 
@@ -24,8 +25,29 @@ function px2cm(px) {
 }
 
 export default function App() {
+  const [gaze, setGaze] = useState({ x: 0, y: 0 });
+  
+  useEffect(() => {
+    const handleCustomEvent = (event) => {
+      // Handle the event
+      let newData = { x: event.detail.x, y: event.detail.y };
+      setGaze(newData);
+    };
+
+    // Add event listener
+    document.addEventListener("gazeUpdate", handleCustomEvent);
+
+    // Cleanup function to remove the event listener
+    return () => {
+      document.removeEventListener("gazeUpdate", handleCustomEvent);
+    };
+  }, []); // Empty dependency array means this effect runs once on mount
+
   return (
     <>
+      <div className="absolute left-0 right-0 w-full h-full z-10 pointer-events-none">
+        <GazeDot x={gaze.x} y={gaze.y} />
+      </div>
 
       <Calibration />
 
@@ -58,6 +80,7 @@ function Scene() {
   const gui = useControls({
     camera: { value: 'cc', options: ['user', 'cc'] },
     screen: false,
+    showPoG: true,
     calibrate: buttonGroup({
       opts: {
         calibrate: () => Calibrate() 

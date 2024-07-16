@@ -9,6 +9,36 @@ const VIDEO_HEIGHT = 480
 const VIDEO_WIDTH = 640
 const IMAGE_SIZE = [VIDEO_WIDTH, VIDEO_HEIGHT]
 
+function px2cm(px) {
+  var n = 0;
+  var cpi = 2.54; // centimeters per inch
+  var dpi = 96; // dots per inch
+  var ppd = window.devicePixelRatio; // pixels per dot
+  return (px * cpi / (dpi * ppd)).toFixed(n);
+}
+
+function cm2px(cm) {
+  var n = 0;
+  var cpi = 2.54; // centimeters per inch
+  var dpi = 96; // dots per inch
+  var ppd = window.devicePixelRatio; // pixels per dot
+  return (cm * dpi * ppd / cpi).toFixed(n);
+}
+
+// Screen dimensions
+const screenWidth = screen.width;
+const screenHeight = screen.height;
+const SCREEN_WIDTH = Number(px2cm(screenWidth));
+const SCREEN_HEIGHT = Number(px2cm(screenHeight));
+
+const screenTransformation = new THREE.Matrix4().set(
+  -1, 0, 0, 0,
+  0, 1, 0, 0,
+  0, 0, 1, 0,
+  0, 0, 0, 1
+);
+screenTransformation.setPosition(0.5*SCREEN_WIDTH, 0, 0);
+
 const fov = 70;  // Example field of view in degrees
 
 // Compute the focal lengths based on the field of view
@@ -502,39 +532,9 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
             const eyeRightSphere = eyeRightRef.current._computeSphere(faceGeometry);
             const eyeLeftSphere = eyeLeftRef.current._computeSphere(faceGeometry);
 
-            // Multiply the metric scale
-            // eyeRightSphere.center.multiplyScalar(metricScale);
-            // eyeLeftSphere.center.multiplyScalar(metricScale);
-
             // Apply transformation to the eye sphere
             eyeRightSphere.center.applyMatrix4(transform.matrix);
             eyeLeftSphere.center.applyMatrix4(transform.matrix);
-            // Compute the 3D points of eyes in canonical face coordinate space
-            // const leftXYZPoints = leftEyeLandmarks.map((i) => {
-            //   return facePoints[i];
-            // })
-            // const rightXYZPoints = rightEyeLandmarks.map((i) => {
-            //   return facePoints[i];
-            // })
-            // const leftCentroidCf = computeCentroid(leftXYZPoints);
-            // const rightCentroidCf = computeCentroid(rightXYZPoints);
-            // leftCentroidCf.applyMatrix4(transform.matrix);
-
-            // Only the translation of the transformation matrix
-            // const translationMatrix = new THREE.Matrix4().makeTranslation(0, 0, -averageDepth);
-            // leftCentroidCf.add(transform.position);
-
-            // rightPOGRef.current?.position.copy(rightCentroidCf);
-            // leftPOGRef.current?.position.copy(leftCentroidCf);
-            // rightPOGRef.current?.position.copy(eyeRightSphere.center);
-            // leftPOGRef.current?.position.copy(eyeLeftSphere.center);
-
-            // Debugging, set the eye spheres
-            // rightPOGRef.current?.position.copy(rightCentroidCf);
-            // console.log("Left Centroid: ", leftCentroidCf);
-            // leftPOGRef.current?.position.copy(leftCentroidCf);
-            // rightPOGRef.current?.position.copy(eyeRightSphere.center);
-            // leftPOGRef.current?.position.copy(eyeLeftSphere.center);
 
             // Compute the gaze vector
             const rightGazeVector = new THREE.Vector3(0, 0, -1);
@@ -546,9 +546,6 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
               leftGazeVector.applyQuaternion(eyeLeftRef.current.irisDirRef.current.quaternion);
             }
 
-            // Debugging, checking the gaze vector
-            // leftPOGRef.current?.setRotationFromQuaternion(eyeLeftRef.current.irisDirRef.current?.quaternion);
-
             // Compute the intersection with the face plane
             const facePlaneNormal = new THREE.Vector3(0, 0, 1);
             const facePlanePoint = new THREE.Vector3(0, 0, 0);
@@ -558,6 +555,22 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
             // Update the PoG ref
             rightPOGRef.current?.position.copy(rightIntersection);
             leftPOGRef.current?.position.copy(leftIntersection);
+
+            // Compute the PoG in screen coordinates
+            const right3DPoG = new THREE.Vector3().copy(rightIntersection).applyMatrix4(screenTransformation);
+            const left3DPoG = new THREE.Vector3().copy(leftIntersection).applyMatrix4(screenTransformation);
+            const right2DPoG = new THREE.Vector2(right3DPoG.x, right3DPoG.y);
+            const left2DPoG = new THREE.Vector2(left3DPoG.x, left3DPoG.y);
+
+            // Compute an average PoG
+            const average2DPoG = new THREE.Vector2().addVectors(right2DPoG, left2DPoG).divideScalar(2);
+
+            // Convert from cm to px
+            const average2DPoGpx = [Number(cm2px(average2DPoG.x)), Number(cm2px(average2DPoG.y))];
+
+            // Broadcast event
+            const event = new CustomEvent("gazeUpdate", { detail: { x: average2DPoGpx[0], y: average2DPoGpx[1] } });
+            document.dispatchEvent(event);
 
           }
         }

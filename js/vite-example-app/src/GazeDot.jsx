@@ -1,18 +1,18 @@
 import React from 'react';
 
-export default function GazeDot(x, y){
+export default function GazeDot(props){
   
   const style = {
     position: 'fixed',
     zIndex: 100,
     left: '-5px',
     top: '-5px',
-    background: 'red',
+    background: 'magenta',
     borderRadius: '50%',
     opacity: 0.7,
-    width: 20,
-    height: 20,
-    transform: `translate(${x}px, ${y}px)`,
+    width: 30,
+    height: 30,
+    transform: `translate(${props.x}px, ${props.y}px)`,
   };
 
   return <div id="GazeDot" style={style}></div>;
