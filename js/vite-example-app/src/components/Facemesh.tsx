@@ -533,8 +533,8 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
       // console.log("Face Width: ", faceWidth);
 
       // 2. rotate back + rotate outerRef (once 1.)
-      faceGeometry.applyQuaternion(sightDirQuaternionInverse);
-      outerRef.current?.setRotationFromQuaternion(sightDirQuaternion); // Important to capture the rotation of the face
+      // faceGeometry.applyQuaternion(sightDirQuaternionInverse);
+      // outerRef.current?.setRotationFromQuaternion(sightDirQuaternion); // Important to capture the rotation of the face
 
       // 3. 👀 eyes
       if (eyes) {
