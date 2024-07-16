@@ -110,11 +110,11 @@ class EFEModel(pl.LightningModule):
 
         # Combine all losess together
         losses = [
-            gaze_origin_loss * self.config['train']['loss_coefs']['xy_heatmap_loss'], 
-            gaze_origin_xy_loss * self.config['train']['loss_coefs']['xy_loss'], 
-            gaze_origin_z_loss * self.config['train']['loss_coefs']['z_loss'], 
-            angular_loss * self.config['train']['loss_coefs']['angular_loss'], 
-            pog_loss * self.config['train']['loss_coefs']['pog_loss']
+            gaze_origin_loss * self.config['train']['xy_heatmap_loss'], 
+            gaze_origin_xy_loss * self.config['train']['xy_loss'], 
+            gaze_origin_z_loss * self.config['train']['z_loss'], 
+            angular_loss * self.config['train']['angular_loss'], 
+            pog_loss * self.config['train']['pog_loss']
         ] 
         complete_loss = torch.sum(torch.stack(losses))
 
@@ -148,7 +148,8 @@ class EFEModel(pl.LightningModule):
         for k, v in losses_output['metrics'].items():
             self.log(f'train_{k}', v, batch_size=batch['image'].shape[0])
 
-        self.log_tb_images('train', batch, output, losses_output)
+        if batch_idx % 100 == 0:
+            self.log_tb_images('train', batch, output, losses_output)
         
         return {'loss': losses_output['losses']['complete_loss'], 'log': losses_output['losses']}
 
@@ -163,7 +164,8 @@ class EFEModel(pl.LightningModule):
         for k, v in losses_output['metrics'].items():
             self.log(f'val_{k}', v, batch_size=batch['image'].shape[0])
         
-        self.log_tb_images('val', batch, output, losses_output)
+        if batch_idx % 100 == 0:
+            self.log_tb_images('val', batch, output, losses_output)
 
     def log_tb_images(self, prefix, batch, output, losses_output):
 
@@ -254,7 +256,11 @@ class EFEModel(pl.LightningModule):
         # tb_logger.add_images(f"{prefix}_gt_gaze_origin_heatmaps", np.moveaxis(np.stack(gaze_origin_heatmaps_gt), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_gaze_depth", np.moveaxis(np.stack(gaze_depth_imgs), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_gaze_direction", np.moveaxis(np.stack(gaze_direction_imgs), -1, 1), self.current_epoch)
-        tb_logger.add_images(f"{prefix}_pog", np.moveaxis(np.stack(gaze_pog_imgs), -1, 1), self.current_epoch)
+        # tb_logger.add_images(f"{prefix}_pog", np.moveaxis(np.stack(gaze_pog_imgs), -1, 1), self.current_epoch)
+
+        # Pog Images can be different sizes (since the target screen dimensions can be different)
+        for i, img in enumerate(gaze_pog_imgs):
+            tb_logger.add_image(f"{prefix}_pog_{i}", img, self.current_epoch, dataformats='HWC')
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=1e-3)

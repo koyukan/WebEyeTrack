@@ -2,13 +2,16 @@ datasets:
   MPIIFaceGaze:
     path: "data/MPIIFaceGaze"
 train:
+
+  # Model
   train_size: 0.8
   batch_size: 3
   max_epochs: 20
   heatmap_coef: 100.0
-  loss_coefs:
-    xy_heatmap_loss: 10
-    xy_loss: 10
-    z_loss: 1
-    angular_loss: 10
-    pog_loss: 0.001
+
+  # Losses
+  xy_heatmap_loss: 10
+  xy_loss: 10
+  z_loss: 0.1
+  angular_loss: 10
+  pog_loss: 0.001
