@@ -1,5 +1,6 @@
 /* eslint react-hooks/exhaustive-deps: 1 */
 import * as React from "react";
+import { useEffect } from 'react'
 import * as THREE from "three";
 import { useThree } from "@react-three/fiber";
 import { Line, Sphere } from "@react-three/drei";
@@ -38,6 +39,7 @@ const screenTransformation = new THREE.Matrix4().set(
   0, 0, 0, 1
 );
 screenTransformation.setPosition(0.5*SCREEN_WIDTH, 0, 0);
+const screenTransformationInverse = new THREE.Matrix4().copy(screenTransformation).invert();
 
 const fov = 70;  // Example field of view in degrees
 
@@ -344,6 +346,32 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
 
     const [bboxSize] = React.useState(() => new THREE.Vector3());
 
+    useEffect(() => {
+      const mouseClickEventHandler = (event) => {
+        // Get the xy coordinates of the click
+        let x = event.clientX;
+        let y = event.clientY;
+        
+        const faceGeometry = meshRef.current?.geometry;
+        if (!faceGeometry) return;
+
+        // Compute the xyz coordinate in camera space
+        const mouse = new THREE.Vector3(x, y, 0);
+        mouse.applyMatrix4(screenTransformationInverse);
+        
+        // Compute the eyes' position in camera space
+        // const eyeRightSphere = eyeRightRef.current?._computeSphere(faceGeometry);
+      }
+
+      // Add event listener
+      document.addEventListener("click", mouseClickEventHandler);
+
+      // Cleanup function to remove the event listener
+      return () => {
+        document.removeEventListener("click", mouseClickEventHandler);
+      };
+    }, []); // Empty dependency array means this effect runs once on mount
+
     React.useEffect(() => {
       const faceGeometry = meshRef.current?.geometry;
       if (!faceGeometry) return;
@@ -506,7 +534,7 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
 
       // 2. rotate back + rotate outerRef (once 1.)
       faceGeometry.applyQuaternion(sightDirQuaternionInverse);
-      // outerRef.current?.setRotationFromQuaternion(sightDirQuaternion);
+      outerRef.current?.setRotationFromQuaternion(sightDirQuaternion); // Important to capture the rotation of the face
 
       // 3. 👀 eyes
       if (eyes) {
