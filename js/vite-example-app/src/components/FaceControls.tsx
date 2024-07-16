@@ -259,7 +259,7 @@ export const FaceControls = forwardRef<FaceControlsApi, FaceControlsProps>(
           },
           pause: () => {
             webcamApiRef.current?.videoTextureApiRef.current?.texture.source.data.pause();
-          },
+          }
         }),
       [detect, computeTarget, update]
     );

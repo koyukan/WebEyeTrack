@@ -9,6 +9,7 @@ import { suspend } from 'suspend-react'
 import { FaceLandmarker } from './components/FaceLandmarker'
 import { FaceControls } from './components/FaceControls'
 
+import { Calibration } from "./Calibration.jsx"
 import { Screen } from './Screen.jsx'
 import { Camera } from './Camera.jsx'
 
@@ -25,6 +26,9 @@ function px2cm(px) {
 export default function App() {
   return (
     <>
+
+      <Calibration />
+
       <Canvas shadows camera={{ position: [-60, 10, 60], near: 0.01 }}>
         <FaceLandmarker>
           <Scene />
@@ -41,12 +45,24 @@ const screenHeight = screen.height;
 const w = px2cm(screenWidth);
 const h = px2cm(screenHeight);
 
+function Calibrate() {
+  // console.log("Calibrating...")
+  const modal = document.getElementById("calibration_modal");
+  modal.showModal();
+}
+
+
 function Scene() {
   const vids = ['https://storage.googleapis.com/abernier-portfolio/metahumans.mp4', 'https://storage.googleapis.com/abernier-portfolio/metahumans2.mp4']
 
   const gui = useControls({
     camera: { value: 'cc', options: ['user', 'cc'] },
     screen: false,
+    calibrate: buttonGroup({
+      opts: {
+        calibrate: () => Calibrate() 
+      }
+    }),
     webcam: folder({
       webcam: true,
       autostart: true,
@@ -182,7 +198,7 @@ function Scene() {
 
 function Ground() {
   const gridConfig = {
-    cellSize: 0.1,
+    cellSize: 1,
     cellThickness: 0.5,
     cellColor: '#6f6f6f',
     sectionSize: 1,
