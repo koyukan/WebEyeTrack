@@ -22,7 +22,6 @@ class Gaze360(nn.Module):
         self.last_layer = nn.Linear(self.img_feature_dim, 3)
 
     def forward(self, x_in):
-
         base_out = self.base_model(x_in["face"])
         base_out = torch.flatten(base_out, start_dim=1)
         output = self.last_layer(base_out)

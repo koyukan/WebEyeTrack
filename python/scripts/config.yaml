@@ -5,7 +5,7 @@ train:
 
   # Model-Agnostic parameters
   train_size: 0.8
-  batch_size: 3
+  batch_size: 2
   max_epochs: 20
 
   # Model specific parameters
@@ -19,8 +19,8 @@ train:
         angular_loss: 1
         pog_loss: 0.001
       dataset_params:
-        img_size: (640, 480)
+        img_size: [640, 480]
     Gaze360:
       dataset_params:
-        face_size: (244, 244)
+        face_size: [244, 244]
     

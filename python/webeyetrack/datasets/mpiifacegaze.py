@@ -25,6 +25,7 @@ class MPIIFaceGazeDataset(Dataset):
     def __init__(
             self, 
             dataset_dir: Union[pathlib.Path, str], 
+            dataset_size: Optional[int] = None,
             face_size: tuple = (224, 224),
             img_size: Optional[Tuple] = None,
         ):
@@ -36,6 +37,7 @@ class MPIIFaceGazeDataset(Dataset):
         assert self.dataset_dir.is_dir(), f"Dataset directory {self.dataset_dir} does not exist."
         self.img_size = img_size
         self.face_size = face_size
+        self.dataset_size = dataset_size
 
         # Setup MediaPipe Face Facial Landmark model
         base_options = python.BaseOptions(model_asset_path=str(CWD / 'face_landmarker_v2_with_blendshapes.task'))
@@ -52,7 +54,14 @@ class MPIIFaceGazeDataset(Dataset):
         self.samples: List[Sample] = []
         self.participant_calibration_data: Dict[CalibrationData] = {}
 
+        # Tracking the number of loaded samples
+        num_samples = 0
+
         for participant_dir in participant_dirs:
+
+            # if self.dataset_size is not None and num_samples >= self.dataset_size:
+            #     break
+
             participant_id = participant_dir.name
             txt_file_fp = participant_dir / f'{participant_id}.txt'
             assert txt_file_fp.is_file(), f"Participant {participant_id} does not have a txt file."
@@ -84,6 +93,10 @@ class MPIIFaceGazeDataset(Dataset):
             with open(txt_file_fp, 'r') as f:
                 lines = f.readlines()
                 for line in lines:
+
+                    if self.dataset_size is not None and num_samples >= self.dataset_size:
+                        break
+
                     items = line.split(' ')
 
                     face_origin_3d = np.array(items[21:24], dtype=np.float32)
@@ -114,21 +127,50 @@ class MPIIFaceGazeDataset(Dataset):
                     )
 
                     # Extract the 2D facial landmarks 
-                    facial_landmarks_2d = np.array(items[3:15], dtype=np.float32).reshape(2, 6)
+                    # facial_landmarks_2d = np.array(items[3:15], dtype=np.float32).reshape(2, 6)
 
                     # Compute the bounding box of the face based on the facial landmarks (4 eye corners, 2 mouth corners)
                     # The bounding box is defined as the top left and bottom right corners
+                    # face_bbox = np.array([
+                    #     int(np.min(facial_landmarks_2d[1])), 
+                    #     int(np.min(facial_landmarks_2d[0])), 
+                    #     int(np.max(facial_landmarks_2d[1])), 
+                    #     int(np.max(facial_landmarks_2d[0]))
+                    # ])
+
+                    # Loading the image
+                    image_fp = participant_dir / items[0]
+                    image = Image.open(image_fp)
+                    image_np = cv2.imread(str(image_fp))
+
+                    # Look at the image
+                    # cv2.imshow('image', image_np)
+                    # cv2.waitKey(0)
+                    # cv2.destroyAllWindows()
+
+                    # Detect the facial landmarks via MediaPipe
+                    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image_np)
+                    detection_results = self.face_landmarker.detect(mp_image)
+
+                    # Compute the face bounding box based on the MediaPipe landmarks
+                    try:
+                        face_landmarks_proto = detection_results.face_landmarks[0]
+                    except:
+                        print(f"Participant {participant_id} image {items[0]} does not have a face detected.")
+                        continue
+
+                    face_landmarks = np.array([[lm.x * image.size[0], lm.y * image.size[1]] for lm in face_landmarks_proto])
                     face_bbox = np.array([
-                        int(np.min(facial_landmarks_2d[1])), 
-                        int(np.min(facial_landmarks_2d[0])), 
-                        int(np.max(facial_landmarks_2d[1])), 
-                        int(np.max(facial_landmarks_2d[0]))
+                        int(np.min(face_landmarks[:, 1])), 
+                        int(np.min(face_landmarks[:, 0])), 
+                        int(np.max(face_landmarks[:, 1])), 
+                        int(np.max(face_landmarks[:, 0]))
                     ])
 
                     annotation = Annotations(
                         pog_px=np.array(items[1:3], dtype=np.float32),
                         face_bbox=face_bbox,
-                        facial_landmarks_2d=facial_landmarks_2d,
+                        facial_landmarks_2d=face_landmarks,
                         head_pose_3d=np.array(items[15:21], dtype=np.float32).reshape(3, 2),
                         face_origin_3d=face_origin_3d,
                         face_origin_2d=face_origin_2d.flatten(),
@@ -139,7 +181,8 @@ class MPIIFaceGazeDataset(Dataset):
                     )
             
                     annotations[items[0]] = annotation
-     
+                    num_samples += 1
+ 
             day_folders = [d for d in participant_dir.glob('day*') if d.is_dir()]
             for day_folder in day_folders:
 
@@ -147,13 +190,15 @@ class MPIIFaceGazeDataset(Dataset):
                 images = [f for f in day_folder.glob('*.jpg') if f.is_file()]
                 for image in images:
                     complete_name = f"{day_folder.name}/{image.name}"
-                    self.samples.append(
-                        Sample(
-                            participant_id=participant_id,
-                            image_fp=image,
-                            annotations=annotations[complete_name]
+
+                    if complete_name in annotations:
+                        self.samples.append(
+                            Sample(
+                                participant_id=participant_id,
+                                image_fp=image,
+                                annotations=annotations[complete_name]
+                            )
                         )
-                    )
 
         # Compute the mean and standard deviation for the following information (gaze origin depth, and PoG)
         gaze_origin_depths = []
@@ -178,11 +223,7 @@ class MPIIFaceGazeDataset(Dataset):
 
         # Get the calibration
         calibration_data = self.participant_calibration_data[sample.participant_id]
-
-        # Detect the facial landmarks via MediaPipe
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image_np)
-        detection_results = self.face_landmarker.detect(mp_image)
-        
+ 
         # Convert from uint8 to float32
         image_np = image_np.astype(np.float32) / 255.0
 
@@ -192,18 +233,8 @@ class MPIIFaceGazeDataset(Dataset):
         # cv2.waitKey(0)
         # cv2.destroyAllWindows()
 
-        # Compute the face bounding box based on the MediaPipe landmarks
-        face_landmarks_proto = detection_results.face_landmarks[0]
-        face_landmarks = np.array([[lm.x * image.size[0], lm.y * image.size[1]] for lm in face_landmarks_proto])
-        face_bbox = np.array([
-            int(np.min(face_landmarks[:, 1])), 
-            int(np.min(face_landmarks[:, 0])), 
-            int(np.max(face_landmarks[:, 1])), 
-            int(np.max(face_landmarks[:, 0]))
-        ])
-        sample.annotations.face_bbox = face_bbox
-
         # Crop out the face image and resize to have standard size
+        face_bbox = sample.annotations.face_bbox
         face_image_np = image_np[face_bbox[0]:face_bbox[2], face_bbox[1]:face_bbox[3]]
         face_image_np = cv2.resize(face_image_np, self.face_size, interpolation=cv2.INTER_LINEAR)
 
@@ -252,7 +283,10 @@ if __name__ == '__main__':
     with open(DEFAULT_CONFIG, 'r') as f:
         config = yaml.safe_load(f)
 
-    dataset = MPIIFaceGazeDataset(GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']))
+    dataset = MPIIFaceGazeDataset(
+        GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
+        dataset_size=2
+    )
     print(len(dataset))
 
     sample = dataset[0]

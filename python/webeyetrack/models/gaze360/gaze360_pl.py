@@ -22,13 +22,13 @@ class Gaze360_PL(pl.LightningModule):
     def compute_loss(self, output, batch):
 
         # Combine all losess together
-        losses = [
-        ] 
-        complete_loss = torch.sum(torch.stack(losses))
+        # losses = [
+        # ] 
+        # complete_loss = torch.sum(torch.stack(losses))
 
         new_output = {
             'losses': {
-                'complete_loss': complete_loss
+                # 'complete_loss': complete_loss
             },
             'artifacts': {
             },
@@ -39,7 +39,7 @@ class Gaze360_PL(pl.LightningModule):
         return new_output
 
     def training_step(self, batch, batch_idx):
-        output = self.base_model.forward(batch['face_image'])
+        output = self.base_model.forward({'face': batch['face_image']})
         losses_output = self.compute_loss(output, batch)
 
         # Logging the losses
@@ -51,13 +51,13 @@ class Gaze360_PL(pl.LightningModule):
         if batch_idx % 100 == 0:
             self.log_tb_images('train', batch, output, losses_output)
         
-        return {'loss': losses_output['losses']['complete_loss'], 'log': losses_output['losses']}
+        # return {'loss': losses_output['losses']['complete_loss'], 'log': losses_output['losses']}
 
     def validation_step(self, batch, batch_idx):
-        output = self.base_model.forward(batch['face_image'])
+        output = self.base_model.forward({'face': batch['face_image']})
         losses_output = self.compute_loss(output, batch)
 
-        self.log('val_loss', losses_output['losses']['complete_loss'])
+        # self.log('val_loss', losses_output['losses']['complete_loss'])
         for k, v in losses_output['losses'].items():
             if k != 'complete_loss':
                 self.log(f'val_{k}', v, batch_size=batch['image'].shape[0])
