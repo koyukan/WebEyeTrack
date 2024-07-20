@@ -6,6 +6,7 @@ import pathlib
 class Annotations:
     pog_px: np.ndarray # (2,)
     facial_landmarks_2d: np.ndarray # (2, 6)
+    face_bbox: np.ndarray # (4,)
     head_pose_3d: np.ndarray # (6,), rotation matrix
     face_origin_3d: np.ndarray # (3,)
     face_origin_2d: np.ndarray # (2,)

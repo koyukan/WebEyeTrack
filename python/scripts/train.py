@@ -1,4 +1,5 @@
 import pathlib
+import argparse
 
 import yaml
 import torch
@@ -9,26 +10,39 @@ from pytorch_lightning.callbacks import EarlyStopping
 
 from webeyetrack.constants import GIT_ROOT
 from webeyetrack.datasets import MPIIFaceGazeDataset
-from webeyetrack.models import EFEModel_PL
+from webeyetrack.models.efe import EFEModel_PL
+from webeyetrack.models.gaze360 import Gaze360_PL
 
 FILE_DIR = pathlib.Path(__file__).parent
 
-def dict2mdtable(d, key='Name', val='Value'):
-    rows = [f'| {key} | {val} |']
-    rows += ['|--|--|']
-    rows += [f'| {k} | {v} |' for k, v in d.items()]
-    return "  \n".join(rows)
+name_to_model = {
+    'EFE': EFEModel_PL,
+    'Gaze360': Gaze360_PL,
+}
 
 with open(FILE_DIR / 'config.yaml', 'r') as f:
     config = yaml.safe_load(f)
 
 if __name__ == '__main__':
 
+    # Create arguments to select the model (EFE, Gaze360, etc.)
+    parser = argparse.ArgumentParser(description='Train a model')
+
+    # Restrict the options of the model
+    parser.add_argument('--model', type=str, choices=['EFE', 'Gaze360'], help='The model to train')
+    args = parser.parse_args()
+    
+    # Obtain model-specific dataset configuration
+    model_config = config['train']['model_specific'][args.model]
+
     # Create the model
-    model = EFEModel_PL(config)
+    model = name_to_model[args.model](model_config) 
 
     # Create a dataset object
-    dataset = MPIIFaceGazeDataset(GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']))
+    dataset = MPIIFaceGazeDataset(
+        GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
+        **model_config['dataset_params']
+    )
 
     # Create the dataloader
     # train_size = int(config['train']['train_size'] * len(dataset))
@@ -58,12 +72,10 @@ if __name__ == '__main__':
     )
 
     # Create TensorBoard Logger
-    model_name = 'EFE'
-    tb_logger = pl.loggers.TensorBoardLogger('lightning_logs/', name=model_name)
+    tb_logger = pl.loggers.TensorBoardLogger('lightning_logs/', name=args.model)
 
     # Log the hyperparameters
     tb_logger.log_hyperparams(config['train'])
-    # tb_logger.add_text('Hyperparameters', dict2mdtable(config['train']), 0)
 
     # Create a trainer
     trainer = Trainer(

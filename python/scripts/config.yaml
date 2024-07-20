@@ -3,15 +3,24 @@ datasets:
     path: "data/MPIIFaceGaze"
 train:
 
-  # Model
+  # Model-Agnostic parameters
   train_size: 0.8
   batch_size: 3
   max_epochs: 20
-  heatmap_coef: 100.0
 
-  # Losses
-  xy_heatmap_loss: 10
-  xy_loss: 10
-  z_loss: 0.1
-  angular_loss: 10
-  pog_loss: 0.001
+  # Model specific parameters
+  model_specific:
+    EFE:
+      hparams:
+        heatmap_coef: 100.0
+        xy_heatmap_loss: 10
+        xy_loss: 10
+        z_loss: 1
+        angular_loss: 1
+        pog_loss: 0.001
+      dataset_params:
+        img_size: (640, 480)
+    Gaze360:
+      dataset_params:
+        face_size: (244, 244)
+    
