@@ -1,5 +1,35 @@
 import torch
 
+def angular_error(gaze, label):
+    """
+    Computes the angular error between the gaze vectors and the label vectors.
+    
+    Parameters:
+    - gaze: Tensor of shape (batch_size, 3) containing the gaze vectors.
+    - label: Tensor of shape (batch_size, 3) containing the label vectors.
+    
+    Returns:
+    - angular_error: Tensor of shape (batch_size) containing the angular errors in degrees.
+    """
+    # Compute the dot product between the gaze and label vectors
+    total = torch.sum(gaze * label, dim=1)
+    
+    # Compute the norms of the gaze and label vectors
+    gaze_norm = torch.norm(gaze, dim=1)
+    label_norm = torch.norm(label, dim=1)
+    
+    # Compute the cosine of the angle
+    cos_theta = total / (gaze_norm * label_norm)
+    
+    # Ensure the value is within the valid range for arccos
+    cos_theta = torch.clamp(cos_theta, max=0.9999999)
+    
+    # Compute the angular error in radians and then convert to degrees
+    angular_error_rad = torch.acos(cos_theta)
+    angular_error_deg = torch.rad2deg(angular_error_rad)
+    
+    return angular_error_deg
+
 def generate_2d_gaussian_heatmap_torch(gaze_origins, img_size, sigma=1):
     """
     Generate a batch of 2D Gaussian heatmaps for the gaze origins.

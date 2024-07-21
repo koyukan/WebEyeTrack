@@ -43,7 +43,7 @@ class EFEModel(nn.Module):
         gaze_direction = self.gaze_direction_fc(bottleneck.view(batch_size, -1))
 
         # Compute the gaze origin location
-        softmax_gaze_origin = F.softmax(self.config['train']['heatmap_coef']*gaze_origin.view(batch_size, -1), dim=1)
+        softmax_gaze_origin = F.softmax(self.config['hparams']['heatmap_coef']*gaze_origin.view(batch_size, -1), dim=1)
         gaze_origin_xy_idx = torch.argmax(softmax_gaze_origin, dim=1)
         gaze_origin_xy = torch.stack([gaze_origin_xy_idx % self.img_size[1], gaze_origin_xy_idx // self.img_size[1]], dim=1)
         

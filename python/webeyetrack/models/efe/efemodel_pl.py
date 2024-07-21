@@ -11,7 +11,7 @@ import matplotlib
 matplotlib.use('TKAgg')
 
 from .efemodel import EFEModel
-from ..funcs import generate_2d_gaussian_heatmap_torch, reprojection_3d, screen_plane_intersection
+from ..funcs import generate_2d_gaussian_heatmap_torch, reprojection_3d, screen_plane_intersection, angular_error
 from .unet_efficientnet_v2 import UNetEfficientNetV2Small
 from .components import ResNetBlock
 from ... import vis
@@ -41,7 +41,7 @@ class EFEModel_PL(pl.LightningModule):
         # Before computing the z-origin loss, we need to standardize the input and the label, based on the mean and std
         gt_gaze_origin_z = batch['face_origin_3d'][:, 2, None]
         standard_gt_gaze_origin_z = (gt_gaze_origin_z - batch['gaze_origin_depth_mean']) / batch['gaze_origin_depth_std']
-        standard_pred_gaze_origin_z = (output['gaze_depth'] - batch['gaze_origin_depth_mean']) / batch['gaze_origin_depth_std']
+        standard_pred_gaze_origin_z = (output['gaze_origin_z'] - batch['gaze_origin_depth_mean']) / batch['gaze_origin_depth_std']
         gaze_origin_z_loss = F.l1_loss(standard_pred_gaze_origin_z, standard_gt_gaze_origin_z)
 
         # Compute the gaze z-origin location (L1 Loss)
@@ -75,21 +75,24 @@ class EFEModel_PL(pl.LightningModule):
 
         # Combine all losess together
         losses = [
-            gaze_origin_loss * self.config['hparams']['xy_heatmap_loss'], 
-            gaze_origin_xy_loss * self.config['hparams']['xy_loss'], 
-            gaze_origin_z_loss * self.config['hparams']['z_loss'], 
+            # gaze_origin_loss * self.config['hparams']['xy_heatmap_loss'], 
+            # gaze_origin_xy_loss * self.config['hparams']['xy_loss'], 
+            # gaze_origin_z_loss * self.config['hparams']['z_loss'], 
             angular_loss * self.config['hparams']['angular_loss'], 
             # pog_loss * self.config['hparams']['pog_loss']
         ] 
         complete_loss = torch.sum(torch.stack(losses))
 
+        # Compute the angular error
+        angular_degree_error = angular_error(output['gaze_direction'], batch['gaze_direction_3d'])
+
         new_output = {
             'losses': {
-                'gaze_origin_heatmap_loss': gaze_origin_loss,
-                'gaze_origin_xy_loss': gaze_origin_xy_loss,
-                'gaze_origin_z_loss': gaze_origin_z_loss,
+                # 'gaze_origin_heatmap_loss': gaze_origin_loss,
+                # 'gaze_origin_xy_loss': gaze_origin_xy_loss,
+                # 'gaze_origin_z_loss': gaze_origin_z_loss,
                 'gaze_angular_loss': angular_loss,
-                'pog_loss': pog_loss,
+                # 'pog_loss': pog_loss,
                 'complete_loss': complete_loss
             },
             'artifacts': {
@@ -97,6 +100,7 @@ class EFEModel_PL(pl.LightningModule):
                 'pog_px': pog_px,
             },
             'metrics': {
+                'angular_degree_error': angular_degree_error.mean().item(),
                 # 'gaze_origin_z_distance': gaze_origin_z_distance,
             }
         }
@@ -148,26 +152,26 @@ class EFEModel_PL(pl.LightningModule):
         for i in range(np_cpu_images.shape[0]):
             img = np.moveaxis(np_cpu_images[i], 0, -1)
 
-            # Visualize the gaze origin xy
-            gaze_origin_xy = batch['face_origin_2d'][i].cpu().numpy()
-            vis_gt_gaze_origin = vis.draw_gaze_origin(img, gaze_origin_xy, color=(0, 0, 255))
-            vis_gaze_origin = vis.draw_gaze_origin(vis_gt_gaze_origin, output['gaze_origin_xy'][i].detach().cpu().numpy(), color=(255, 0, 0))
-            gaze_origin.append(vis_gaze_origin)
+            # # Visualize the gaze origin xy
+            # gaze_origin_xy = batch['face_origin_2d'][i].cpu().numpy()
+            # vis_gt_gaze_origin = vis.draw_gaze_origin(img, gaze_origin_xy, color=(0, 0, 255))
+            # vis_gaze_origin = vis.draw_gaze_origin(vis_gt_gaze_origin, output['gaze_origin_xy'][i].detach().cpu().numpy(), color=(255, 0, 0))
+            # gaze_origin.append(vis_gaze_origin)
 
-            # Visualizing the gaze origin heatmaps
-            gt_gaze_origin_heatmap = losses_output['artifacts']['gaze_origin_heatmap'][i].detach().cpu().numpy()
-            vis_gt_gaze_origin_heatmap = vis.draw_gaze_origin_heatmap(img, gt_gaze_origin_heatmap)
-            gaze_origin_heatmap = output['gaze_origin'][i].detach().cpu().numpy()
-            vis_gaze_origin_heatmap = vis.draw_gaze_origin_heatmap(img, gaze_origin_heatmap[0])
+            # # Visualizing the gaze origin heatmaps
+            # gt_gaze_origin_heatmap = losses_output['artifacts']['gaze_origin_heatmap'][i].detach().cpu().numpy()
+            # vis_gt_gaze_origin_heatmap = vis.draw_gaze_origin_heatmap(img, gt_gaze_origin_heatmap)
+            # gaze_origin_heatmap = output['gaze_origin'][i].detach().cpu().numpy()
+            # vis_gaze_origin_heatmap = vis.draw_gaze_origin_heatmap(img, gaze_origin_heatmap[0])
 
-            # Concatenate the heatmaps together
-            vis_gaze_origin_heatmaps = np.concatenate([vis_gt_gaze_origin_heatmap, vis_gaze_origin_heatmap], axis=1)
-            gaze_origin_heatmaps.append(vis_gaze_origin_heatmaps)
+            # # Concatenate the heatmaps together
+            # vis_gaze_origin_heatmaps = np.concatenate([vis_gt_gaze_origin_heatmap, vis_gaze_origin_heatmap], axis=1)
+            # gaze_origin_heatmaps.append(vis_gaze_origin_heatmaps)
 
-            # Visualize the sparse depth map
-            gaze_depth = output['gaze_depth'][i].detach().cpu().numpy()
-            vis_gaze_depth = vis.draw_gaze_depth_map(img, gaze_depth[0])
-            gaze_depth_imgs.append(vis_gaze_depth)
+            # # Visualize the sparse depth map
+            # gaze_depth = output['gaze_depth'][i].detach().cpu().numpy()
+            # vis_gaze_depth = vis.draw_gaze_depth_map(img, gaze_depth[0])
+            # gaze_depth_imgs.append(vis_gaze_depth)
 
             # Visualizing the gaze direction
             gt_gaze = vis.draw_gaze_direction(img, batch['face_origin_2d'][i], batch['gaze_target_2d'][i], color=(0, 0, 255))
@@ -191,41 +195,41 @@ class EFEModel_PL(pl.LightningModule):
             )
             gaze_direction_imgs.append(gt_pred_gaze)
 
-            # Draw the PoG Image
-            pog_px = batch['pog_px'][i].detach().cpu().numpy()
-            screen_height_px = batch['screen_height_px'][i].detach().cpu().numpy().squeeze()
-            screen_width_px = batch['screen_width_px'][i].detach().cpu().numpy().squeeze()
-            screen_height_mm = batch['screen_height_mm'][i].detach().cpu().numpy().squeeze()
-            screen_width_mm = batch['screen_width_mm'][i].detach().cpu().numpy().squeeze()
-            pog_norm = np.array([pog_px[0] / screen_width_px, pog_px[1] / screen_height_px])
+            # # Draw the PoG Image
+            # pog_px = batch['pog_px'][i].detach().cpu().numpy()
+            # screen_height_px = batch['screen_height_px'][i].detach().cpu().numpy().squeeze()
+            # screen_width_px = batch['screen_width_px'][i].detach().cpu().numpy().squeeze()
+            # screen_height_mm = batch['screen_height_mm'][i].detach().cpu().numpy().squeeze()
+            # screen_width_mm = batch['screen_width_mm'][i].detach().cpu().numpy().squeeze()
+            # pog_norm = np.array([pog_px[0] / screen_width_px, pog_px[1] / screen_height_px])
 
-            vis_screen_height = screen_height_px // 4
-            vis_screen_width = screen_width_px // 4
-            pog_point = (int(vis_screen_width * pog_norm[0]), int(vis_screen_height * pog_norm[1]))
-            pog_img = np.ones((int(screen_height_px), int(screen_width_px), 3), dtype=np.uint8) * 255
+            # vis_screen_height = screen_height_px // 4
+            # vis_screen_width = screen_width_px // 4
+            # pog_point = (int(vis_screen_width * pog_norm[0]), int(vis_screen_height * pog_norm[1]))
+            # pog_img = np.ones((int(screen_height_px), int(screen_width_px), 3), dtype=np.uint8) * 255
             
-            pog_px_pred = losses_output['artifacts']['pog_px'][i].detach().cpu().numpy().squeeze()
-            pog_norm_pred = np.array([pog_px_pred[0] / screen_width_px, pog_px_pred[1] / screen_height_px])
-            pog_point_pred = (int(vis_screen_width * pog_norm_pred[0]), int(vis_screen_height * pog_norm_pred[1]))
-            # pog_mm_norm = np.array([pog_mm[0] / screen_width_mm, pog_mm[1] / screen_height_mm])
-            # pog_point_pred = (int(vis_screen_width * pog_mm_norm[0]), int(vis_screen_height * pog_mm_norm[1]))
+            # pog_px_pred = losses_output['artifacts']['pog_px'][i].detach().cpu().numpy().squeeze()
+            # pog_norm_pred = np.array([pog_px_pred[0] / screen_width_px, pog_px_pred[1] / screen_height_px])
+            # pog_point_pred = (int(vis_screen_width * pog_norm_pred[0]), int(vis_screen_height * pog_norm_pred[1]))
+            # # pog_mm_norm = np.array([pog_mm[0] / screen_width_mm, pog_mm[1] / screen_height_mm])
+            # # pog_point_pred = (int(vis_screen_width * pog_mm_norm[0]), int(vis_screen_height * pog_mm_norm[1]))
 
-            # Make the center of the image black (with a white border equal to 10)
-            pog_img[10:-10, 10:-10] = 0
-            vis_gt_pog = vis.draw_pog(pog_img, pog_point, color=(0, 0, 255))
-            vis_pred_pog = vis.draw_pog(vis_gt_pog, pog_point_pred, color=(255, 0, 0))
-            gaze_pog_imgs.append(vis_pred_pog)
+            # # Make the center of the image black (with a white border equal to 10)
+            # pog_img[10:-10, 10:-10] = 0
+            # vis_gt_pog = vis.draw_pog(pog_img, pog_point, color=(0, 0, 255))
+            # vis_pred_pog = vis.draw_pog(vis_gt_pog, pog_point_pred, color=(255, 0, 0))
+            # gaze_pog_imgs.append(vis_pred_pog)
 
-        tb_logger.add_images(f"{prefix}_gaze_origin", np.moveaxis(np.stack(gaze_origin), -1, 1), self.current_epoch)
-        tb_logger.add_images(f"{prefix}_pred_gaze_origin_heatmaps", np.moveaxis(np.stack(gaze_origin_heatmaps), -1, 1), self.current_epoch)
+        # tb_logger.add_images(f"{prefix}_gaze_origin", np.moveaxis(np.stack(gaze_origin), -1, 1), self.current_epoch)
+        # tb_logger.add_images(f"{prefix}_pred_gaze_origin_heatmaps", np.moveaxis(np.stack(gaze_origin_heatmaps), -1, 1), self.current_epoch)
         # tb_logger.add_images(f"{prefix}_gt_gaze_origin_heatmaps", np.moveaxis(np.stack(gaze_origin_heatmaps_gt), -1, 1), self.current_epoch)
-        tb_logger.add_images(f"{prefix}_gaze_depth", np.moveaxis(np.stack(gaze_depth_imgs), -1, 1), self.current_epoch)
+        # tb_logger.add_images(f"{prefix}_gaze_depth", np.moveaxis(np.stack(gaze_depth_imgs), -1, 1), self.current_epoch)
         tb_logger.add_images(f"{prefix}_gaze_direction", np.moveaxis(np.stack(gaze_direction_imgs), -1, 1), self.current_epoch)
         # tb_logger.add_images(f"{prefix}_pog", np.moveaxis(np.stack(gaze_pog_imgs), -1, 1), self.current_epoch)
 
         # Pog Images can be different sizes (since the target screen dimensions can be different)
-        for i, img in enumerate(gaze_pog_imgs):
-            tb_logger.add_image(f"{prefix}_pog_{i}", img, self.current_epoch, dataformats='HWC')
+        # for i, img in enumerate(gaze_pog_imgs):
+        #     tb_logger.add_image(f"{prefix}_pog_{i}", img, self.current_epoch, dataformats='HWC')
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=1e-3)
