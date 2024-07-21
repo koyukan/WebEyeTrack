@@ -86,12 +86,21 @@ class Gaze360_PL(pl.LightningModule):
             
             # Create gaze_target_2d via the direction and a fixed distance
             gaze_target_3d_semi = batch['face_origin_3d'][i] + batch['gaze_direction_3d'][i] * 100
+
+            # Create intrinsics based on face image
+            intrinsics = np.array([
+                [img.shape[1], 0, img.shape[1] / 2],
+                [0, img.shape[0], img.shape[0] / 2],
+                [0, 0, 1]
+            ])
+
             gaze_target_3d_semi = gaze_target_3d_semi.detach().cpu().numpy()
             gaze_target_2d, _ = cv2.projectPoints(
                 gaze_target_3d_semi, 
                 np.array([0, 0, 0], dtype=np.float32),
                 np.array([0, 0, 0], dtype=np.float32),
-                batch['intrinsics'][i].cpu().numpy(), 
+                # batch['intrinsics'][i].cpu().numpy(), 
+                intrinsics,
                 batch['dist_coeffs'][i].cpu().numpy(),
             )
 
