@@ -333,6 +333,7 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
     const rightPOGRef = React.useRef<THREE.Group>(null);
     const leftPOGRef = React.useRef<THREE.Group>(null);
 
+    const [gazeOffset] = React.useState(() => new THREE.Vector3());
     const [sightDir] = React.useState(() => new THREE.Vector3());
     const [transform] = React.useState(() => new THREE.Object3D());
     const [sightDirQuaternion] = React.useState(() => new THREE.Quaternion());
@@ -360,8 +361,31 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
         mouse.applyMatrix4(screenTransformationInverse);
         
         // Compute the eyes' position in camera space
-        // const eyeRightSphere = eyeRightRef.current?._computeSphere(faceGeometry);
+        const gazeData = computeGazeOriginAndDirection();
 
+        if (gazeData) {
+
+          // Given the eye's position and the xyz coordinate of the mouse,
+          // compute the expected gaze vector
+          const rightOrigin = gazeData.rightOrigin;
+          const leftOrigin = gazeData.leftOrigin;
+
+          // Compute the gaze vector from the mouse XYZ target and the eye origin
+          const rightGazeVector = new THREE.Vector3().subVectors(mouse, rightOrigin).normalize();
+          const leftGazeVector = new THREE.Vector3().subVectors(mouse, leftOrigin).normalize();
+
+          // Compute the difference between the predicted gaze direction vs the actual gaze direction
+          // The difference is per axis (x,y,z)
+          const rightGazeDiff = new THREE.Vector3().subVectors(rightGazeVector, gazeData.rightDirection);
+          const leftGazeDiff = new THREE.Vector3().subVectors(leftGazeVector, gazeData.leftDirection);
+
+          // Compute average diff
+          const averageGazeDiff = new THREE.Vector3().addVectors(rightGazeDiff, leftGazeDiff).divideScalar(2);
+
+          // Update the gaze offset by a fraction of the average gaze diff
+          gazeOffset.add(averageGazeDiff.multiplyScalar(0.1));
+          gazeOffset.normalize();
+        }
       }
 
       // Add event listener
@@ -745,8 +769,8 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
 
                 {eyes && faceBlendshapes && (
                   <group name="eyes">
-                    <FacemeshEye side="left" ref={eyeRightRef} debug={debug} />
-                    <FacemeshEye side="right" ref={eyeLeftRef} debug={debug} />
+                    <FacemeshEye side="left" ref={eyeRightRef} debug={debug} gazeOffset={gazeOffset}/>
+                    <FacemeshEye side="right" ref={eyeLeftRef} debug={debug} gazeOffset={gazeOffset}/>
                   </group>
                 )}
                 <mesh ref={meshRef} name="face">
@@ -770,6 +794,7 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
 export type FacemeshEyeProps = {
   side: "left" | "right";
   debug?: boolean;
+  gazeOffset?: THREE.Vector3;
 };
 export type FacemeshEyeApi = {
   eyeMeshRef: React.RefObject<THREE.Group>;
@@ -801,7 +826,7 @@ export const FacemeshEyeDefaults = {
   },
 };
 
-export const FacemeshEye = React.forwardRef<FacemeshEyeApi, FacemeshEyeProps>(({ side, debug = true }, fref) => {
+export const FacemeshEye = React.forwardRef<FacemeshEyeApi, FacemeshEyeProps>(({ side, debug = true, gazeOffset = new THREE.Vector3() }, fref) => {
   const eyeMeshRef = React.useRef<THREE.Group>(null);
   const irisDirRef = React.useRef<THREE.Group>(null);
 
@@ -866,6 +891,17 @@ export const FacemeshEye = React.forwardRef<FacemeshEyeApi, FacemeshEyeProps>(({
         const ry = vfov * 0.5 * (lookIn - lookOut) * (side === "left" ? 1 : -1);
         rotation.set(rx, ry, 0);
 
+        // Convert the Euler to an XYZ vector
+        const gazeVector = new THREE.Vector3();
+        // gazeVector.setFromSphericalCoords(1, rx, ry);
+        gazeVector.setFromEuler(rotation)
+
+        // Apply the gaze offset
+        gazeVector.add(gazeOffset);
+        // gazeVector.normalize();
+
+        // Convert gaze vector back to Euler
+        rotation.setFromVector3(gazeVector);
         irisDirRef.current.setRotationFromEuler(rotation);
       }
     },
