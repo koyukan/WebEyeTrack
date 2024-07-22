@@ -361,6 +361,7 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
         
         // Compute the eyes' position in camera space
         // const eyeRightSphere = eyeRightRef.current?._computeSphere(faceGeometry);
+
       }
 
       // Add event listener
@@ -372,6 +373,66 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
       };
     }, []); // Empty dependency array means this effect runs once on mount
 
+    // Create a function to compute the gaze origin and direction
+    function computeGazeOriginAndDirection() {
+      const faceGeometry = meshRef.current?.geometry;
+      if (!faceGeometry) return;
+
+      // Compute the point-of-gaze
+      if (eyeRightRef.current && eyeLeftRef.current && originRef.current) {
+        const eyeRightSphere = eyeRightRef.current._computeSphere(faceGeometry);
+        const eyeLeftSphere = eyeLeftRef.current._computeSphere(faceGeometry);
+
+        // Apply transformation to the eye sphere
+        eyeRightSphere.center.applyMatrix4(transform.matrix);
+        eyeLeftSphere.center.applyMatrix4(transform.matrix);
+
+        // Compute the gaze vector
+        const rightGazeVector = new THREE.Vector3(0, 0, -1);
+        if (eyeRightRef.current.irisDirRef.current) {
+          rightGazeVector.applyQuaternion(eyeRightRef.current.irisDirRef.current.quaternion);
+        }
+        const leftGazeVector = new THREE.Vector3(0, 0, -1);
+        if (eyeLeftRef.current.irisDirRef.current) {
+          leftGazeVector.applyQuaternion(eyeLeftRef.current.irisDirRef.current.quaternion);
+        }
+
+        // Compute the intersection with the face plane
+        const facePlaneNormal = new THREE.Vector3(0, 0, 1);
+        const facePlanePoint = new THREE.Vector3(0, 0, 0);
+        const rightIntersection = get_intersection_with_plane(facePlaneNormal, facePlanePoint, rightGazeVector, eyeRightSphere.center);
+        const leftIntersection = get_intersection_with_plane(facePlaneNormal, facePlanePoint, leftGazeVector, eyeLeftSphere.center);
+
+        // Update the PoG ref
+        rightPOGRef.current?.position.copy(rightIntersection);
+        leftPOGRef.current?.position.copy(leftIntersection);
+
+        // Compute the PoG in screen coordinates
+        const right3DPoG = new THREE.Vector3().copy(rightIntersection).applyMatrix4(screenTransformation);
+        const left3DPoG = new THREE.Vector3().copy(leftIntersection).applyMatrix4(screenTransformation);
+        const right2DPoG = new THREE.Vector2(right3DPoG.x, right3DPoG.y);
+        const left2DPoG = new THREE.Vector2(left3DPoG.x, left3DPoG.y);
+
+        // Compute an average PoG
+        const average2DPoG = new THREE.Vector2().addVectors(right2DPoG, left2DPoG).divideScalar(2);
+
+        // Convert from cm to px
+        const average2DPoGpx = [Number(cm2px(average2DPoG.x)), Number(cm2px(average2DPoG.y))];
+
+        return {
+          'rightOrigin': eyeRightSphere.center,
+          'leftOrigin': eyeLeftSphere.center,
+          'rightDirection': rightGazeVector,
+          'leftDirection': leftGazeVector,
+          'rightIntersection': rightIntersection,
+          'leftIntersection': leftIntersection,
+          'right2DPoG': right2DPoG,
+          'left2DPoG': left2DPoG,
+          'average2DPoGpx': average2DPoGpx,
+        }
+      }
+    }
+      
     React.useEffect(() => {
       const faceGeometry = meshRef.current?.geometry;
       if (!faceGeometry) return;
@@ -556,50 +617,16 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
               eyeLeftRef.current._update(faceGeometry, faceBlendshapes);
             }
 
-            // Compute the point-of-gaze
-            const eyeRightSphere = eyeRightRef.current._computeSphere(faceGeometry);
-            const eyeLeftSphere = eyeLeftRef.current._computeSphere(faceGeometry);
+            // Compute the gaze origin and direction
+            const gazeData = computeGazeOriginAndDirection();
+            if (gazeData) {
+              const average2DPogpx = gazeData.average2DPoGpx;
 
-            // Apply transformation to the eye sphere
-            eyeRightSphere.center.applyMatrix4(transform.matrix);
-            eyeLeftSphere.center.applyMatrix4(transform.matrix);
+              // Broadcast event
+              const event = new CustomEvent("gazeUpdate", { detail: { x: average2DPogpx[0], y: average2DPogpx[1] } });
+              document.dispatchEvent(event);
 
-            // Compute the gaze vector
-            const rightGazeVector = new THREE.Vector3(0, 0, -1);
-            if (eyeRightRef.current.irisDirRef.current) {
-              rightGazeVector.applyQuaternion(eyeRightRef.current.irisDirRef.current.quaternion);
             }
-            const leftGazeVector = new THREE.Vector3(0, 0, -1);
-            if (eyeLeftRef.current.irisDirRef.current) {
-              leftGazeVector.applyQuaternion(eyeLeftRef.current.irisDirRef.current.quaternion);
-            }
-
-            // Compute the intersection with the face plane
-            const facePlaneNormal = new THREE.Vector3(0, 0, 1);
-            const facePlanePoint = new THREE.Vector3(0, 0, 0);
-            const rightIntersection = get_intersection_with_plane(facePlaneNormal, facePlanePoint, rightGazeVector, eyeRightSphere.center);
-            const leftIntersection = get_intersection_with_plane(facePlaneNormal, facePlanePoint, leftGazeVector, eyeLeftSphere.center);
-
-            // Update the PoG ref
-            rightPOGRef.current?.position.copy(rightIntersection);
-            leftPOGRef.current?.position.copy(leftIntersection);
-
-            // Compute the PoG in screen coordinates
-            const right3DPoG = new THREE.Vector3().copy(rightIntersection).applyMatrix4(screenTransformation);
-            const left3DPoG = new THREE.Vector3().copy(leftIntersection).applyMatrix4(screenTransformation);
-            const right2DPoG = new THREE.Vector2(right3DPoG.x, right3DPoG.y);
-            const left2DPoG = new THREE.Vector2(left3DPoG.x, left3DPoG.y);
-
-            // Compute an average PoG
-            const average2DPoG = new THREE.Vector2().addVectors(right2DPoG, left2DPoG).divideScalar(2);
-
-            // Convert from cm to px
-            const average2DPoGpx = [Number(cm2px(average2DPoG.x)), Number(cm2px(average2DPoG.y))];
-
-            // Broadcast event
-            const event = new CustomEvent("gazeUpdate", { detail: { x: average2DPoGpx[0], y: average2DPoGpx[1] } });
-            document.dispatchEvent(event);
-
           }
         }
       }
