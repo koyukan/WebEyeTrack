@@ -34,15 +34,15 @@ class EFEModel_PL(pl.LightningModule):
  
         # Compute the gaze origin loss (Heatmap MSE Loss)
         # gt_heatmap = 100.0*generate_2d_gaussian_heatmap_torch(batch['face_origin_2d'], self.img_size, sigma=12.0)
-        gt_heatmap = generate_2d_gaussian_heatmap_torch(batch['face_origin_2d'], self.img_size, sigma=12.0)
-        gaze_origin_loss = F.mse_loss(output['gaze_origin'][:, 0], gt_heatmap)
-        gaze_origin_xy_loss = F.mse_loss(output['gaze_origin_xy'], batch['face_origin_2d'])
+        # gt_heatmap = generate_2d_gaussian_heatmap_torch(batch['face_origin_2d'], self.img_size, sigma=12.0)
+        # gaze_origin_loss = F.mse_loss(output['gaze_origin'][:, 0], gt_heatmap)
+        # gaze_origin_xy_loss = F.mse_loss(output['gaze_origin_xy'], batch['face_origin_2d'])
 
         # Before computing the z-origin loss, we need to standardize the input and the label, based on the mean and std
-        gt_gaze_origin_z = batch['face_origin_3d'][:, 2, None]
-        standard_gt_gaze_origin_z = (gt_gaze_origin_z - batch['gaze_origin_depth_mean']) / batch['gaze_origin_depth_std']
-        standard_pred_gaze_origin_z = (output['gaze_origin_z'] - batch['gaze_origin_depth_mean']) / batch['gaze_origin_depth_std']
-        gaze_origin_z_loss = F.l1_loss(standard_pred_gaze_origin_z, standard_gt_gaze_origin_z)
+        # gt_gaze_origin_z = batch['face_origin_3d'][:, 2, None]
+        # standard_gt_gaze_origin_z = (gt_gaze_origin_z - batch['gaze_origin_depth_mean']) / batch['gaze_origin_depth_std']
+        # standard_pred_gaze_origin_z = (output['gaze_origin_z'] - batch['gaze_origin_depth_mean']) / batch['gaze_origin_depth_std']
+        # gaze_origin_z_loss = F.l1_loss(standard_pred_gaze_origin_z, standard_gt_gaze_origin_z)
 
         # Compute the gaze z-origin location (L1 Loss)
         # gaze_origin_z_loss = F.l1_loss(torch.log(output['gaze_origin_z'] + 1e6), torch.log(batch['face_origin_3d'][:, 2, None] + 1e6))
@@ -58,20 +58,20 @@ class EFEModel_PL(pl.LightningModule):
 
         # Compute the PoG MSE Loss
         # This requires multiple steps: 3D reprojection and screen plane intersection
-        gaze_origin_3d = reprojection_3d(output['gaze_origin_xy'], output['gaze_origin_z'], batch['intrinsics'])
-        pog_mm = screen_plane_intersection(
-            gaze_origin_3d.float(),
-            output['gaze_direction'].float(),
-            batch['screen_R'],
-            batch['screen_t']
-        )
-        pog_norm = torch.stack([pog_mm[:, 0] / batch['screen_width_mm'][:, 0], pog_mm[:, 1] / batch['screen_height_mm'][:, 0]], dim=1)[:,:,0]
-        pog_px = torch.stack([pog_norm[:, 0] * batch['screen_width_px'][:, 0], pog_norm[:, 1] * batch['screen_height_px'][:, 0]], dim=1)[:,:,0]
+        # gaze_origin_3d = reprojection_3d(output['gaze_origin_xy'], output['gaze_origin_z'], batch['intrinsics'])
+        # pog_mm = screen_plane_intersection(
+        #     gaze_origin_3d.float(),
+        #     output['gaze_direction'].float(),
+        #     batch['screen_R'],
+        #     batch['screen_t']
+        # )
+        # pog_norm = torch.stack([pog_mm[:, 0] / batch['screen_width_mm'][:, 0], pog_mm[:, 1] / batch['screen_height_mm'][:, 0]], dim=1)[:,:,0]
+        # pog_px = torch.stack([pog_norm[:, 0] * batch['screen_width_px'][:, 0], pog_norm[:, 1] * batch['screen_height_px'][:, 0]], dim=1)[:,:,0]
 
-        # Before computing PoG loss, we need to standardize the input and the label, based on the mean and std
-        standard_gt_pog_px = (batch['pog_px'] - batch['pog_px_mean']) / batch['pog_px_std']
-        standard_pred_pog_px = (pog_px - batch['pog_px_mean']) / batch['pog_px_std']
-        pog_loss = F.mse_loss(standard_pred_pog_px, standard_gt_pog_px)
+        # # Before computing PoG loss, we need to standardize the input and the label, based on the mean and std
+        # standard_gt_pog_px = (batch['pog_px'] - batch['pog_px_mean']) / batch['pog_px_std']
+        # standard_pred_pog_px = (pog_px - batch['pog_px_mean']) / batch['pog_px_std']
+        # pog_loss = F.mse_loss(standard_pred_pog_px, standard_gt_pog_px)
 
         # Combine all losess together
         losses = [
@@ -96,11 +96,11 @@ class EFEModel_PL(pl.LightningModule):
                 'complete_loss': complete_loss
             },
             'artifacts': {
-                'gaze_origin_heatmap': gt_heatmap,
-                'pog_px': pog_px,
+                # 'gaze_origin_heatmap': gt_heatmap,
+                # 'pog_px': pog_px,
             },
             'metrics': {
-                'angular_degree_error': angular_degree_error.mean().item(),
+                'angular_error': angular_degree_error.mean().item(),
                 # 'gaze_origin_z_distance': gaze_origin_z_distance,
             }
         }
@@ -108,7 +108,8 @@ class EFEModel_PL(pl.LightningModule):
         return new_output
 
     def training_step(self, batch, batch_idx):
-        output = self.base_model.forward(batch['image'])
+        # output = self.base_model.forward(batch['image'])
+        output = self.base_model.forward(batch['face_image'])
         losses_output = self.compute_loss(output, batch)
 
         # Logging the losses
@@ -123,7 +124,8 @@ class EFEModel_PL(pl.LightningModule):
         return {'loss': losses_output['losses']['complete_loss'], 'log': losses_output['losses']}
 
     def validation_step(self, batch, batch_idx):
-        output = self.base_model.forward(batch['image'])
+        # output = self.base_model.forward(batch['image'])
+        output = self.base_model.forward(batch['face_image'])
         losses_output = self.compute_loss(output, batch)
 
         self.log('val_loss', losses_output['losses']['complete_loss'])

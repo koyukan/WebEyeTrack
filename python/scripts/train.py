@@ -29,7 +29,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a model')
 
     # Restrict the options of the model
-    parser.add_argument('--model', type=str, choices=['EFE', 'Gaze360'], help='The model to train')
+    parser.add_argument('--model', type=str, choices=['EFE', 'Gaze360'], required=True, help='The model to train')
     args = parser.parse_args()
     
     # Obtain model-specific dataset configuration
@@ -42,7 +42,7 @@ if __name__ == '__main__':
     dataset = MPIIFaceGazeDataset(
         GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
         **model_config['dataset_params'],
-        dataset_size=100*config['train']['batch_size']
+        # dataset_size=100*config['train']['batch_size']
     )
 
     # Create the dataloader
@@ -52,12 +52,12 @@ if __name__ == '__main__':
     # Debugging, reducing the size of the dataset
     # train_size = int(train_size / 200)
     # val_size = int(val_size / 20 )
-    train_size = 80
-    val_size = 20
+    train_size = int(len(dataset) * 0.8)
+    val_size = int(len(dataset) * 0.2)
 
-    # train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
-    train_dataset = torch.utils.data.Subset(dataset, range(train_size))
-    val_dataset = torch.utils.data.Subset(dataset, range(train_size, train_size + val_size))
+    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+    # train_dataset = torch.utils.data.Subset(dataset, range(train_size))
+    # val_dataset = torch.utils.data.Subset(dataset, range(train_size, train_size + val_size))
 
     # Create the dataloaders
     train_loader = DataLoader(train_dataset, batch_size=config['train']['batch_size'], shuffle=True, num_workers=4)

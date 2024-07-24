@@ -52,18 +52,19 @@ class UNetEfficientNetV2Small(nn.Module):
         bottleneck = self.encoder_blocks[4](enc5)  # (batch_size, 256, H/32, W/32)
         
         # Decoder with skip connections
-        dec1 = self.decoder1(bottleneck)
+        # dec1 = self.decoder1(bottleneck)
         
-        dec2 = torch.cat((dec1, enc4), dim=1)
-        dec2 = self.decoder2(dec2)
+        # dec2 = torch.cat((dec1, enc4), dim=1)
+        # dec2 = self.decoder2(dec2)
         
-        dec3 = torch.cat((dec2, enc3), dim=1)
-        dec3 = self.decoder3(dec3)
+        # dec3 = torch.cat((dec2, enc3), dim=1)
+        # dec3 = self.decoder3(dec3)
         
-        dec4 = torch.cat((dec3, enc2), dim=1)
-        dec4 = self.decoder4(dec4)
+        # dec4 = torch.cat((dec3, enc2), dim=1)
+        # dec4 = self.decoder4(dec4)
 
-        return self.final_conv(dec4), bottleneck
+        # return self.final_conv(dec4), bottleneck
+        return None, bottleneck
 
 if __name__ == '__main__':
     # Example usage

@@ -19,8 +19,11 @@ train:
         angular_loss: 1
         pog_loss: 0.001
       dataset_params:
-        img_size: [640, 480]
+        # img_size: [640, 480]
+        img_size: [244, 244]
+        face_size: [244, 244]
     Gaze360:
       dataset_params:
+        img_size: [640, 480]
         face_size: [244, 244]
     

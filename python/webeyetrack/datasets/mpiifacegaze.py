@@ -2,6 +2,7 @@ import pathlib
 from dataclasses import asdict
 from typing import List, Dict, Union, Tuple, Optional
 import copy
+from tqdm import tqdm
 
 import cv2
 from PIL import Image
@@ -25,9 +26,9 @@ class MPIIFaceGazeDataset(Dataset):
     def __init__(
             self, 
             dataset_dir: Union[pathlib.Path, str], 
+            face_size: Tuple[int, int] = (224, 224),
+            img_size: Tuple[int, int] = (640, 480),
             dataset_size: Optional[int] = None,
-            face_size: tuple = (224, 224),
-            img_size: Optional[Tuple] = None,
         ):
 
         # Process input variables
@@ -57,7 +58,7 @@ class MPIIFaceGazeDataset(Dataset):
         # Tracking the number of loaded samples
         num_samples = 0
 
-        for participant_dir in participant_dirs:
+        for participant_dir in tqdm(participant_dirs, total=len(participant_dirs)):
 
             # if self.dataset_size is not None and num_samples >= self.dataset_size:
             #     break
@@ -92,7 +93,7 @@ class MPIIFaceGazeDataset(Dataset):
             annotations = {} 
             with open(txt_file_fp, 'r') as f:
                 lines = f.readlines()
-                for line in lines:
+                for line in tqdm(lines, total=len(lines)):
 
                     if self.dataset_size is not None and num_samples >= self.dataset_size:
                         break
@@ -156,7 +157,7 @@ class MPIIFaceGazeDataset(Dataset):
                     try:
                         face_landmarks_proto = detection_results.face_landmarks[0]
                     except:
-                        print(f"Participant {participant_id} image {items[0]} does not have a face detected.")
+                        # print(f"Participant {participant_id} image {items[0]} does not have a face detected.")
                         continue
 
                     face_landmarks = np.array([[lm.x * image.size[0], lm.y * image.size[1]] for lm in face_landmarks_proto])
@@ -235,6 +236,12 @@ class MPIIFaceGazeDataset(Dataset):
 
         # Crop out the face image and resize to have standard size
         face_bbox = sample.annotations.face_bbox
+        
+        # Clip the face bounding box to the image size and avoid negative indexing
+        face_bbox[0] = np.clip(face_bbox[0], 0, image.size[1] - 1)
+        face_bbox[1] = np.clip(face_bbox[1], 0, image.size[0] - 1)
+        face_bbox[2] = np.clip(face_bbox[2], 0, image.size[1] - 1)
+        face_bbox[3] = np.clip(face_bbox[3], 0, image.size[0] - 1)
         face_image_np = image_np[face_bbox[0]:face_bbox[2], face_bbox[1]:face_bbox[3]]
         face_image_np = cv2.resize(face_image_np, self.face_size, interpolation=cv2.INTER_LINEAR)
 
@@ -244,12 +251,9 @@ class MPIIFaceGazeDataset(Dataset):
         # cv2.destroyAllWindows()
 
         # Resize the raw input image if needed
-        if self.img_size is not None:
-            image_np = cv2.resize(image_np, self.img_size, interpolation=cv2.INTER_LINEAR)
-            sample.annotations = resize_annotations(sample.annotations, image.size, self.img_size)
-            intrinsics = resize_intrinsics(calibration_data.camera_matrix, image.size, self.img_size)
-        else:
-            intrinsics = calibration_data.camera_matrix
+        image_np = cv2.resize(image_np, self.img_size, interpolation=cv2.INTER_LINEAR)
+        sample.annotations = resize_annotations(sample.annotations, image.size, self.img_size)
+        intrinsics = resize_intrinsics(calibration_data.camera_matrix, image.size, self.img_size)
         
         # Revert the image to the correct format
         image_np = np.moveaxis(image_np, -1, 0)
