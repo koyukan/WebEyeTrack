@@ -11,11 +11,10 @@ const VIDEO_WIDTH = 640
 const IMAGE_SIZE = [VIDEO_WIDTH, VIDEO_HEIGHT]
 
 function px2cm(px) {
-  var n = 0;
   var cpi = 2.54; // centimeters per inch
   var dpi = 96; // dots per inch
   var ppd = window.devicePixelRatio; // pixels per dot
-  return (px * cpi / (dpi * ppd)).toFixed(n);
+  return (px * cpi / (dpi * ppd));
 }
 
 function cm2px(cm) {
@@ -296,6 +295,9 @@ function get_intersection_with_plane(plane_normal, plane_point, ray_vector, ray_
   return new THREE.Vector3().addVectors(ray_point, ray_vector.clone().multiplyScalar(prod3));
 }
 
+let b_rx = 0;
+let b_ry = 0;
+
 export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
   (
     {
@@ -357,13 +359,16 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
         if (!faceGeometry) return;
 
         // Compute the xyz coordinate in camera space
-        const mouse = new THREE.Vector3(x, y, 0);
+        const mouse = new THREE.Vector3(-x, y, 0);
         mouse.applyMatrix4(screenTransformationInverse);
-        
+
+        // Convert the xy coordinates to cm
+        const mouseCm = new THREE.Vector3(Number(px2cm(mouse.x)), Number(px2cm(mouse.y)), Number(0));
+
         // Compute the eyes' position in camera space
         const gazeData = computeGazeOriginAndDirection();
 
-        if (gazeData) {
+        if (gazeData && eyeRightRef.current && eyeLeftRef.current) {
 
           // Given the eye's position and the xyz coordinate of the mouse,
           // compute the expected gaze vector
@@ -371,20 +376,12 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
           const leftOrigin = gazeData.leftOrigin;
 
           // Compute the gaze vector from the mouse XYZ target and the eye origin
-          const rightGazeVector = new THREE.Vector3().subVectors(mouse, rightOrigin).normalize();
-          const leftGazeVector = new THREE.Vector3().subVectors(mouse, leftOrigin).normalize();
+          const rightGazeVector = new THREE.Vector3().subVectors(mouseCm, rightOrigin).normalize();
+          const leftGazeVector = new THREE.Vector3().subVectors(mouseCm, leftOrigin).normalize();
 
-          // Compute the difference between the predicted gaze direction vs the actual gaze direction
-          // The difference is per axis (x,y,z)
-          const rightGazeDiff = new THREE.Vector3().subVectors(rightGazeVector, gazeData.rightDirection);
-          const leftGazeDiff = new THREE.Vector3().subVectors(leftGazeVector, gazeData.leftDirection);
-
-          // Compute average diff
-          const averageGazeDiff = new THREE.Vector3().addVectors(rightGazeDiff, leftGazeDiff).divideScalar(2);
-
-          // Update the gaze offset by a fraction of the average gaze diff
-          gazeOffset.add(averageGazeDiff.multiplyScalar(0.1));
-          gazeOffset.normalize();
+          // Update the b parameters
+          b_rx += 0.1;
+          b_ry += 0.1;
         }
       }
 
@@ -407,9 +404,13 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
         const eyeRightSphere = eyeRightRef.current._computeSphere(faceGeometry);
         const eyeLeftSphere = eyeLeftRef.current._computeSphere(faceGeometry);
 
-        // Apply transformation to the eye sphere
-        eyeRightSphere.center.applyMatrix4(transform.matrix);
-        eyeLeftSphere.center.applyMatrix4(transform.matrix);
+        // Apply transformation to the eye sphere, make a copy
+        const eyeRightSphereCopy = eyeRightSphere.clone();
+        const eyeLeftSphereCopy = eyeLeftSphere.clone();
+        eyeRightSphereCopy.center.applyMatrix4(transform.matrix);
+        eyeLeftSphereCopy.center.applyMatrix4(transform.matrix);
+        // eyeRightSphere.center.applyMatrix4(transform.matrix);
+        // eyeLeftSphere.center.applyMatrix4(transform.matrix);
 
         // Compute the gaze vector
         const rightGazeVector = new THREE.Vector3(0, 0, -1);
@@ -424,8 +425,8 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
         // Compute the intersection with the face plane
         const facePlaneNormal = new THREE.Vector3(0, 0, 1);
         const facePlanePoint = new THREE.Vector3(0, 0, 0);
-        const rightIntersection = get_intersection_with_plane(facePlaneNormal, facePlanePoint, rightGazeVector, eyeRightSphere.center);
-        const leftIntersection = get_intersection_with_plane(facePlaneNormal, facePlanePoint, leftGazeVector, eyeLeftSphere.center);
+        const rightIntersection = get_intersection_with_plane(facePlaneNormal, facePlanePoint, rightGazeVector, eyeRightSphereCopy.center);
+        const leftIntersection = get_intersection_with_plane(facePlaneNormal, facePlanePoint, leftGazeVector, eyeLeftSphereCopy.center);
 
         // Update the PoG ref
         rightPOGRef.current?.position.copy(rightIntersection);
@@ -439,6 +440,8 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
 
         // Compute an average PoG
         const average2DPoG = new THREE.Vector2().addVectors(right2DPoG, left2DPoG).divideScalar(2);
+
+        // console.log("Right PoG: ", right2DPoG);
 
         // Convert from cm to px
         const average2DPoGpx = [Number(cm2px(average2DPoG.x)), Number(cm2px(average2DPoG.y))];
@@ -887,22 +890,27 @@ export const FacemeshEye = React.forwardRef<FacemeshEyeApi, FacemeshEyeProps>(({
 
         const hfov = FacemeshEyeDefaults.fov.horizontal * DEG2RAD;
         const vfov = FacemeshEyeDefaults.fov.vertical * DEG2RAD;
-        const rx = hfov * 0.5 * (lookDown - lookUp);
-        const ry = vfov * 0.5 * (lookIn - lookOut) * (side === "left" ? 1 : -1);
+        let rx = hfov * 0.5 * (lookDown - lookUp);
+        let ry = vfov * 0.5 * (lookIn - lookOut) * (side === "left" ? 1 : -1);
+
+        // Apply a y = mx + b correction for the rx and ry values
+        rx = rx + b_rx; 
+        ry = ry + b_ry;
+        // ry = 0.1 + ry;
         rotation.set(rx, ry, 0);
 
         // Convert the Euler to an XYZ vector
-        const gazeVector = new THREE.Vector3();
+        // const gazeVector = new THREE.Vector3();
         // gazeVector.setFromSphericalCoords(1, rx, ry);
-        gazeVector.setFromEuler(rotation)
+        // gazeVector.setFromEuler(rotation)
 
         // Apply the gaze offset
-        gazeVector.add(gazeOffset);
+        // gazeVector.add(gazeOffset);
         // gazeVector.normalize();
 
         // Convert gaze vector back to Euler
-        rotation.setFromVector3(gazeVector);
-        irisDirRef.current.setRotationFromEuler(rotation);
+        // rotation.setFromVector3(gazeVector);
+        // irisDirRef.current.setRotationFromEuler(rotation);
       }
     },
     [_computeSphere, side, rotation]
@@ -927,9 +935,10 @@ export const FacemeshEye = React.forwardRef<FacemeshEyeApi, FacemeshEyeProps>(({
   return (
     <group>
       <group ref={eyeMeshRef}>
-        {debug && <axesHelper />}
+        {/* {debug && <axesHelper scale={new THREE.Vector3(5, 5, 5)}/>} */}
 
         <group ref={irisDirRef}>
+          {debug && <axesHelper scale={new THREE.Vector3(5, 5, 5)}/>}
           <>
             {debug && (
               <>
