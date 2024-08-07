@@ -329,6 +329,8 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
     const scaleRef = React.useRef<THREE.Group>(null);
     const originRef = React.useRef<THREE.Group>(null);
     const outerRef = React.useRef<THREE.Group>(null);
+    const headposeRefLeft = React.useRef<THREE.Group>(null);
+    const headposeRefRight = React.useRef<THREE.Group>(null);
     const meshRef = React.useRef<THREE.Mesh>(null);
     const eyeRightRef = React.useRef<FacemeshEyeApi>(null);
     const eyeLeftRef = React.useRef<FacemeshEyeApi>(null);
@@ -623,6 +625,8 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
       // 2. rotate back + rotate outerRef (once 1.)
       // faceGeometry.applyQuaternion(sightDirQuaternionInverse);
       // outerRef.current?.setRotationFromQuaternion(sightDirQuaternion); // Important to capture the rotation of the face
+      headposeRefRight.current?.setRotationFromQuaternion(sightDirQuaternion);
+      headposeRefLeft.current?.setRotationFromQuaternion(sightDirQuaternion);
 
       // 3. 👀 eyes
       if (eyes) {
@@ -757,11 +761,13 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
             <group ref={scaleRef}>
               {debug ? (
                 <>
-                  <axesHelper args={[one]} />
+                  {/* <group ref={headposeRef}> */}
+                    <axesHelper args={[one]} />
+                  {/* </group> */}
                   <Line
                     points={[
                       [0, 0, 0],
-                      [0, 0, -one],
+                      [0, 0, -100],
                     ]}
                     color={0x00ffff}
                   />
@@ -772,14 +778,16 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
 
                 {eyes && faceBlendshapes && (
                   <group name="eyes">
-                    <FacemeshEye side="left" ref={eyeRightRef} debug={debug} gazeOffset={gazeOffset}/>
-                    <FacemeshEye side="right" ref={eyeLeftRef} debug={debug} gazeOffset={gazeOffset}/>
+                    <FacemeshEye headposeRef={headposeRefLeft} side="left" ref={eyeRightRef} debug={debug} gazeOffset={gazeOffset}/>
+                    <FacemeshEye headposeRef={headposeRefRight} side="right" ref={eyeLeftRef} debug={debug} gazeOffset={gazeOffset}/>
                   </group>
                 )}
                 <mesh ref={meshRef} name="face">
                   {children}
 
+                  {/* <group ref={headposeRef}> */}
                   {debug ? <>{bbox && <box3Helper args={[bbox]} />}</> : null}
+                  {/* </group> */}
                 </mesh>
               </group>
             </group>
@@ -796,6 +804,7 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
 
 export type FacemeshEyeProps = {
   side: "left" | "right";
+  headposeRef: React.RefObject<THREE.Group>;
   debug?: boolean;
   gazeOffset?: THREE.Vector3;
 };
@@ -829,7 +838,7 @@ export const FacemeshEyeDefaults = {
   },
 };
 
-export const FacemeshEye = React.forwardRef<FacemeshEyeApi, FacemeshEyeProps>(({ side, debug = true, gazeOffset = new THREE.Vector3() }, fref) => {
+export const FacemeshEye = React.forwardRef<FacemeshEyeApi, FacemeshEyeProps>(({ side, headposeRef, debug = true, gazeOffset = new THREE.Vector3()}, fref) => {
   const eyeMeshRef = React.useRef<THREE.Group>(null);
   const irisDirRef = React.useRef<THREE.Group>(null);
 
@@ -894,11 +903,10 @@ export const FacemeshEye = React.forwardRef<FacemeshEyeApi, FacemeshEyeProps>(({
         let ry = vfov * 0.5 * (lookIn - lookOut) * (side === "left" ? 1 : -1);
 
         // Apply a y = mx + b correction for the rx and ry values
-        rx = rx + b_rx; 
-        ry = ry + b_ry;
+        // rx = rx + b_rx; 
+        // ry = ry + b_ry;
         // ry = 0.1 + ry;
         rotation.set(rx, ry, 0);
-
         // Convert the Euler to an XYZ vector
         // const gazeVector = new THREE.Vector3();
         // gazeVector.setFromSphericalCoords(1, rx, ry);
@@ -910,7 +918,13 @@ export const FacemeshEye = React.forwardRef<FacemeshEyeApi, FacemeshEyeProps>(({
 
         // Convert gaze vector back to Euler
         // rotation.setFromVector3(gazeVector);
-        // irisDirRef.current.setRotationFromEuler(rotation);
+        irisDirRef.current.setRotationFromEuler(rotation);
+
+        // Apply the headpose rotation
+        if (headposeRef.current){
+          irisDirRef.current.applyQuaternion(headposeRef.current.quaternion);
+        }
+
       }
     },
     [_computeSphere, side, rotation]
@@ -935,10 +949,12 @@ export const FacemeshEye = React.forwardRef<FacemeshEyeApi, FacemeshEyeProps>(({
   return (
     <group>
       <group ref={eyeMeshRef}>
-        {/* {debug && <axesHelper scale={new THREE.Vector3(5, 5, 5)}/>} */}
+        <group ref={headposeRef}>
+          {debug && <axesHelper scale={new THREE.Vector3(5, 5, 5)}/>}
+        </group>
 
         <group ref={irisDirRef}>
-          {debug && <axesHelper scale={new THREE.Vector3(5, 5, 5)}/>}
+          {/* {debug && <axesHelper scale={new THREE.Vector3(5, 5, 5)}/>} */}
           <>
             {debug && (
               <>

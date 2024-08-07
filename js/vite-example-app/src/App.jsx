@@ -191,6 +191,7 @@ function Scene() {
           fov={70}
           near={0.1}
           far={2}
+          scale={40}
         />
       </group>
 
