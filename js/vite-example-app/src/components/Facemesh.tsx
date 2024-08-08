@@ -380,6 +380,7 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
           // Compute the gaze vector from the mouse XYZ target and the eye origin
           const expectedRightGazeVector = new THREE.Vector3().subVectors(mouseCm, rightOrigin).normalize();
           const expectedLeftGazeVector = new THREE.Vector3().subVectors(mouseCm, leftOrigin).normalize();
+
           const actualRightGazeVector = gazeData.rightDirection;
           const actualLeftGazeVector = gazeData.leftDirection;
 
@@ -388,9 +389,9 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
           const expectedRightIrisDirEuler = new THREE.Euler().setFromVector3(expectedRightIrisDir, 'XYZ');
 
           // Convert the iris direction quaternion to Euler angles (let's use only right for debugging)
-          const rightIrisDir = gazeData.rawRightIrisDir;
-          const rightIrisDirEuler = new THREE.Euler().setFromQuaternion(rightIrisDir, 'XYZ');
-          console.log("Right Iris Dir: ", rightIrisDirEuler);
+          const actualRightIrisDir = gazeData.rawRightIrisDir;
+          const actualRightIrisDirEuler = new THREE.Euler().setFromQuaternion(actualRightIrisDir, 'XYZ');
+          console.log("Right Iris Dir: ", actualRightIrisDirEuler);
 
         }
       }
@@ -427,6 +428,8 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
         rightGazeVector.applyQuaternion(eyeRightRef.current.irisDirRef.current.quaternion);
         const leftGazeVector = new THREE.Vector3(0, 0, -1);
         leftGazeVector.applyQuaternion(eyeLeftRef.current.irisDirRef.current.quaternion);
+
+        // Debugging
 
         // Compute the intersection with the face plane
         const facePlaneNormal = new THREE.Vector3(0, 0, 1);
@@ -915,19 +918,8 @@ export const FacemeshEye = React.forwardRef<FacemeshEyeApi, FacemeshEyeProps>(({
         // Apply a y = mx + b correction for the rx and ry values
         rx = rx + b_rx; 
         ry = ry + b_ry;
-        // ry = 0.1 + ry;
         rotation.set(rx, ry, 0);
-        // Convert the Euler to an XYZ vector
-        // const gazeVector = new THREE.Vector3();
-        // gazeVector.setFromSphericalCoords(1, rx, ry);
-        // gazeVector.setFromEuler(rotation)
 
-        // Apply the gaze offset
-        // gazeVector.add(gazeOffset);
-        // gazeVector.normalize();
-
-        // Convert gaze vector back to Euler
-        // rotation.setFromVector3(gazeVector);
         irisDirRef.current.setRotationFromEuler(rotation);
         if (rawIrisDirRef.current){
           rawIrisDirRef.current.setRotationFromEuler(new THREE.Euler(rx, ry, 0));
