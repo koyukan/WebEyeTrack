@@ -381,18 +381,31 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
           const expectedRightGazeVector = new THREE.Vector3().subVectors(mouseCm, rightOrigin).normalize();
           const expectedLeftGazeVector = new THREE.Vector3().subVectors(mouseCm, leftOrigin).normalize();
 
-          const actualRightGazeVector = gazeData.rightDirection;
-          const actualLeftGazeVector = gazeData.leftDirection;
+          // const rightGazeVector = gazeData.rightDirection;
+          // const leftGazeVector = gazeData.leftDirection;
+
+          // Invert the head pose quaternion R_h
+          const headPoseInverse = headposeRefRight?.current?.quaternion.clone().invert()!;
+
+          // Quaternion for the gaze direction g as a rotation from [0, 0, -1]
+          const rightQuaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, -1), expectedRightGazeVector);
+          const leftQuaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, -1), expectedLeftGazeVector);
+
+          // Compute R_i: Ri = Rh^-1 * g * p^-1
+          const expectedRightIrisDir = headPoseInverse.clone().multiply(rightQuaternion);
+          const expectedLeftIrisDir = headPoseInverse.clone().multiply(leftQuaternion);
 
           // Compute the iris-only gaze vector by undoing the headpose rotation
-          const expectedRightIrisDir = expectedRightGazeVector.clone().applyQuaternion(headposeRefRight.current.quaternion.clone().invert());
-          const expectedRightIrisDirEuler = new THREE.Euler().setFromVector3(expectedRightIrisDir, 'XYZ');
+          const expectedRightIrisDirEuler = new THREE.Euler().setFromQuaternion(expectedRightIrisDir, 'XYZ');
+          const expectedLeftIrisDirEuler = new THREE.Euler().setFromQuaternion(expectedLeftIrisDir, 'XYZ');
 
           // Convert the iris direction quaternion to Euler angles (let's use only right for debugging)
-          const actualRightIrisDir = gazeData.rawRightIrisDir;
-          const actualRightIrisDirEuler = new THREE.Euler().setFromQuaternion(actualRightIrisDir, 'XYZ');
-          console.log("Right Iris Dir: ", actualRightIrisDirEuler);
+          const actualRightIrisDirEuler = new THREE.Euler().setFromQuaternion(gazeData.rawRightIrisDir, 'XYZ');
+          const actualLeftIrisDirEuler = new THREE.Euler().setFromQuaternion(gazeData.rawLeftIrisDir, 'XYZ');
 
+          // Compute the 'x' and 'y' average differences and store the offset in b_rx and b_ry
+          b_rx = (expectedRightIrisDirEuler.x - actualRightIrisDirEuler.x);
+          b_ry = (expectedRightIrisDirEuler.y - actualRightIrisDirEuler.y);
         }
       }
 
@@ -424,44 +437,10 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
         // eyeLeftSphere.center.applyMatrix4(transform.matrix);
 
         // // Compute the gaze vector
-        // const rightGazeVector = new THREE.Vector3(0, 0, -1);
-        // rightGazeVector.applyQuaternion(eyeRightRef.current.irisDirRef.current.quaternion);
-        const leftGazeVector = new THREE.Vector3(0, 0, -1);
-        leftGazeVector.applyQuaternion(eyeLeftRef.current.irisDirRef.current.quaternion);
-
-        // // Debugging
-        // // Create quaternion for new THREE.Vector3(0,0,-1)
-        // const q1= new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1), new THREE.Vector3(0, 0, -1)).invert();
-        // const q2 = headposeRefRight?.current?.quaternion.clone().invert()!;
-
-        // // Create a quaternion representation for rightGazeVector
-        // const rq = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), rightGazeVector);
-
-        // const newQ = rq.clone().multiply(q2).multiply(q1);
-        // const oldQ = eyeRightRef.current.rawIrisDirRef.current.quaternion.clone()
-
-        // Compute the gaze vector g = R_t * [0, 0, -1]
         const rightGazeVector = new THREE.Vector3(0, 0, -1);
         rightGazeVector.applyQuaternion(eyeRightRef.current.irisDirRef.current.quaternion);
-
-        // Set up quaternion for the initial direction vector p = [0, 0, -1]
-        const pQuat = new THREE.Quaternion(0, 0, 0, 1);
-
-        // Invert the head pose quaternion R_h
-        const headPoseInverse = headposeRefRight?.current?.quaternion.clone().invert()!;
-
-        // Quaternion for the gaze direction g as a rotation from [0, 0, -1]
-        const gQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, -1), rightGazeVector);
-
-        // Compute R_i: Ri = Rh^-1 * g * p^-1
-        const R_i = headPoseInverse.clone().multiply(gQuat);
-
-        // The above assumes the identity quaternion for p (which is a unit vector in the direction [0, 0, -1])
-        // p^-1 (inverse) would be the same since it's the identity rotation, hence it is omitted here.
-
-        const oldQ = eyeRightRef.current.rawIrisDirRef.current.quaternion.clone();
-        console.log('Computed R_i:', R_i);
-        console.log('Original R_i:', oldQ);
+        const leftGazeVector = new THREE.Vector3(0, 0, -1);
+        leftGazeVector.applyQuaternion(eyeLeftRef.current.irisDirRef.current.quaternion);
 
         // Compute the intersection with the face plane
         const facePlaneNormal = new THREE.Vector3(0, 0, 1);
@@ -950,6 +929,7 @@ export const FacemeshEye = React.forwardRef<FacemeshEyeApi, FacemeshEyeProps>(({
         // Apply a y = mx + b correction for the rx and ry values
         rx = rx + b_rx; 
         ry = ry + b_ry;
+        console.log(b_rx, b_ry);
         rotation.set(rx, ry, 0);
 
         irisDirRef.current.setRotationFromEuler(rotation);
