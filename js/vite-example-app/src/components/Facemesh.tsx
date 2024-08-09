@@ -423,13 +423,45 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
         // eyeRightSphere.center.applyMatrix4(transform.matrix);
         // eyeLeftSphere.center.applyMatrix4(transform.matrix);
 
-        // Compute the gaze vector
-        const rightGazeVector = new THREE.Vector3(0, 0, -1);
-        rightGazeVector.applyQuaternion(eyeRightRef.current.irisDirRef.current.quaternion);
+        // // Compute the gaze vector
+        // const rightGazeVector = new THREE.Vector3(0, 0, -1);
+        // rightGazeVector.applyQuaternion(eyeRightRef.current.irisDirRef.current.quaternion);
         const leftGazeVector = new THREE.Vector3(0, 0, -1);
         leftGazeVector.applyQuaternion(eyeLeftRef.current.irisDirRef.current.quaternion);
 
-        // Debugging
+        // // Debugging
+        // // Create quaternion for new THREE.Vector3(0,0,-1)
+        // const q1= new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1), new THREE.Vector3(0, 0, -1)).invert();
+        // const q2 = headposeRefRight?.current?.quaternion.clone().invert()!;
+
+        // // Create a quaternion representation for rightGazeVector
+        // const rq = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), rightGazeVector);
+
+        // const newQ = rq.clone().multiply(q2).multiply(q1);
+        // const oldQ = eyeRightRef.current.rawIrisDirRef.current.quaternion.clone()
+
+        // Compute the gaze vector g = R_t * [0, 0, -1]
+        const rightGazeVector = new THREE.Vector3(0, 0, -1);
+        rightGazeVector.applyQuaternion(eyeRightRef.current.irisDirRef.current.quaternion);
+
+        // Set up quaternion for the initial direction vector p = [0, 0, -1]
+        const pQuat = new THREE.Quaternion(0, 0, 0, 1);
+
+        // Invert the head pose quaternion R_h
+        const headPoseInverse = headposeRefRight?.current?.quaternion.clone().invert()!;
+
+        // Quaternion for the gaze direction g as a rotation from [0, 0, -1]
+        const gQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, -1), rightGazeVector);
+
+        // Compute R_i: Ri = Rh^-1 * g * p^-1
+        const R_i = headPoseInverse.clone().multiply(gQuat);
+
+        // The above assumes the identity quaternion for p (which is a unit vector in the direction [0, 0, -1])
+        // p^-1 (inverse) would be the same since it's the identity rotation, hence it is omitted here.
+
+        const oldQ = eyeRightRef.current.rawIrisDirRef.current.quaternion.clone();
+        console.log('Computed R_i:', R_i);
+        console.log('Original R_i:', oldQ);
 
         // Compute the intersection with the face plane
         const facePlaneNormal = new THREE.Vector3(0, 0, 1);
