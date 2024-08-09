@@ -30,6 +30,8 @@ const screenWidth = screen.width;
 const screenHeight = screen.height;
 const SCREEN_WIDTH = Number(px2cm(screenWidth));
 const SCREEN_HEIGHT = Number(px2cm(screenHeight));
+const SCREEN_DIAGONAL = Math.sqrt(SCREEN_WIDTH**2 + SCREEN_HEIGHT**2);
+const minDistance = 0.1 * SCREEN_DIAGONAL;
 
 const screenTransformation = new THREE.Matrix4().set(
   -1, 0, 0, 0,
@@ -301,7 +303,93 @@ function normalizeAngle(angle) {
   return angle;
 }
 
+// Function to calculate Euclidean distance between two points
+function euclideanDistance(p1, p2) {
+  return Math.sqrt((p1.x - p2.x)**2 + (p1.y - p2.y)**2);
+}
+
+// Function to add a new anchor point
+function addAnchorPoint(expectedRx, expectedRy, actualRx, actualRy) {
+  const newPoint = { expected: { x: expectedRx, y: expectedRy }, actual: { x: actualRx, y: actualRy } };
+
+  // Check if the new point is far enough from existing points
+  // TODO: This should be using the xy coordinates of the mouse click and the gaze point instead of the iris direction
+  for (let point of anchorPoints) {
+    if (euclideanDistance(point.expected, newPoint.expected) < minDistance) {
+      return; // Too close to an existing point
+    }
+  }
+
+  // Add new point
+  anchorPoints.push(newPoint);
+
+  // If we exceed the max number of anchor points, remove the oldest one
+  if (anchorPoints.length > maxAnchors) {
+    anchorPoints.shift();
+  }
+}
+
+// Function to calculate the scale and offset based on the anchor points
+function computeScaleAndOffset() {
+  // Check if we have enough anchor, if not, only compute the offset 
+  if (anchorPoints.length < 2) {
+
+    // Compute the average offset
+    let sumRx = 0, sumRy = 0;
+    for (let point of anchorPoints) {
+      const { expected, actual } = point;
+      sumRx += expected.x - actual.x;
+      sumRy += expected.y - actual.y;
+    }
+
+    // Compute the average offset
+    const n = anchorPoints.length;
+    const m_rx = 1;
+    const b_rx = sumRx / n;
+    const m_ry = 1;
+    const b_ry = sumRy / n;
+
+    return { m_rx, b_rx, m_ry, b_ry }
+  }
+
+  // Linear regression to determine scale and offset
+  let sumRx = 0, sumRy = 0, sumActualRx = 0, sumActualRy = 0;
+  let sumRxActualRx = 0, sumRyActualRy = 0;
+  let sumRxSquared = 0, sumRySquared = 0;
+
+  for (let point of anchorPoints) {
+    const { expected, actual } = point;
+
+    sumRx += expected.x;
+    sumRy += expected.y;
+    sumActualRx += actual.x;
+    sumActualRy += actual.y;
+
+    sumRxActualRx += expected.x * actual.x;
+    sumRyActualRy += expected.y * actual.y;
+
+    sumRxSquared += expected.x * expected.x;
+    sumRySquared += expected.y * expected.y;
+  }
+
+  const n = anchorPoints.length;
+  
+  // Calculate scale (m) and offset (b) for both rx and ry
+  const m_rx = (n * sumRxActualRx - sumRx * sumActualRx) / (n * sumRxSquared - sumRx * sumRx);
+  const m_ry = (n * sumRyActualRy - sumRy * sumActualRy) / (n * sumRySquared - sumRy * sumRy);
+
+  const b_rx = (sumActualRx - m_rx * sumRx) / n;
+  const b_ry = (sumActualRy - m_ry * sumRy) / n;
+
+  return { m_rx, b_rx, m_ry, b_ry };
+}
+
+// Calibration Parameters
+const maxAnchors = 9;
+const anchorPoints: { expected: { x: number, y: number }, actual: { x: number, y: number } }[] = []; // Stores the {expected: {rx, ry}, actual: {rx, ry}} pairs
+let m_rx = 1;
 let b_rx = 0;
+let m_ry = 1;
 let b_ry = 0;
 
 export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
@@ -409,17 +497,31 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
           const actualRightIrisDirEuler = new THREE.Euler().setFromQuaternion(gazeData.rawRightIrisDir, 'XYZ');
           const actualLeftIrisDirEuler = new THREE.Euler().setFromQuaternion(gazeData.rawLeftIrisDir, 'XYZ');
 
-          // // Compute the 'x' and 'y' average differences and store the offset in b_rx and b_ry
-          // b_rx = normalizeAngle(expectedRightIrisDirEuler.x - actualRightIrisDirEuler.x);
-          // b_ry = normalizeAngle(expectedRightIrisDirEuler.y - actualRightIrisDirEuler.y);
-
           // Compute the 'x' and 'y' average differences and store the offset in b_rx and b_ry (both left and right)
-          const b_rx_right = normalizeAngle(expectedRightIrisDirEuler.x - actualRightIrisDirEuler.x);
-          const b_ry_right = normalizeAngle(expectedRightIrisDirEuler.y - actualRightIrisDirEuler.y);
-          const b_rx_left = normalizeAngle(expectedLeftIrisDirEuler.x - actualLeftIrisDirEuler.x);
-          const b_ry_left = normalizeAngle(expectedLeftIrisDirEuler.y - actualLeftIrisDirEuler.y);
-          b_rx = (b_rx_right + b_rx_left) / 2;
-          b_ry = (b_ry_right + b_ry_left) / 2;
+          // const b_rx_right = normalizeAngle(expectedRightIrisDirEuler.x - actualRightIrisDirEuler.x);
+          // const b_ry_right = normalizeAngle(expectedRightIrisDirEuler.y - actualRightIrisDirEuler.y);
+          // const b_rx_left = normalizeAngle(expectedLeftIrisDirEuler.x - actualLeftIrisDirEuler.x);
+          // const b_ry_left = normalizeAngle(expectedLeftIrisDirEuler.y - actualLeftIrisDirEuler.y);
+          // b_rx = (b_rx_right + b_rx_left) / 2;
+          // b_ry = (b_ry_right + b_ry_left) / 2;
+
+          // Compute the average Euler angles
+          const expectedIrisDirEuler = new THREE.Euler().set((expectedRightIrisDirEuler.x + expectedLeftIrisDirEuler.x) / 2, (expectedRightIrisDirEuler.y + expectedLeftIrisDirEuler.y) / 2, 0);
+          const actualIrisDirEuler = new THREE.Euler().set((actualRightIrisDirEuler.x + actualLeftIrisDirEuler.x) / 2, (actualRightIrisDirEuler.y + actualLeftIrisDirEuler.y) / 2, 0);
+
+          // Add the current anchor point
+          addAnchorPoint(expectedIrisDirEuler.x, expectedIrisDirEuler.y, actualIrisDirEuler.x, actualIrisDirEuler.y);
+
+          // Compute the scale and offset based on the anchor points
+          const scaleAndOffset = computeScaleAndOffset();
+
+          // Update the scale and offset
+          if (scaleAndOffset) {
+            m_rx = scaleAndOffset.m_rx;
+            b_rx = scaleAndOffset.b_rx;
+            m_ry = scaleAndOffset.m_ry;
+            b_ry = scaleAndOffset.b_ry;
+          }
 
         }
       }
@@ -946,8 +1048,8 @@ export const FacemeshEye = React.forwardRef<FacemeshEyeApi, FacemeshEyeProps>(({
         let ry = vfov * 0.5 * (lookIn - lookOut) * (side === "left" ? 1 : -1);
 
         // Apply a y = mx + b correction for the rx and ry values
-        let offsettedRx = normalizeAngle(rx + b_rx);
-        let offsettedRy = normalizeAngle(ry + b_ry);
+        let offsettedRx = normalizeAngle(m_rx * rx + b_rx);
+        let offsettedRy = normalizeAngle(m_ry * ry + b_ry);
         rotation.set(offsettedRx, offsettedRy, 0);
 
         irisDirRef.current.setRotationFromEuler(rotation);
