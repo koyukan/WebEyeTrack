@@ -295,6 +295,12 @@ function get_intersection_with_plane(plane_normal, plane_point, ray_vector, ray_
   return new THREE.Vector3().addVectors(ray_point, ray_vector.clone().multiplyScalar(prod3));
 }
 
+function normalizeAngle(angle) {
+  while (angle > Math.PI) angle -= 2 * Math.PI;
+  while (angle < -Math.PI) angle += 2 * Math.PI;
+  return angle;
+}
+
 let b_rx = 0;
 let b_ry = 0;
 
@@ -403,9 +409,18 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
           const actualRightIrisDirEuler = new THREE.Euler().setFromQuaternion(gazeData.rawRightIrisDir, 'XYZ');
           const actualLeftIrisDirEuler = new THREE.Euler().setFromQuaternion(gazeData.rawLeftIrisDir, 'XYZ');
 
-          // Compute the 'x' and 'y' average differences and store the offset in b_rx and b_ry
-          b_rx = (expectedRightIrisDirEuler.x - actualRightIrisDirEuler.x);
-          b_ry = (expectedRightIrisDirEuler.y - actualRightIrisDirEuler.y);
+          // // Compute the 'x' and 'y' average differences and store the offset in b_rx and b_ry
+          // b_rx = normalizeAngle(expectedRightIrisDirEuler.x - actualRightIrisDirEuler.x);
+          // b_ry = normalizeAngle(expectedRightIrisDirEuler.y - actualRightIrisDirEuler.y);
+
+          // Compute the 'x' and 'y' average differences and store the offset in b_rx and b_ry (both left and right)
+          const b_rx_right = normalizeAngle(expectedRightIrisDirEuler.x - actualRightIrisDirEuler.x);
+          const b_ry_right = normalizeAngle(expectedRightIrisDirEuler.y - actualRightIrisDirEuler.y);
+          const b_rx_left = normalizeAngle(expectedLeftIrisDirEuler.x - actualLeftIrisDirEuler.x);
+          const b_ry_left = normalizeAngle(expectedLeftIrisDirEuler.y - actualLeftIrisDirEuler.y);
+          b_rx = (b_rx_right + b_rx_left) / 2;
+          b_ry = (b_ry_right + b_ry_left) / 2;
+
         }
       }
 
@@ -548,7 +563,11 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
       // const scalingFactor = new THREE.Vector3().copy(interPupillaryDistanceCm).divide(interPupillaryDistanceCf);
       // scalingFactor.multiplyScalar(0.3);
       // scalingFactor.z = 10
-
+      function normalizeAngle(angle) {
+        while (angle > Math.PI) angle -= 2 * Math.PI;
+        while (angle < -Math.PI) angle += 2 * Math.PI;
+        return angle;
+      }
       // Compute the new translation vector based on the distance between the eye centroids
       // const leftTranslation = new THREE.Vector3().subVectors(leftCentroidCm, leftCentroidCf);
       // const rightTranslation = new THREE.Vector3().subVectors(righCentroidCm, rightCentroidCf);
@@ -927,10 +946,9 @@ export const FacemeshEye = React.forwardRef<FacemeshEyeApi, FacemeshEyeProps>(({
         let ry = vfov * 0.5 * (lookIn - lookOut) * (side === "left" ? 1 : -1);
 
         // Apply a y = mx + b correction for the rx and ry values
-        rx = rx + b_rx; 
-        ry = ry + b_ry;
-        console.log(b_rx, b_ry);
-        rotation.set(rx, ry, 0);
+        let offsettedRx = normalizeAngle(rx + b_rx);
+        let offsettedRy = normalizeAngle(ry + b_ry);
+        rotation.set(offsettedRx, offsettedRy, 0);
 
         irisDirRef.current.setRotationFromEuler(rotation);
         if (rawIrisDirRef.current){
