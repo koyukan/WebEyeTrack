@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { useThree } from "@react-three/fiber";
 import { Line, Sphere } from "@react-three/drei";
 import { DEG2RAD } from "three/src/math/MathUtils";
+import { matrix, lusolve } from 'mathjs';
 
 const VIDEO_HEIGHT = 480
 const VIDEO_WIDTH = 640
@@ -329,6 +330,75 @@ function addAnchorPoint(expectedPoG, expectedRx, expectedRy, actualRx, actualRy)
   }
 }
 
+// Function to solve for affine transformation parameters
+function computeAffineTransformation(anchorPoints) {
+  const n = anchorPoints.length;
+  if (n == 0) return
+  else if (n == 1) {
+    // With a single point, return the identity matrix and a constant offset
+    const diffX = anchorPoints[0].expected.x - anchorPoints[0].actual.x;
+    const diffY = anchorPoints[0].expected.y - anchorPoints[0].actual.y;
+
+    return {
+      a: 1,
+      b: 0,
+      e: diffX,
+      c: 0,
+      d: 1,
+      f: diffY,
+    };
+  }
+  else if (n > 3) {
+    const A: Number[][] = [];
+    const Bx: Number[] = [];
+    const By: Number[] = [];
+
+    for (let point of anchorPoints) {
+      const { expected, actual } = point;
+
+      const x = actual.rx;
+      const y = actual.ry;
+
+      A.push([x, y, 1, 0, 0, 0]);  // Row for x' (expected rx)
+      A.push([0, 0, 0, x, y, 1]);  // Row for y' (expected ry)
+      
+      Bx.push(expected.x);
+      By.push(expected.y);
+    }
+
+    // Convert to matrices and solve the linear system A * params = Bx or By
+    const A_matrix = matrix(A);
+    const Bx_matrix = matrix(Bx);
+    const By_matrix = matrix(By);
+
+    // Solve for params
+    const paramsX = lusolve(A_matrix, Bx_matrix);
+    const paramsY = lusolve(A_matrix, By_matrix);
+
+    return {
+      a: paramsX[0],
+      b: paramsX[1],
+      e: paramsX[2],
+      c: paramsY[3],
+      d: paramsY[4],
+      f: paramsY[5],
+    };
+  }
+}
+
+// Function to apply the affine transformation
+function applyAffineTransformation(rx, ry, params) {
+  const { a, b, c, d, e, f } = params;
+
+  const rx_new = a * rx + b * ry + e;
+  const ry_new = c * rx + d * ry + f;
+
+  return {
+    rx: normalizeAngle(rx_new),
+    ry: normalizeAngle(ry_new),
+  };
+}
+
 // Function to calculate the scale and offset based on the anchor points
 function computeScaleAndOffset() {
 
@@ -412,6 +482,7 @@ let m_rx = 1;
 let b_rx = 0;
 let m_ry = 1;
 let b_ry = 0;
+let affMatrixParams = {a: 1, b: 0, e: 0, c: 0, d: 1, f:0}
 
 export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
   (
@@ -542,16 +613,12 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
         );
 
           // Compute the scale and offset based on the anchor points
-          const scaleAndOffset = computeScaleAndOffset();
+          let output = computeAffineTransformation(anchorPoints);
 
-          // Update the scale and offset
-          if (scaleAndOffset) {
-            m_rx = scaleAndOffset.m_rx;
-            b_rx = scaleAndOffset.b_rx;
-            m_ry = scaleAndOffset.m_ry;
-            b_ry = scaleAndOffset.b_ry;
+          // Update the affine transformation matrix parameters
+          if (output) {
+            affMatrixParams = output;
           }
-
         }
       }
 
@@ -1077,10 +1144,8 @@ export const FacemeshEye = React.forwardRef<FacemeshEyeApi, FacemeshEyeProps>(({
         let rx = hfov * 0.5 * (lookDown - lookUp);
         let ry = vfov * 0.5 * (lookIn - lookOut) * (side === "left" ? 1 : -1);
 
-        // Apply a y = mx + b correction for the rx and ry values
-        let offsettedRx = normalizeAngle(m_rx * rx + b_rx);
-        let offsettedRy = normalizeAngle(m_ry * ry + b_ry);
-        rotation.set(offsettedRx, offsettedRy, 0);
+        const corrected = applyAffineTransformation(rx, ry, affMatrixParams);
+        rotation.set(corrected.rx, corrected.ry, 0);
 
         irisDirRef.current.setRotationFromEuler(rotation);
         if (rawIrisDirRef.current){
