@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { useThree } from "@react-three/fiber";
 import { Line, Sphere } from "@react-three/drei";
 import { DEG2RAD } from "three/src/math/MathUtils";
-import { matrix, lusolve } from 'mathjs';
+import { matrix, pinv, multiply } from 'mathjs';
 
 const VIDEO_HEIGHT = 480
 const VIDEO_WIDTH = 640
@@ -350,38 +350,54 @@ function computeAffineTransformation(anchorPoints) {
   }
   else if (n > 3) {
     const A: Number[][] = [];
-    const Bx: Number[] = [];
-    const By: Number[] = [];
+    const B: Number[] = [];
+    // const Bx: Number[] = [];
+    // const By: Number[] = [];
 
     for (let point of anchorPoints) {
       const { expected, actual } = point;
 
-      const x = actual.rx;
-      const y = actual.ry;
+      const x = actual.x;
+      const y = actual.y;
 
       A.push([x, y, 1, 0, 0, 0]);  // Row for x' (expected rx)
       A.push([0, 0, 0, x, y, 1]);  // Row for y' (expected ry)
       
-      Bx.push(expected.x);
-      By.push(expected.y);
+      // Bx.push(expected.x);
+      // By.push(expected.y);
+      B.push(expected.x);
+      B.push(expected.y)
     }
+
+    console.log(n)
+    console.log(A)
+    console.log(B)
 
     // Convert to matrices and solve the linear system A * params = Bx or By
     const A_matrix = matrix(A);
-    const Bx_matrix = matrix(Bx);
-    const By_matrix = matrix(By);
+    const B_matrix = matrix(B);
+    // const Bx_matrix = matrix(Bx);
+    // const By_matrix = matrix(By);
+
+    // Compute the pseudo-inverse of A
+    const pseudoInverse = pinv(A_matrix);
+
+    // Solve for parameters
+    const params = multiply(pseudoInverse, B_matrix)
+    console.log(params)
+    console.log(affMatrixParams)
 
     // Solve for params
-    const paramsX = lusolve(A_matrix, Bx_matrix);
-    const paramsY = lusolve(A_matrix, By_matrix);
+    // const paramsX = lusolve(A_matrix, Bx_matrix);
+    // const paramsY = lusolve(A_matrix, By_matrix);
 
     return {
-      a: paramsX[0],
-      b: paramsX[1],
-      e: paramsX[2],
-      c: paramsY[3],
-      d: paramsY[4],
-      f: paramsY[5],
+      a: params._data[0],
+      b: params._data[1],
+      e: params._data[2],
+      c: params._data[3],
+      d: params._data[4],
+      f: params._data[5],
     };
   }
 }
