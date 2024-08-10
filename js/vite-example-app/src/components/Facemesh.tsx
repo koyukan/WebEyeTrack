@@ -309,13 +309,13 @@ function euclideanDistance(p1, p2) {
 }
 
 // Function to add a new anchor point
-function addAnchorPoint(expectedRx, expectedRy, actualRx, actualRy) {
-  const newPoint = { expected: { x: expectedRx, y: expectedRy }, actual: { x: actualRx, y: actualRy } };
+function addAnchorPoint(expectedPoG, expectedRx, expectedRy, actualRx, actualRy) {
+  const newPoint = { PoG: expectedPoG, expected: { x: expectedRx, y: expectedRy }, actual: { x: actualRx, y: actualRy } };
 
   // Check if the new point is far enough from existing points
   // TODO: This should be using the xy coordinates of the mouse click and the gaze point instead of the iris direction
   for (let point of anchorPoints) {
-    if (euclideanDistance(point.expected, newPoint.expected) < minDistance) {
+    if (point.PoG.distanceTo(newPoint.PoG) < minDistance) {
       return; // Too close to an existing point
     }
   }
@@ -386,7 +386,7 @@ function computeScaleAndOffset() {
 
 // Calibration Parameters
 const maxAnchors = 9;
-const anchorPoints: { expected: { x: number, y: number }, actual: { x: number, y: number } }[] = []; // Stores the {expected: {rx, ry}, actual: {rx, ry}} pairs
+const anchorPoints: { PoG: THREE.Vector2, expected: { x: number, y: number }, actual: { x: number, y: number } }[] = []; // Stores the {expected: {rx, ry}, actual: {rx, ry}} pairs
 let m_rx = 1;
 let b_rx = 0;
 let m_ry = 1;
@@ -510,7 +510,13 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
           const actualIrisDirEuler = new THREE.Euler().set((actualRightIrisDirEuler.x + actualLeftIrisDirEuler.x) / 2, (actualRightIrisDirEuler.y + actualLeftIrisDirEuler.y) / 2, 0);
 
           // Add the current anchor point
-          addAnchorPoint(expectedIrisDirEuler.x, expectedIrisDirEuler.y, actualIrisDirEuler.x, actualIrisDirEuler.y);
+          addAnchorPoint(
+            new THREE.Vector2(mouseCm.x, mouseCm.y),
+            expectedIrisDirEuler.x, 
+            expectedIrisDirEuler.y, 
+            actualIrisDirEuler.x, 
+            actualIrisDirEuler.y
+          );
 
           // Compute the scale and offset based on the anchor points
           const scaleAndOffset = computeScaleAndOffset();
@@ -596,6 +602,7 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
           'leftIntersection': leftIntersection,
           'right2DPoG': right2DPoG,
           'left2DPoG': left2DPoG,
+          'average2DPoG': average2DPoG,
           'average2DPoGpx': average2DPoGpx,
         }
       }
