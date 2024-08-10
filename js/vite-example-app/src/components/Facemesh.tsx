@@ -314,11 +314,11 @@ function addAnchorPoint(expectedPoG, expectedRx, expectedRy, actualRx, actualRy)
 
   // Check if the new point is far enough from existing points
   // TODO: This should be using the xy coordinates of the mouse click and the gaze point instead of the iris direction
-  for (let point of anchorPoints) {
-    if (point.PoG.distanceTo(newPoint.PoG) < minDistance) {
-      return; // Too close to an existing point
-    }
-  }
+  // for (let point of anchorPoints) {
+  //   if (point.PoG.distanceTo(newPoint.PoG) < minDistance) {
+  //     return; // Too close to an existing point
+  //   }
+  // }
 
   // Add new point
   anchorPoints.push(newPoint);
@@ -331,6 +331,12 @@ function addAnchorPoint(expectedPoG, expectedRx, expectedRy, actualRx, actualRy)
 
 // Function to calculate the scale and offset based on the anchor points
 function computeScaleAndOffset() {
+
+  // If zero points, skip
+  if (anchorPoints.length === 0) {
+    return;
+  }
+
   // Check if we have enough anchor, if not, only compute the offset 
   if (anchorPoints.length < 2) {
 
@@ -349,6 +355,8 @@ function computeScaleAndOffset() {
     const m_ry = 1;
     const b_ry = sumRy / n;
 
+    console.log("bx: ", b_rx, "by: ", b_ry);
+
     return { m_rx, b_rx, m_ry, b_ry }
   }
 
@@ -360,26 +368,39 @@ function computeScaleAndOffset() {
   for (let point of anchorPoints) {
     const { expected, actual } = point;
 
-    sumRx += expected.x;
-    sumRy += expected.y;
-    sumActualRx += actual.x;
-    sumActualRy += actual.y;
+    // sumRx += expected.x;
+    // sumRy += expected.y;
+    // sumActualRx += actual.x;
+    // sumActualRy += actual.y;
 
-    sumRxActualRx += expected.x * actual.x;
-    sumRyActualRy += expected.y * actual.y;
+    // sumRxActualRx += expected.x * actual.x;
+    // sumRyActualRy += expected.y * actual.y;
 
-    sumRxSquared += expected.x * expected.x;
-    sumRySquared += expected.y * expected.y;
+    // sumRxSquared += expected.x * expected.x;
+    // sumRySquared += expected.y * expected.y;
+    // sumRx += expected.x - actual.x;
+    // sumRy += expected.y - actual.y;
+    const diffx = expected.x - actual.x;
+    const diffy = expected.y - actual.y;
+    console.log("Diffx: ", diffx, "Diffy: ", diffy);
+    sumRx += diffx;
+    sumRy += diffy;
   }
 
   const n = anchorPoints.length;
   
   // Calculate scale (m) and offset (b) for both rx and ry
-  const m_rx = (n * sumRxActualRx - sumRx * sumActualRx) / (n * sumRxSquared - sumRx * sumRx);
-  const m_ry = (n * sumRyActualRy - sumRy * sumActualRy) / (n * sumRySquared - sumRy * sumRy);
+  // const m_rx = (n * sumRxActualRx - sumRx * sumActualRx) / (n * sumRxSquared - sumRx * sumRx);
+  // const m_ry = (n * sumRyActualRy - sumRy * sumActualRy) / (n * sumRySquared - sumRy * sumRy);
 
-  const b_rx = (sumActualRx - m_rx * sumRx) / n;
-  const b_ry = (sumActualRy - m_ry * sumRy) / n;
+  // const b_rx = (sumActualRx - m_rx * sumRx) / n;
+  // const b_ry = (sumActualRy - m_ry * sumRy) / n;
+  const m_rx = 1;  
+  const m_ry = 1;
+  const b_rx = sumRx / n;
+  const b_ry = sumRy / n;
+
+  console.log("b_rx: ", b_rx, "b_ry: ", b_ry);
 
   return { m_rx, b_rx, m_ry, b_ry };
 }
@@ -509,6 +530,8 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
           const expectedIrisDirEuler = new THREE.Euler().set((expectedRightIrisDirEuler.x + expectedLeftIrisDirEuler.x) / 2, (expectedRightIrisDirEuler.y + expectedLeftIrisDirEuler.y) / 2, 0);
           const actualIrisDirEuler = new THREE.Euler().set((actualRightIrisDirEuler.x + actualLeftIrisDirEuler.x) / 2, (actualRightIrisDirEuler.y + actualLeftIrisDirEuler.y) / 2, 0);
 
+          console.log(expectedIrisDirEuler, actualIrisDirEuler)
+
           // Add the current anchor point
           addAnchorPoint(
             new THREE.Vector2(mouseCm.x, mouseCm.y),
@@ -516,7 +539,7 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
             expectedIrisDirEuler.y, 
             actualIrisDirEuler.x, 
             actualIrisDirEuler.y
-          );
+        );
 
           // Compute the scale and offset based on the anchor points
           const scaleAndOffset = computeScaleAndOffset();
