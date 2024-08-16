@@ -30,7 +30,11 @@ if __name__ == '__main__':
 
     # Restrict the options of the model
     parser.add_argument('--model', type=str, choices=['EFE', 'Gaze360'], required=True, help='The model to train')
+    parser.add_argument('--exp', type=str, required=True, help='The experiment name')
     args = parser.parse_args()
+
+    # Updating config according to the experiment
+    config['exp'] = args.exp
     
     # Obtain model-specific dataset configuration
     model_config = config['train']['model_specific'][args.model]
@@ -42,7 +46,7 @@ if __name__ == '__main__':
     dataset = MPIIFaceGazeDataset(
         GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
         **model_config['dataset_params'],
-        # dataset_size=100*config['train']['batch_size']
+        # dataset_size=2*config['train']['batch_size']
     )
 
     # Create the dataloader
@@ -50,10 +54,10 @@ if __name__ == '__main__':
     # val_size = len(dataset) - train_size
 
     # Debugging, reducing the size of the dataset
-    # train_size = int(train_size / 200)
-    # val_size = int(val_size / 20 )
     train_size = int(len(dataset) * 0.8)
     val_size = int(len(dataset) * 0.2)
+    # train_size = 1
+    # val_size = 1
 
     train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
     # train_dataset = torch.utils.data.Subset(dataset, range(train_size))
@@ -73,7 +77,7 @@ if __name__ == '__main__':
     )
 
     # Create TensorBoard Logger
-    tb_logger = pl.loggers.TensorBoardLogger('lightning_logs/', name=args.model)
+    tb_logger = pl.loggers.TensorBoardLogger('lightning_logs/', name=args.model, version=args.exp)
 
     # Log the hyperparameters
     tb_logger.log_hyperparams(config['train'])

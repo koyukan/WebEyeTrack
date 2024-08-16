@@ -1,8 +1,14 @@
+
+import pathlib
 import mediapipe as mp
 from mediapipe import solutions
 from mediapipe.framework.formats import landmark_pb2
 import numpy as np
 import matplotlib.pyplot as plt
+import json
+from skimage.transform import PiecewiseAffineTransform, warp
+
+CWD = pathlib.Path(__file__).parent
 
 def draw_landmarks_on_image(rgb_image, detection_result):
   face_landmarks_list = detection_result.face_landmarks
@@ -41,6 +47,23 @@ def draw_landmarks_on_image(rgb_image, detection_result):
           .get_default_face_mesh_iris_connections_style())
 
   return annotated_image
+
+def compute_uv_texture(keypoints, img, texture_size=(244,244)):
+
+  # uv_path = "./data/uv_map.json" #taken from https://github.com/spite/FaceMeshFaceGeometry/blob/353ee557bec1c8b55a5e46daf785b57df819812c/js/geometry.js
+  uv_path = CWD / 'data' / "uv_map.json"
+  uv_map_dict = json.load(open(str(uv_path)))
+  uv_map = np.array([ (uv_map_dict["u"][str(i)],uv_map_dict["v"][str(i)]) for i in range(468)])
+
+  #https://scikit-image.org/docs/dev/auto_examples/transform/plot_piecewise_affine.html
+  keypoints_uv = np.array([(texture_size[1]*x, texture_size[0]*y) for x,y in uv_map])
+
+  tform = PiecewiseAffineTransform()
+  tform.estimate(keypoints_uv,keypoints)
+  texture = warp(img, tform, output_shape=(texture_size[1],texture_size[0]))
+  texture = (255*texture).astype(np.uint8)
+
+  return texture
 
 def resize_intrinsics(intrinsic_matrix, original_size, new_size):
     """
