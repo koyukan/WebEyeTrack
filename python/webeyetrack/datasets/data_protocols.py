@@ -4,8 +4,10 @@ import pathlib
 
 @dataclass
 class Annotations:
+    original_img_size: np.ndarray # (3,)
     pog_px: np.ndarray # (2,)
-    facial_landmarks_2d: np.ndarray # (2, 6)
+    facial_landmarks: np.ndarray # (5, N)
+    facial_landmarks_2d: np.ndarray # (2, N)
     face_bbox: np.ndarray # (4,)
     head_pose_3d: np.ndarray # (6,), rotation matrix
     face_origin_3d: np.ndarray # (3,)

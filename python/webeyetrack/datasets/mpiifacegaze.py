@@ -202,8 +202,10 @@ class MPIIFaceGazeDataset(Dataset):
                         cv2.imwrite(str(texture_path), texture)
 
                     annotation = Annotations(
+                        original_img_size=image_np.shape,
                         pog_px=np.array(items[1:3], dtype=np.float32),
                         face_bbox=face_bbox,
+                        facial_landmarks=face_landmarks_proto,
                         facial_landmarks_2d=face_landmarks,
                         head_pose_3d=np.array(items[15:21], dtype=np.float32).reshape(3, 2),
                         face_origin_3d=face_origin_3d,
