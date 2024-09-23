@@ -8,6 +8,7 @@ class Annotations:
     pog_px: np.ndarray # (2,)
     facial_landmarks: np.ndarray # (5, N)
     facial_landmarks_2d: np.ndarray # (2, N)
+    facial_rt: np.ndarray # (4, 4)
     face_bbox: np.ndarray # (4,)
     head_pose_3d: np.ndarray # (6,), rotation matrix
     face_origin_3d: np.ndarray # (3,)

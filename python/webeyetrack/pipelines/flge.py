@@ -50,15 +50,25 @@ class FLGE():
         }
 
     def process_sample(self, sample: Dict[str, Any]):
-
         # First, compute the inter-pupillary distance
         distances = self.estimate_inter_pupillary_distance_2d(sample)
 
-        # Estimate the depth and scale
+        # Correct the image_ipd with the facial rotation
+        face_rt = sample['facial_rt']
+        image_2d = distances['image_ipd']
+
+        # Estimate the scale
         metric_scale = REAL_WORLD_IPD / distances['canonical_ipd_3d']
-        depth = (sample['original_img_size'][1] / 2) * REAL_WORLD_IPD / distances['image_ipd']
+
+        # Estimate the depth
+        # Assuming the focal length is half the image width
+        focal_length_pixels = sample['original_img_size'][1] / 2
+        depth_cm = (focal_length_pixels * REAL_WORLD_IPD) / distances['image_ipd']
+        depth_mm = depth_cm * 10 * 1.705
+        
+        # import pdb; pdb.set_trace()
 
         return {
             'scale': metric_scale,
-            'depth': depth
+            'depth': depth_mm
         }

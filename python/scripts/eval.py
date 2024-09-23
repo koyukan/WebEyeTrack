@@ -20,6 +20,9 @@ with open(FILE_DIR / 'config.yaml', 'r') as f:
 def distance(y, y_hat):
     return np.abs(y_hat - y)
 
+def scale(y, y_hat):
+    return np.abs(y / y_hat)
+
 def eval():
 
     # Create pipeline
@@ -35,7 +38,7 @@ def eval():
 
     metric_functions = {'depth': distance}
     metrics = defaultdict(list)
-    for sample in tqdm(dataset, total=len(dataset)):
+    for i, sample in tqdm(enumerate(dataset), total=len(dataset)):
 
         # Process the sample
         output = algo.process_sample(sample)
@@ -47,6 +50,9 @@ def eval():
 
         for name, function in metric_functions.items():
             metrics[name].append(function(actual[name], output[name]))
+
+        if i == 100:
+            break
 
     # Generate box plots for the metrics
     df = pd.DataFrame(metrics)

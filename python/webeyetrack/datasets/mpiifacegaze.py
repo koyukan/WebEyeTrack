@@ -207,6 +207,7 @@ class MPIIFaceGazeDataset(Dataset):
                         face_bbox=face_bbox,
                         facial_landmarks=face_landmarks_proto,
                         facial_landmarks_2d=face_landmarks,
+                        facial_rt=face_landmarks_rt,
                         head_pose_3d=np.array(items[15:21], dtype=np.float32).reshape(3, 2),
                         face_origin_3d=face_origin_3d,
                         face_origin_2d=face_origin_2d.flatten(),
