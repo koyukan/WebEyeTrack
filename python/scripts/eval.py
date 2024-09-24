@@ -28,6 +28,29 @@ def scale(y, y_hat):
 def angle(y, y_hat):
     return np.degrees(np.arccos(np.clip(np.dot(y, y_hat), -1.0, 1.0)))
 
+def visualize_gaze_vectors(sample, output):
+    
+    # Draw the gaze vectors
+    img = np.moveaxis(sample['image'], 0, -1)
+    gt_gaze = vis.draw_gaze_direction(img, sample['face_origin_2d'], sample['gaze_target_2d'], color=(0, 0, 255))
+    gaze_target_3d_semi = sample['face_origin_3d'] + output['face_gaze_vector'] * 100
+    gaze_target_2d, _ = cv2.projectPoints(
+        gaze_target_3d_semi, 
+        np.array([0, 0, 0], dtype=np.float32),
+        np.array([0, 0, 0], dtype=np.float32),
+        sample['intrinsics'], 
+        sample['dist_coeffs'],
+    )
+    gt_pred_gaze = vis.draw_gaze_direction(
+        gt_gaze,
+        sample['face_origin_2d'],
+        gaze_target_2d.flatten(),
+        color=(255, 0, 0)
+    )
+
+    plt.imshow(gt_pred_gaze)
+    plt.show()
+
 def eval():
 
     # Create pipeline
@@ -38,7 +61,7 @@ def eval():
         GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
         img_size=[244,244],
         face_size=[244,244],
-        dataset_size=10
+        dataset_size=1000
     )
 
     metric_functions = {'depth': distance, 'face_gaze_vector': angle}
@@ -57,26 +80,7 @@ def eval():
         for name, function in metric_functions.items():
             metrics[name].append(function(actual[name], output[name]))
 
-    # Draw the gaze vectors
-    img = np.moveaxis(dataset[0]['image'], 0, -1)
-    gt_gaze = vis.draw_gaze_direction(img, dataset[0]['face_origin_2d'], dataset[0]['gaze_target_2d'], color=(0, 0, 255))
-    output = algo.process_sample(dataset[0])
-    gaze_target_3d_semi = dataset[0]['face_origin_3d'] + output['face_gaze_vector'] * 100
-    gaze_target_2d, _ = cv2.projectPoints(
-        gaze_target_3d_semi, 
-        np.array([0, 0, 0], dtype=np.float32),
-        np.array([0, 0, 0], dtype=np.float32),
-        dataset[0]['intrinsics'], 
-        dataset[0]['dist_coeffs'],
-    )
-    gt_pred_gaze = vis.draw_gaze_direction(
-        gt_gaze,
-        dataset[0]['face_origin_2d'],
-        gaze_target_2d.flatten(),
-        color=(255, 0, 0)
-    )
-
-    plt.imshow(gt_pred_gaze)
+        # visualize_gaze_vectors(sample, output)
 
     # Generate box plots for the metrics
     df = pd.DataFrame(metrics)

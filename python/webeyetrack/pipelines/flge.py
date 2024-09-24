@@ -77,6 +77,9 @@ class FLGE():
         # Get the transformation matrix
         transform = sample['facial_rt']
 
+        # Invert the y and z axis
+        transform = np.diag([-1, 1, 1, 1]) @ transform
+
         # Apply the metric scaling of the face points
         face_points = np.copy(sample['facial_landmarks'][:, :3])
         face_points *= metric_scale
