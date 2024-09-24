@@ -51,6 +51,9 @@ def visualize_gaze_vectors(sample, output):
     plt.imshow(gt_pred_gaze)
     plt.show()
 
+def euclidean_distance(y, y_hat):
+    return np.linalg.norm(y - y_hat)
+
 def eval():
 
     # Create pipeline
@@ -61,10 +64,10 @@ def eval():
         GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
         img_size=[244,244],
         face_size=[244,244],
-        dataset_size=1000
+        dataset_size=10
     )
 
-    metric_functions = {'depth': distance, 'face_gaze_vector': angle}
+    metric_functions = {'depth': distance, 'face_gaze_vector': angle, 'gaze_origin': euclidean_distance}
     metrics = defaultdict(list)
     for i, sample in tqdm(enumerate(dataset), total=len(dataset)):
 
@@ -74,9 +77,10 @@ def eval():
         # Compute the error
         actual = {
             'depth': sample['face_origin_3d'][2],
+            'gaze_origin': sample['face_origin_3d'],
             'face_gaze_vector': sample['gaze_direction_3d']
         }
-
+        
         for name, function in metric_functions.items():
             metrics[name].append(function(actual[name], output[name]))
 

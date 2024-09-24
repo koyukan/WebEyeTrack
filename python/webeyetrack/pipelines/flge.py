@@ -100,7 +100,6 @@ class FLGE():
         }
 
         # Compute the 3D eye origin
-        gaze_origins = {}
         for k, v in gaze_origins.items():
             gaze_origins[k] = np.mean(v, axis=0)
 
@@ -155,6 +154,10 @@ class FLGE():
         gaze_vector = (gaze_data['gaze_vectors']['left'] + gaze_data['gaze_vectors']['right'])
         gaze_vector /= np.linalg.norm(gaze_vector)
         gaze_data['face_gaze_vector'] = gaze_vector
+
+        # Compute average gaze origin
+        gaze_origin = (gaze_data['gaze_origins']['left'] + gaze_data['gaze_origins']['right'])
+        gaze_data['gaze_origin'] = gaze_origin
 
         return {
             'scale': metric_scale,
