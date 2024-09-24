@@ -2,8 +2,10 @@ import pathlib
 from dataclasses import asdict
 from typing import List, Dict, Union, Tuple, Optional
 import copy
-from tqdm import tqdm
+import os
 
+from scipy.spatial.transform import Rotation
+from tqdm import tqdm
 import cv2
 from PIL import Image
 import scipy.io
@@ -17,7 +19,7 @@ from mediapipe.tasks.python import vision
 from ..constants import GIT_ROOT
 from ..vis import draw_gaze_origin
 from .data_protocols import Annotations, CalibrationData, Sample
-from .utils import resize_annotations, resize_intrinsics, draw_landmarks_on_image
+from .utils import resize_annotations, resize_intrinsics, draw_landmarks_on_image, compute_uv_texture
 
 CWD = pathlib.Path(__file__).parent
 
@@ -60,8 +62,8 @@ class MPIIFaceGazeDataset(Dataset):
 
         for participant_dir in tqdm(participant_dirs, total=len(participant_dirs)):
 
-            # if self.dataset_size is not None and num_samples >= self.dataset_size:
-            #     break
+            if self.dataset_size is not None and num_samples >= self.dataset_size:
+                break
 
             participant_id = participant_dir.name
             txt_file_fp = participant_dir / f'{participant_id}.txt'
@@ -99,6 +101,7 @@ class MPIIFaceGazeDataset(Dataset):
                         break
 
                     items = line.split(' ')
+                    data_id = items[0].replace("/", "_").replace(".jpg", "")
 
                     face_origin_3d = np.array(items[21:24], dtype=np.float32)
                     gaze_target_3d = np.array(items[24:27], dtype=np.float32)
@@ -149,18 +152,40 @@ class MPIIFaceGazeDataset(Dataset):
                     # cv2.waitKey(0)
                     # cv2.destroyAllWindows()
 
-                    # Detect the facial landmarks via MediaPipe
-                    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image_np)
-                    detection_results = self.face_landmarker.detect(mp_image)
+                    # If the face landmark already exists, load it instead of computing it
+                    face_landmarks_dir = participant_dir / 'face_landmarks'
+                    os.makedirs(face_landmarks_dir, exist_ok=True)
+                    face_landmarks_rt_fp = face_landmarks_dir / f"{data_id}_rt.npy"
+                    face_landmarks_fp = face_landmarks_dir / f"{data_id}.npy"
 
-                    # Compute the face bounding box based on the MediaPipe landmarks
-                    try:
-                        face_landmarks_proto = detection_results.face_landmarks[0]
-                    except:
-                        # print(f"Participant {participant_id} image {items[0]} does not have a face detected.")
-                        continue
+                    if face_landmarks_rt_fp.is_file() and face_landmarks_fp.is_file():
+                        face_landmarks_rt = np.load(face_landmarks_rt_fp)
+                        face_landmarks_proto = np.load(face_landmarks_fp)
+                        face_landmarks = np.array([[lm[0] * image.size[0], lm[1] * image.size[1]] for lm in face_landmarks_proto])
+                    else:
+                        
+                        # Detect the facial landmarks via MediaPipe
+                        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image_np)
+                        detection_results = self.face_landmarker.detect(mp_image)
+                        
+                        # Compute the face bounding box based on the MediaPipe landmarks
+                        try:
+                            face_landmarks_proto = detection_results.face_landmarks[0]
+                        except:
+                            # print(f"Participant {participant_id} image {items[0]} does not have a face detected.")
+                            continue
 
-                    face_landmarks = np.array([[lm.x * image.size[0], lm.y * image.size[1]] for lm in face_landmarks_proto])
+                        # Save the detection results as numpy arrays
+                        face_landmarks_all = np.array([[lm.x, lm.y, lm.z, lm.visibility, lm.presence] for lm in face_landmarks_proto])
+                        face_landmarks_rt = detection_results.facial_transformation_matrixes[0]
+                        with open(face_landmarks_rt_fp, 'wb') as f:
+                            np.save(f, face_landmarks_rt)
+                        with open(face_landmarks_fp, 'wb') as f:
+                            np.save(f, face_landmarks_all)
+
+                        face_landmarks = np.array([[lm.x * image.size[0], lm.y * image.size[1]] for lm in face_landmarks_proto])
+
+                    # Compute the bounding box
                     face_bbox = np.array([
                         int(np.min(face_landmarks[:, 1])), 
                         int(np.min(face_landmarks[:, 0])), 
@@ -168,10 +193,21 @@ class MPIIFaceGazeDataset(Dataset):
                         int(np.max(face_landmarks[:, 0]))
                     ])
 
+                    # Load the texture if it exists, if not compute it
+                    texture_dir = participant_dir / 'textures'
+                    os.makedirs(texture_dir, exist_ok=True)
+                    texture_path = texture_dir / f"{data_id}.jpg"
+                    if not texture_path.is_file():
+                        texture = compute_uv_texture(face_landmarks[0:468], image_np)
+                        cv2.imwrite(str(texture_path), texture)
+
                     annotation = Annotations(
+                        original_img_size=image_np.shape,
                         pog_px=np.array(items[1:3], dtype=np.float32),
                         face_bbox=face_bbox,
+                        facial_landmarks=face_landmarks_proto,
                         facial_landmarks_2d=face_landmarks,
+                        facial_rt=face_landmarks_rt,
                         head_pose_3d=np.array(items[15:21], dtype=np.float32).reshape(3, 2),
                         face_origin_3d=face_origin_3d,
                         face_origin_2d=face_origin_2d.flatten(),
@@ -218,6 +254,9 @@ class MPIIFaceGazeDataset(Dataset):
         # Make a copy of the sample
         sample = copy.deepcopy(self.samples[index])
 
+        # Recreate the data id
+        data_id = f'{sample.image_fp.parent.name}_{sample.image_fp.name.replace(".jpg", "")}'
+
         # Create torch-compatible data
         image = Image.open(sample.image_fp)
         image_np = np.array(image)
@@ -245,6 +284,20 @@ class MPIIFaceGazeDataset(Dataset):
         face_image_np = image_np[face_bbox[0]:face_bbox[2], face_bbox[1]:face_bbox[3]]
         face_image_np = cv2.resize(face_image_np, self.face_size, interpolation=cv2.INTER_LINEAR)
 
+        # Load the texture
+        texture_dir = self.dataset_dir / sample.participant_id / 'textures'
+        texture_fp = texture_dir / f"{data_id}.jpg"
+        texture = cv2.imread(str(texture_fp))
+        texture = texture.astype(np.float32) / 255.0
+
+        # Compute the relative gaze direction based on the facial landmarks
+        facelandmark_rt = np.load(self.dataset_dir / sample.participant_id / 'face_landmarks' / f"{data_id}_rt.npy")
+        head_direction_rotation = facelandmark_rt[0:3, 0:3]
+        head_direction_xyz = Rotation.from_matrix(head_direction_rotation).as_rotvec()
+        head_direction_xyz = head_direction_xyz / np.linalg.norm(head_direction_xyz)
+        relative_gaze_vector = sample.annotations.gaze_direction_3d - head_direction_xyz
+        relative_gaze_vector = relative_gaze_vector / np.linalg.norm(relative_gaze_vector)
+
         # Visualize the face image
         # cv2.imshow('face_image', face_image_np)
         # cv2.waitKey(0)
@@ -258,10 +311,12 @@ class MPIIFaceGazeDataset(Dataset):
         # Revert the image to the correct format
         image_np = np.moveaxis(image_np, -1, 0)
         face_image_np = np.moveaxis(face_image_np, -1, 0)
+        texture = np.moveaxis(texture, -1, 0)
 
         sample_dict = {
             'image': image_np,
             'face_image': face_image_np,
+            'uv_texture': texture,
             'intrinsics': intrinsics,
             'dist_coeffs': calibration_data.dist_coeffs,
             'screen_R': calibration_data.monitor_rvecs.astype(np.float32),
@@ -273,7 +328,9 @@ class MPIIFaceGazeDataset(Dataset):
             'gaze_origin_depth_mean': self.gaze_origin_depth_mean,
             'gaze_origin_depth_std': self.gaze_origin_depth_std,
             'pog_px_mean': self.pog_px_mean,
-            'pog_px_std': self.pog_px_std
+            'pog_px_std': self.pog_px_std,
+            'mediapipe_head_vector': head_direction_xyz.astype(np.float32),
+            'relative_gaze_vector': relative_gaze_vector.astype(np.float32)
         }
         sample_dict.update(asdict(sample.annotations))
         return sample_dict

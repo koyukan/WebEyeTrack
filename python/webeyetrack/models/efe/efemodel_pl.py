@@ -51,7 +51,8 @@ class EFEModel_PL(pl.LightningModule):
 
         # Compute the angular loss for the gaze direction
         # https://github.com/swook/EVE/blob/master/src/losses/angular.py#L29
-        sim = F.cosine_similarity(output['gaze_direction'], batch['gaze_direction_3d'], dim=1, eps=1e-8)
+        # sim = F.cosine_similarity(output['gaze_direction'], batch['gaze_direction_3d'], dim=1, eps=1e-8)
+        sim = F.cosine_similarity(output['gaze_direction'], batch['relative_gaze_vector'], dim=1, eps=1e-8)
         sim = F.hardtanh(sim, min_val=-1.0+1e-8, max_val=1.0-1e-8)
         angular_loss = torch.acos(sim)
         angular_loss = torch.mean(angular_loss)
@@ -84,7 +85,8 @@ class EFEModel_PL(pl.LightningModule):
         complete_loss = torch.sum(torch.stack(losses))
 
         # Compute the angular error
-        angular_degree_error = angular_error(output['gaze_direction'], batch['gaze_direction_3d'])
+        # angular_degree_error = angular_error(output['gaze_direction'], batch['gaze_direction_3d'])
+        angular_degree_error = angular_error(output['gaze_direction'], batch['relative_gaze_vector'])
 
         new_output = {
             'losses': {
@@ -109,7 +111,8 @@ class EFEModel_PL(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         # output = self.base_model.forward(batch['image'])
-        output = self.base_model.forward(batch['face_image'])
+        # output = self.base_model.forward(batch['face_image'])
+        output = self.base_model.forward(batch['uv_texture'])
         losses_output = self.compute_loss(output, batch)
 
         # Logging the losses
@@ -125,7 +128,8 @@ class EFEModel_PL(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         # output = self.base_model.forward(batch['image'])
-        output = self.base_model.forward(batch['face_image'])
+        # output = self.base_model.forward(batch['face_image'])
+        output = self.base_model.forward(batch['uv_texture'])
         losses_output = self.compute_loss(output, batch)
 
         self.log('val_loss', losses_output['losses']['complete_loss'])
@@ -178,8 +182,13 @@ class EFEModel_PL(pl.LightningModule):
             # Visualizing the gaze direction
             gt_gaze = vis.draw_gaze_direction(img, batch['face_origin_2d'][i], batch['gaze_target_2d'][i], color=(0, 0, 255))
 
+            # The model now predicts gaze relative to the head pose, compute the true gaze
+            true_gaze_direction = output['gaze_direction'][i] + batch['mediapipe_head_vector'][i]
+            true_gaze_direction = true_gaze_direction / torch.norm(true_gaze_direction)
+
             # Create gaze_target_2d via the direction and a fixed distance
-            gaze_target_3d_semi = batch['face_origin_3d'][i] + output['gaze_direction'][i] * 100
+            # gaze_target_3d_semi = batch['face_origin_3d'][i] + output['gaze_direction'][i] * 100
+            gaze_target_3d_semi = batch['face_origin_3d'][i] + true_gaze_direction * 100
             gaze_target_3d_semi = gaze_target_3d_semi.detach().cpu().numpy()
             gaze_target_2d, _ = cv2.projectPoints(
                 gaze_target_3d_semi, 
