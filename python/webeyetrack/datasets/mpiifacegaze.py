@@ -157,11 +157,13 @@ class MPIIFaceGazeDataset(Dataset):
                     os.makedirs(face_landmarks_dir, exist_ok=True)
                     face_landmarks_rt_fp = face_landmarks_dir / f"{data_id}_rt.npy"
                     face_landmarks_fp = face_landmarks_dir / f"{data_id}.npy"
+                    face_blendshapes_fp = face_landmarks_dir / f"{data_id}_blendshapes.npy"
 
-                    if face_landmarks_rt_fp.is_file() and face_landmarks_fp.is_file():
+                    if face_landmarks_rt_fp.is_file() and face_landmarks_fp.is_file() and face_blendshapes_fp.is_file():
                         face_landmarks_rt = np.load(face_landmarks_rt_fp)
                         face_landmarks_proto = np.load(face_landmarks_fp)
                         face_landmarks = np.array([[lm[0] * image.size[0], lm[1] * image.size[1]] for lm in face_landmarks_proto])
+                        face_blendshapes = np.load(face_blendshapes_fp, allow_pickle=True)
                     else:
                         
                         # Detect the facial landmarks via MediaPipe
@@ -178,10 +180,13 @@ class MPIIFaceGazeDataset(Dataset):
                         # Save the detection results as numpy arrays
                         face_landmarks_all = np.array([[lm.x, lm.y, lm.z, lm.visibility, lm.presence] for lm in face_landmarks_proto])
                         face_landmarks_rt = detection_results.facial_transformation_matrixes[0]
+                        face_blendshapes = detection_results.face_blendshapes[0]
                         with open(face_landmarks_rt_fp, 'wb') as f:
                             np.save(f, face_landmarks_rt)
                         with open(face_landmarks_fp, 'wb') as f:
                             np.save(f, face_landmarks_all)
+                        with open(face_blendshapes_fp, 'wb') as f:
+                            np.save(f, face_blendshapes)
 
                         face_landmarks = np.array([[lm.x * image.size[0], lm.y * image.size[1]] for lm in face_landmarks_proto])
 
@@ -208,6 +213,7 @@ class MPIIFaceGazeDataset(Dataset):
                         facial_landmarks=face_landmarks_proto,
                         facial_landmarks_2d=face_landmarks,
                         facial_rt=face_landmarks_rt,
+                        face_blendshapes=face_blendshapes,
                         head_pose_3d=np.array(items[15:21], dtype=np.float32).reshape(3, 2),
                         face_origin_3d=face_origin_3d,
                         face_origin_2d=face_origin_2d.flatten(),
