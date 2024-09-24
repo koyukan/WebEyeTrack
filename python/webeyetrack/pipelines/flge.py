@@ -49,6 +49,14 @@ class FLGE():
         image_ipd = np.sqrt(np.power(l[0] - r[0], 2) + np.power(l[1] - r[1], 2))
 
         return {
+            '2d_eye_origins': {
+                'left': l,
+                'right': r
+            },
+            '3d_eye_origins': {
+                'left': origins_3d['left'],
+                'right': origins_3d['right']
+            },
             'canonical_ipd_3d': canonical_ipd,
             'image_ipd': image_ipd
         }
@@ -71,9 +79,17 @@ class FLGE():
         depth_cm = (focal_length_pixels * REAL_WORLD_IPD) / distances['image_ipd']
         depth_mm = depth_cm * 10 * 1.718
 
-        return depth_mm, metric_scale
+        return {
+            'depth': depth_mm,
+            'metric_scale': metric_scale,
+            **distances
+        }
     
-    def compute_gaze_origin_and_direction(self, sample, depth_mm, metric_scale):
+    def compute_gaze_origin_and_direction(self, sample, data):
+        metric_scale = data['metric_scale']
+        depth_mm = data['depth']
+        gaze_2d_origins = data['2d_eye_origins']
+
         # Get the transformation matrix
         transform = sample['facial_rt']
 
@@ -84,14 +100,19 @@ class FLGE():
         face_points = np.copy(sample['facial_landmarks'][:, :3])
         face_points *= metric_scale
 
-        # Compute the z-axis scale factor
-        scaling_factor = depth_mm / transform[2, 3]
+        # Compute the average of the 2D eye origins
+        eye_origin = (gaze_2d_origins['left'] + gaze_2d_origins['right']) / 2
 
-        # Apply the metric scaling of the face points
-        transform[:3, 3] *= scaling_factor
+        # Compute the position based on the 2D xy and the depth
+        pixel_coords = np.array([eye_origin[0], eye_origin[1], 1])
+        K = sample['intrinsics']
+        K_inv = np.linalg.inv(K)
 
-        # Apply the translation offset to the face points
-        face_points += transform[:3, 3]
+        # Back project the pixel coordinates to the 3D coordinates
+        translation = depth_mm * K_inv @ pixel_coords
+
+        # Apply the translation to the face points
+        face_points += translation
 
         # Compute the gaz
         gaze_origins = {
@@ -102,6 +123,9 @@ class FLGE():
         # Compute the 3D eye origin
         for k, v in gaze_origins.items():
             gaze_origins[k] = np.mean(v, axis=0)
+
+        # Compute average gaze origin
+        gaze_origin = (gaze_origins['left'] + gaze_origins['right']) / 2
 
         # Compute the iris direction
         gaze_directions = {}
@@ -136,31 +160,27 @@ class FLGE():
         for k, v in gaze_directions.items():
             gaze_vectors[k] = v.dot(gaze_vectors[k])
 
+        # Compute the average gaze vector
+        gaze_vector = (gaze_vectors['left'] + gaze_vectors['right'])
+        gaze_vector /= np.linalg.norm(gaze_vector)
+
         return {
             'gaze_origins': gaze_origins,
             'gaze_directions': gaze_directions,
-            'gaze_vectors': gaze_vectors
+            'gaze_vectors': gaze_vectors,
+            'gaze_origin': gaze_origin,
+            'face_gaze_vector': gaze_vector
         }
 
     def process_sample(self, sample: Dict[str, Any]):
 
         # Get the depth and scale
-        depth_mm, metric_scale = self.estimate_depth_and_scale(sample)
+        data = self.estimate_depth_and_scale(sample)
 
         # Compute the metric transformation matrix
-        gaze_data = self.compute_gaze_origin_and_direction(sample, depth_mm, metric_scale)
-
-        # Compute the average gaze vector
-        gaze_vector = (gaze_data['gaze_vectors']['left'] + gaze_data['gaze_vectors']['right'])
-        gaze_vector /= np.linalg.norm(gaze_vector)
-        gaze_data['face_gaze_vector'] = gaze_vector
-
-        # Compute average gaze origin
-        gaze_origin = (gaze_data['gaze_origins']['left'] + gaze_data['gaze_origins']['right'])
-        gaze_data['gaze_origin'] = gaze_origin
+        data2 = self.compute_gaze_origin_and_direction(sample, data)
 
         return {
-            'scale': metric_scale,
-            'depth': depth_mm,
-            **gaze_data
+            **data,
+            **data2
         }

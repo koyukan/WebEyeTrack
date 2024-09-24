@@ -28,8 +28,8 @@ class MPIIFaceGazeDataset(Dataset):
     def __init__(
             self, 
             dataset_dir: Union[pathlib.Path, str], 
-            face_size: Tuple[int, int] = (224, 224),
-            img_size: Tuple[int, int] = (640, 480),
+            face_size: Tuple[int, int] = None,
+            img_size: Tuple[int, int] = None,
             dataset_size: Optional[int] = None,
         ):
 
@@ -288,7 +288,8 @@ class MPIIFaceGazeDataset(Dataset):
         face_bbox[2] = np.clip(face_bbox[2], 0, image.size[1] - 1)
         face_bbox[3] = np.clip(face_bbox[3], 0, image.size[0] - 1)
         face_image_np = image_np[face_bbox[0]:face_bbox[2], face_bbox[1]:face_bbox[3]]
-        face_image_np = cv2.resize(face_image_np, self.face_size, interpolation=cv2.INTER_LINEAR)
+        if self.face_size is not None:
+            face_image_np = cv2.resize(face_image_np, self.face_size, interpolation=cv2.INTER_LINEAR)
 
         # Load the texture
         texture_dir = self.dataset_dir / sample.participant_id / 'textures'
@@ -310,9 +311,12 @@ class MPIIFaceGazeDataset(Dataset):
         # cv2.destroyAllWindows()
 
         # Resize the raw input image if needed
-        image_np = cv2.resize(image_np, self.img_size, interpolation=cv2.INTER_LINEAR)
-        sample.annotations = resize_annotations(sample.annotations, image.size, self.img_size)
-        intrinsics = resize_intrinsics(calibration_data.camera_matrix, image.size, self.img_size)
+        if self.img_size is not None:
+            image_np = cv2.resize(image_np, self.img_size, interpolation=cv2.INTER_LINEAR)
+            sample.annotations = resize_annotations(sample.annotations, image.size, self.img_size)
+            intrinsics = resize_intrinsics(calibration_data.camera_matrix, image.size, self.img_size)
+        else:
+            intrinsics = calibration_data.camera_matrix
         
         # Revert the image to the correct format
         image_np = np.moveaxis(image_np, -1, 0)
