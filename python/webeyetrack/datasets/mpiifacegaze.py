@@ -323,6 +323,12 @@ class MPIIFaceGazeDataset(Dataset):
         face_image_np = np.moveaxis(face_image_np, -1, 0)
         texture = np.moveaxis(texture, -1, 0)
 
+        # Compute the PoG in mm
+        pog_mm = np.array([
+            sample.annotations.pog_px[0] / calibration_data.monitor_width_px * calibration_data.monitor_width_mm,
+            sample.annotations.pog_px[1] / calibration_data.monitor_height_px * calibration_data.monitor_height_mm
+        ])
+
         sample_dict = {
             'image': image_np,
             'face_image': face_image_np,
@@ -339,6 +345,7 @@ class MPIIFaceGazeDataset(Dataset):
             'gaze_origin_depth_std': self.gaze_origin_depth_std,
             'pog_px_mean': self.pog_px_mean,
             'pog_px_std': self.pog_px_std,
+            'pog_mm': pog_mm,
             'mediapipe_head_vector': head_direction_xyz.astype(np.float32),
             'relative_gaze_vector': relative_gaze_vector.astype(np.float32)
         }

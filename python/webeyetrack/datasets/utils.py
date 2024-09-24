@@ -1,11 +1,12 @@
-
 import pathlib
+import json
+
+import cv2
+import numpy as np
 import mediapipe as mp
+import matplotlib.pyplot as plt
 from mediapipe import solutions
 from mediapipe.framework.formats import landmark_pb2
-import numpy as np
-import matplotlib.pyplot as plt
-import json
 from skimage.transform import PiecewiseAffineTransform, warp
 
 CWD = pathlib.Path(__file__).parent
@@ -102,3 +103,40 @@ def resize_annotations(annotations, original_size, new_size):
     annotations.gaze_target_2d[1] *= scale_y
     
     return annotations
+
+def screen_plane_intersection(o, d, screen_R, screen_t):
+    """
+    Calculate the intersection of a gaze direction with a screen plane.
+    
+    Parameters:
+    - o: Gaze origin (3D coordinates)
+    - d: Gaze direction (3D coordinates)
+    - screen_R: Rotation vector (Rodrigues vector) for the screen
+    - screen_t: Translation vector for the screen
+    
+    Returns:
+    - pog_mm: 2D point of gaze on the screen in millimeters (x, y)
+    """
+
+    # Obtain rotation matrix from the Rodrigues vector
+    R_matrix, _ = cv2.Rodrigues(screen_R)  # screen_R should be a 3D vector (Rodrigues rotation)
+    inv_R_matrix = np.linalg.inv(R_matrix)  # Inverse of the rotation matrix
+
+    # Transform gaze origin and direction to screen coordinates
+    o_s = np.dot(inv_R_matrix, (o - screen_t.T[0]))
+    d_s = np.dot(inv_R_matrix, d)
+
+    # Screen plane: z = 0 (assumed to be at origin with a normal vector along z-axis)
+    a_s = np.array([0, 0, 0], dtype=np.float32)  # Point on the screen plane
+    n_s = np.array([0, 0, 1], dtype=np.float32)  # Normal vector of the screen plane
+
+    # Calculate the distance (lambda) to the screen plane
+    lambda_ = np.dot(a_s - o_s, n_s) / np.dot(d_s, n_s)
+
+    # Calculate the intersection point (3D)
+    p = o_s + lambda_ * d_s
+
+    # Keep only the x and y coordinates (2D point of gaze on screen)
+    pog_mm = p[:2]
+
+    return pog_mm

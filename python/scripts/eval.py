@@ -64,16 +64,18 @@ def eval():
         GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
         # img_size=[244,244],
         # face_size=[244,244],
-        dataset_size=1000
+        dataset_size=10
     )
 
     metric_functions = {
-        'depth': distance, 
+        # 'depth': distance, 
         'face_gaze_vector': angle, 
         'gaze_origin': euclidean_distance, 
         'gaze_origin-x': euclidean_distance, 
         'gaze_origin-y': euclidean_distance, 
-        'gaze_origin-z': euclidean_distance
+        'gaze_origin-z': euclidean_distance,
+        'pog_px': euclidean_distance,
+        'pog_mm': euclidean_distance
     }
     metrics = defaultdict(list)
     for i, sample in tqdm(enumerate(dataset), total=len(dataset)):
@@ -93,7 +95,9 @@ def eval():
             'gaze_origin-x': sample['face_origin_3d'][0],
             'gaze_origin-y': sample['face_origin_3d'][1],
             'gaze_origin-z': sample['face_origin_3d'][2],
-            'face_gaze_vector': sample['gaze_direction_3d']
+            'face_gaze_vector': sample['gaze_direction_3d'],
+            'pog_px': sample['pog_px'],
+            'pog_mm': sample['pog_mm']
         }
         
         for name, function in metric_functions.items():
@@ -111,8 +115,8 @@ def eval():
         q1 = df[name].quantile(0.10)
         q3 = df[name].quantile(0.90)
         iqr = q3 - q1
-        lower_bound = q1 - 1.5 * iqr
-        upper_bound = q3 + 1.5 * iqr
+        lower_bound = q1 - 3 * iqr
+        upper_bound = q3 + 3 * iqr
         df = df[(df[name] >= lower_bound) & (df[name] <= upper_bound)]
 
     # Calculate mean and std for each metric

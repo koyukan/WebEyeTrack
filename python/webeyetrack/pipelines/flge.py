@@ -3,6 +3,8 @@ from typing import Dict, Any
 import numpy as np
 import cv2
 
+from webeyetrack.datasets.utils import screen_plane_intersection
+
 LEFT_EYE_LANDMARKS = [263, 362, 386, 374, 380]
 RIGHT_EYE_LANDMARKS = [33, 133, 159, 145, 153]
 LEFT_BLENDSHAPES = [14, 16, 18, 12]
@@ -171,6 +173,35 @@ class FLGE():
             'gaze_origin': gaze_origin,
             'face_gaze_vector': gaze_vector
         }
+    
+    def compute_pog(self, sample, data):
+        
+        # Perform intersection with plane using gaze origin and vector
+        left_pog_mm = screen_plane_intersection(
+            data['gaze_origins']['left'],
+            data['gaze_vectors']['left'],
+            sample['screen_R'],
+            sample['screen_t']
+        )
+        right_pog_mm = screen_plane_intersection(
+            data['gaze_origins']['right'],
+            data['gaze_vectors']['right'],
+            sample['screen_R'],
+            sample['screen_t']
+        )
+
+        # Convert mm to normalized coordinates
+        left_pog_norm = np.array([left_pog_mm[0] / sample['screen_width_mm'], left_pog_mm[1] / sample['screen_height_mm']])
+        right_pog_norm = np.array([right_pog_mm[0] / sample['screen_width_mm'], right_pog_mm[1] / sample['screen_height_mm']])
+
+        # Convert normalized coordinates to pixel coordinates
+        left_pog_px = np.array([left_pog_norm[0] * sample['screen_width_px'], left_pog_norm[1] * sample['screen_height_px']])
+        right_pog_px = np.array([right_pog_norm[0] * sample['screen_width_px'], right_pog_norm[1] * sample['screen_height_px']])
+
+        return {
+            'pog_mm': (left_pog_mm + right_pog_mm) / 2,
+            'pog_px': (left_pog_px + right_pog_px) / 2
+        }
 
     def process_sample(self, sample: Dict[str, Any]):
 
@@ -180,7 +211,11 @@ class FLGE():
         # Compute the metric transformation matrix
         data2 = self.compute_gaze_origin_and_direction(sample, data)
 
+        # Compute the PoG
+        data3 = self.compute_pog(sample, data2)
+
         return {
             **data,
-            **data2
+            **data2,
+            **data3
         }
