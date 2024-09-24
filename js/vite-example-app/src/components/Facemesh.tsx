@@ -687,9 +687,18 @@ export const Facemesh = React.forwardRef<FacemeshApi, FacemeshProps>(
       // Compute the pixel distance between the eyes
       const eyeDistance = leftEye2D.distanceTo(rightEye2D);
 
+      // Compute the theta based on the rotation from the transformation matrix
+      let theta = 0
+      if (facialTransformationMatrix) {
+        theta = Math.atan2(facialTransformationMatrix!.data[2], facialTransformationMatrix!.data[10]);
+      }
+      else {
+        theta = 0;
+      }
+
       // Estimate the depth based on the inter-pupillary distance
       const focalLength = VIDEO_WIDTH / 2;
-      const estimateDepth = 3.1 * (focalLength * realWorldIPD) / eyeDistance;
+      const estimateDepth = 3.1 * (focalLength * realWorldIPD * Math.cos(theta)) / eyeDistance;
       // console.log("Estimated Depth: ", estimateDepth);
 
       if (facialTransformationMatrix) {
