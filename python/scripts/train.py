@@ -6,18 +6,22 @@ import torch
 from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import EarlyStopping
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 
 from webeyetrack.constants import GIT_ROOT
 from webeyetrack.datasets import MPIIFaceGazeDataset
+
+# Models
 from webeyetrack.models.efe import EFEModel_PL
 from webeyetrack.models.gaze360 import Gaze360_PL
+from webeyetrack.models.eyetrack import EyeTrackModel_PL
 
 FILE_DIR = pathlib.Path(__file__).parent
 
 name_to_model = {
     'EFE': EFEModel_PL,
     'Gaze360': Gaze360_PL,
+    'EyeTrack': EyeTrackModel_PL,
 }
 
 with open(FILE_DIR / 'config.yaml', 'r') as f:
@@ -29,7 +33,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a model')
 
     # Restrict the options of the model
-    parser.add_argument('--model', type=str, choices=['EFE', 'Gaze360'], required=True, help='The model to train')
+    parser.add_argument('--model', type=str, choices=['EFE', 'Gaze360', 'EyeTrack'], required=True, help='The model to train')
     parser.add_argument('--exp', type=str, required=True, help='The experiment name')
     args = parser.parse_args()
 
@@ -40,13 +44,13 @@ if __name__ == '__main__':
     model_config = config['train']['model_specific'][args.model]
 
     # Create the model
-    model = name_to_model[args.model](model_config) 
+    model = name_to_model[args.model]() 
 
     # Create a dataset object
     dataset = MPIIFaceGazeDataset(
         GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
         **model_config['dataset_params'],
-        # dataset_size=2*config['train']['batch_size']
+        dataset_size=20*config['train']['batch_size']
     )
 
     # Create the dataloader
@@ -56,8 +60,8 @@ if __name__ == '__main__':
     # Debugging, reducing the size of the dataset
     train_size = int(len(dataset) * 0.8)
     val_size = int(len(dataset) * 0.2)
-    # train_size = 1
-    # val_size = 1
+    # train_size = config['train']['train_size'] * 10
+    # val_size = config['train']['batch_size'] * 2
 
     train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
     # train_dataset = torch.utils.data.Subset(dataset, range(train_size))
@@ -76,8 +80,21 @@ if __name__ == '__main__':
         mode='min'
     )
 
+    # Configure ModelCheckpoint to save the best model
+    checkpoint_callback = ModelCheckpoint(
+        monitor='val_loss',
+        dirpath='checkpoints/',
+        filename=f'{args.model}-best-checkpoint',
+        save_top_k=1,
+        mode='min',
+    )
+
     # Create TensorBoard Logger
-    tb_logger = pl.loggers.TensorBoardLogger('lightning_logs/', name=args.model, version=args.exp)
+    tb_logger = pl.loggers.TensorBoardLogger(
+        'lightning_logs/', 
+        name=args.model, 
+        version=args.exp
+    )
 
     # Log the hyperparameters
     tb_logger.log_hyperparams(config['train'])
@@ -86,7 +103,14 @@ if __name__ == '__main__':
     trainer = Trainer(
         max_epochs=config['train']['max_epochs'],
         logger=tb_logger,
-        # callbacks=[early_stop_callback],
+        callbacks=[early_stop_callback, checkpoint_callback],
         log_every_n_steps=1,
     )
     trainer.fit(model, train_loader, val_loader)
+
+    # Load the best model checkpoint after training
+    best_model_path = checkpoint_callback.best_model_path
+    best_model = name_to_model[args.model].load_from_checkpoint(best_model_path)
+
+    # Evaluate the model on the validation set
+    trainer.validate(best_model, val_loader)

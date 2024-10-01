@@ -3,6 +3,7 @@ from dataclasses import asdict
 from typing import List, Dict, Union, Tuple, Optional
 import copy
 import os
+import json
 
 from scipy.spatial.transform import Rotation
 from tqdm import tqdm
@@ -206,21 +207,24 @@ class MPIIFaceGazeDataset(Dataset):
                         texture = compute_uv_texture(face_landmarks[0:468], image_np)
                         cv2.imwrite(str(texture_path), texture)
 
+                    # Convert face_blendshapes to a proper numpy array
+                    np_face_blendshapes = np.array([x.score for x in face_blendshapes])
+
                     annotation = Annotations(
-                        original_img_size=image_np.shape,
+                        original_img_size=np.array(image_np.shape),
                         pog_px=np.array(items[1:3], dtype=np.float32),
                         face_bbox=face_bbox,
                         facial_landmarks=face_landmarks_proto,
                         facial_landmarks_2d=face_landmarks,
                         facial_rt=face_landmarks_rt,
-                        face_blendshapes=face_blendshapes,
+                        face_blendshapes=np_face_blendshapes,
                         head_pose_3d=np.array(items[15:21], dtype=np.float32).reshape(3, 2),
                         face_origin_3d=face_origin_3d,
                         face_origin_2d=face_origin_2d.flatten(),
                         gaze_target_3d=gaze_target_3d,
                         gaze_target_2d=gaze_target_2d.flatten(),
                         gaze_direction_3d=gaze_direction_3d,
-                        which_eye=items[27]
+                        # which_eye=items[27]
                     )
             
                     annotations[items[0]] = annotation
@@ -368,4 +372,5 @@ if __name__ == '__main__':
     print(len(dataset))
 
     sample = dataset[0]
-    print(sample.keys())
+    # print(sample.keys())
+    print(json.dumps({k: str(v.dtype) for k, v in sample.items()}, indent=4))

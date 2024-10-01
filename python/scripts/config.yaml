@@ -26,4 +26,9 @@ train:
       dataset_params:
         img_size: [640, 480]
         face_size: [244, 244]
-    
+    EyeTrack:
+      hparams:
+        angular_loss: 1
+      dataset_params:
+        img_size: [244, 244]
+        face_size: [244, 244]

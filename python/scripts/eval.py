@@ -51,6 +51,17 @@ def visualize_gaze_vectors(sample, output):
     plt.imshow(gt_pred_gaze)
     plt.show()
 
+def visualize_gaze_2d_origin(sample, output):
+    img = np.moveaxis(sample['image'], 0, -1)
+    # Draw the gaze origin from the sample in 2D
+    draw_img = vis.draw_gaze_origin(img, sample['face_origin_2d'], color=(255, 0, 0)) 
+    # Draw the gaze origin from the output in 2D
+    plt.imshow(vis.draw_gaze_origin(draw_img, output['gaze_origin_2d'], color=(0, 0, 255)))
+
+    print(f'Sample gaze origin: {sample["face_origin_2d"]}')
+    print(f'Output gaze origin: {output["gaze_origin_2d"]}')
+    plt.show()
+
 def euclidean_distance(y, y_hat):
     return np.linalg.norm(y - y_hat)
 
@@ -64,7 +75,7 @@ def eval():
         GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
         # img_size=[244,244],
         # face_size=[244,244],
-        dataset_size=10
+        # dataset_size=10
     )
 
     metric_functions = {
@@ -81,7 +92,11 @@ def eval():
     for i, sample in tqdm(enumerate(dataset), total=len(dataset)):
 
         # Process the sample
-        output = algo.process_sample(sample)
+        try:
+            output = algo.process_sample(sample)
+        except Exception as e:
+            print(e)
+            continue
 
         # Separate the xyz gaze origin
         output['gaze_origin-x'] = output['gaze_origin'][0]
@@ -92,8 +107,8 @@ def eval():
         actual = {
             'depth': sample['face_origin_3d'][2],
             'gaze_origin': sample['face_origin_3d'],
-            'gaze_origin-x': sample['face_origin_3d'][0],
-            'gaze_origin-y': sample['face_origin_3d'][1],
+            'gaze_origin-x': sample['face_origin_3d'][1],
+            'gaze_origin-y': sample['face_origin_3d'][0],
             'gaze_origin-z': sample['face_origin_3d'][2],
             'face_gaze_vector': sample['gaze_direction_3d'],
             'pog_px': sample['pog_px'],
@@ -106,6 +121,7 @@ def eval():
             metrics[name].append(function(actual[name], output[name]))
 
         # visualize_gaze_vectors(sample, output)
+        # visualize_gaze_2d_origin(sample, output)
 
     # Generate box plots for the metrics
     df = pd.DataFrame(metrics)

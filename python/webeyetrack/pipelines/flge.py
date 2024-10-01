@@ -133,7 +133,7 @@ class FLGE():
         gaze_directions = {}
         for option, value in {'left': LEFT_BLENDSHAPES, 'right': RIGHT_BLENDSHAPES}.items():
             blendshapes = sample['face_blendshapes']
-            look_in, look_out, look_up, look_down = ([blendshapes[i].score for i in value])
+            look_in, look_out, look_up, look_down = ([blendshapes[i] for i in value])
             hfov = np.deg2rad(HFOV)
             vfov = np.deg2rad(VFOV)
 
@@ -171,7 +171,8 @@ class FLGE():
             'gaze_directions': gaze_directions,
             'gaze_vectors': gaze_vectors,
             'gaze_origin': gaze_origin,
-            'face_gaze_vector': gaze_vector
+            'face_gaze_vector': gaze_vector,
+            'gaze_origin_2d': eye_origin
         }
     
     def compute_pog(self, sample, data):

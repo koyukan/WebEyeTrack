@@ -9,7 +9,7 @@ from .components import ResNetBlock
 # https://github.com/swook/EVE/blob/master/src/models/common.py#L129
 
 class EFEModel(nn.Module):
-    def __init__(self, config, img_size=(480, 640)):
+    def __init__(self, config=None, img_size=(480, 640)):
         super().__init__()
 
         # Save parameters
