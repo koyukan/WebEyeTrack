@@ -1,12 +1,15 @@
 datasets:
+  # Relative to the Git Root Directory
   MPIIFaceGaze:
     path: "data/MPIIFaceGaze"
+  GazeCapture:
+    path: "data/GazeCapture"
 train:
 
   # Model-Agnostic parameters
   train_size: 0.8
   batch_size: 2
-  max_epochs: 20
+  max_epochs: 50
 
   # Model specific parameters
   model_specific:
@@ -26,7 +29,7 @@ train:
       dataset_params:
         img_size: [640, 480]
         face_size: [244, 244]
-    EyeTrack:
+    EyeNet:
       hparams:
         angular_loss: 1
       dataset_params:

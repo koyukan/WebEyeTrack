@@ -14,14 +14,16 @@ from webeyetrack.datasets import MPIIFaceGazeDataset
 # Models
 from webeyetrack.models.efe import EFEModel_PL
 from webeyetrack.models.gaze360 import Gaze360_PL
-from webeyetrack.models.eyetrack import EyeTrackModel_PL
+from webeyetrack.models.eyenet import EyeNet_PL
 
 FILE_DIR = pathlib.Path(__file__).parent
 
 name_to_model = {
     'EFE': EFEModel_PL,
     'Gaze360': Gaze360_PL,
-    'EyeTrack': EyeTrackModel_PL,
+    'EyeNet': EyeNet_PL,
+    # 'FaceNet': FaceNet_PL,
+    # 'FaceEyeNet': FaceEyeNet_PL,
 }
 
 with open(FILE_DIR / 'config.yaml', 'r') as f:
@@ -33,7 +35,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a model')
 
     # Restrict the options of the model
-    parser.add_argument('--model', type=str, choices=['EFE', 'Gaze360', 'EyeTrack'], required=True, help='The model to train')
+    parser.add_argument('--model', type=str, choices=['EFE', 'Gaze360', 'EyeNet'], required=True, help='The model to train')
     parser.add_argument('--exp', type=str, required=True, help='The experiment name')
     args = parser.parse_args()
 
@@ -50,7 +52,7 @@ if __name__ == '__main__':
     dataset = MPIIFaceGazeDataset(
         GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
         **model_config['dataset_params'],
-        dataset_size=20*config['train']['batch_size']
+        # dataset_size=1000*config['train']['batch_size']
     )
 
     # Create the dataloader
@@ -73,7 +75,7 @@ if __name__ == '__main__':
 
     # Configure EarlyStopping
     early_stop_callback = EarlyStopping(
-        monitor='val_loss',
+        monitor='val_angular_error_epoch',
         min_delta=0.00,
         patience=3,
         verbose=True,
@@ -82,7 +84,7 @@ if __name__ == '__main__':
 
     # Configure ModelCheckpoint to save the best model
     checkpoint_callback = ModelCheckpoint(
-        monitor='val_loss',
+        monitor='val_angular_error_epoch',
         dirpath='checkpoints/',
         filename=f'{args.model}-best-checkpoint',
         save_top_k=1,
@@ -103,7 +105,7 @@ if __name__ == '__main__':
     trainer = Trainer(
         max_epochs=config['train']['max_epochs'],
         logger=tb_logger,
-        callbacks=[early_stop_callback, checkpoint_callback],
+        callbacks=[checkpoint_callback],
         log_every_n_steps=1,
     )
     trainer.fit(model, train_loader, val_loader)

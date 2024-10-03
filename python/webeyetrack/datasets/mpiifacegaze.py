@@ -372,5 +372,4 @@ if __name__ == '__main__':
     print(len(dataset))
 
     sample = dataset[0]
-    # print(sample.keys())
     print(json.dumps({k: str(v.dtype) for k, v in sample.items()}, indent=4))

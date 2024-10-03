@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from ..efe.unet_efficientnet_v2 import UNetEfficientNetV2Small
 
-class EyeTrackModel(nn.Module):
+class EyeNet(nn.Module):
     def __init__(self, config = None, face_size=(244, 244)):
         super().__init__()
 

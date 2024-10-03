@@ -6,22 +6,22 @@ import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 
-from .model import EyeTrackModel
+from .model import EyeNet
 from ..funcs import angular_error
 from ... import vis
 
-class EyeTrackModel_PL(pl.LightningModule):
+class EyeNet_PL(pl.LightningModule):
     def __init__(self):
         super().__init__()
 
-        self.model = EyeTrackModel()
+        self.model = EyeNet()
 
     def compute_loss(self, output, batch):
         
         # Compute the angular loss for the gaze direction
         # https://github.com/swook/EVE/blob/master/src/losses/angular.py#L29
-        # sim = F.cosine_similarity(output['gaze_direction'], batch['gaze_direction_3d'], dim=1, eps=1e-8)
-        sim = F.cosine_similarity(output['gaze_direction'], batch['relative_gaze_vector'], dim=1, eps=1e-8)
+        sim = F.cosine_similarity(output['gaze_direction'], batch['gaze_direction_3d'], dim=1, eps=1e-8)
+        # sim = F.cosine_similarity(output['gaze_direction'], batch['relative_gaze_vector'], dim=1, eps=1e-8)
         sim = F.hardtanh(sim, min_val=-1.0+1e-8, max_val=1.0-1e-8)
         angular_loss = torch.acos(sim)
         angular_loss = torch.mean(angular_loss)
