@@ -20,13 +20,15 @@ class EyeNet_PL(pl.LightningModule):
         
         # Compute the angular loss for the gaze direction
         # https://github.com/swook/EVE/blob/master/src/losses/angular.py#L29
-        sim = F.cosine_similarity(output['gaze_direction'], batch['gaze_direction_3d'], dim=1, eps=1e-8)
+        gt_label = batch['gaze_direction_3d']
+        # gt_label = batch['relative_gaze_vector']
+        sim = F.cosine_similarity(output['gaze_direction'], gt_label, dim=1, eps=1e-8)
         # sim = F.cosine_similarity(output['gaze_direction'], batch['relative_gaze_vector'], dim=1, eps=1e-8)
         sim = F.hardtanh(sim, min_val=-1.0+1e-8, max_val=1.0-1e-8)
         angular_loss = torch.acos(sim)
         angular_loss = torch.mean(angular_loss)
 
-        angular_degree_error = angular_error(output['gaze_direction'], batch['relative_gaze_vector'])
+        angular_degree_error = angular_error(output['gaze_direction'], gt_label)
 
         losses = [
             angular_loss,

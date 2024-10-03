@@ -38,13 +38,27 @@ class GazeCaptureDataset(Dataset):
         assert self.dataset_dir.is_dir(), f"Dataset directory {self.dataset_dir} does not exist."
         self.dataset_size = dataset_size
 
-        # Perform pre-processing
+        self.preprocessing()
+
+    def preprocessing(self):
+
         gz_elements = [x for x in self.dataset_dir.iterdir() if x.suffix == '.gz']
         for gz_element in tqdm(gz_elements, total=len(gz_elements)):
             # If element is a .tar.gz file, extract it
             if gz_element.suffix == '.gz':
                 shutil.unpack_archive(gz_element, extract_dir=self.dataset_dir)
                 gz_element.unlink()
+
+        # Now obtain each participants folder
+        participant_dir = [x for x in self.dataset_dir.iterdir() if x.is_dir()]
+
+        # Saving information
+        self.samples = List[Sample] = []
+        self.participant_calibration_data: Dict[CalibrationData] = {}
+
+        # Within each participant, extract the samples
+        for part_dir in participant_dir:
+            frames = [x for x in (part_dir / 'frames').iterdir() if x.suffix == '.jpg']
 
     def __getitem__(self, idx):
         return {}
