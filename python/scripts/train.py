@@ -49,10 +49,15 @@ if __name__ == '__main__':
     model = name_to_model[args.model]() 
 
     # Create a dataset object
-    dataset = MPIIFaceGazeDataset(
+    train_dataset = MPIIFaceGazeDataset(
         GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
         **model_config['dataset_params'],
-        # dataset_size=1000*config['train']['batch_size']
+        participants=config['datasets']['MPIIFaceGaze']['train_subjects'],
+    )
+    val_dataset = MPIIFaceGazeDataset(
+        GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
+        **model_config['dataset_params'],
+        participants=config['datasets']['MPIIFaceGaze']['val_subjects'],
     )
 
     # Create the dataloader
@@ -60,12 +65,12 @@ if __name__ == '__main__':
     # val_size = len(dataset) - train_size
 
     # Debugging, reducing the size of the dataset
-    train_size = int(len(dataset) * 0.8)
-    val_size = int(len(dataset) * 0.2)
+    # train_size = int(len(dataset) * 0.8)
+    # val_size = int(len(dataset) * 0.2)
     # train_size = config['train']['train_size'] * 10
     # val_size = config['train']['batch_size'] * 2
 
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+    # train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
     # train_dataset = torch.utils.data.Subset(dataset, range(train_size))
     # val_dataset = torch.utils.data.Subset(dataset, range(train_size, train_size + val_size))
 
@@ -77,7 +82,7 @@ if __name__ == '__main__':
     early_stop_callback = EarlyStopping(
         monitor='val_angular_error_epoch',
         min_delta=0.00,
-        patience=3,
+        patience=10,
         verbose=True,
         mode='min'
     )

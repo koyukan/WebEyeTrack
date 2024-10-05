@@ -81,12 +81,12 @@ class EyeNet_PL(pl.LightningModule):
             gt_gaze = vis.draw_gaze_direction(img, batch['face_origin_2d'][i], batch['gaze_target_2d'][i], color=(0, 0, 255))
 
             # The model now predicts gaze relative to the head pose, compute the true gaze
-            true_gaze_direction = output['gaze_direction'][i] + batch['mediapipe_head_vector'][i]
-            true_gaze_direction = true_gaze_direction / torch.norm(true_gaze_direction)
+            # true_gaze_direction = output['gaze_direction'][i] + batch['mediapipe_head_vector'][i]
+            # true_gaze_direction = true_gaze_direction / torch.norm(true_gaze_direction)
 
             # Create gaze_target_2d via the direction and a fixed distance
-            # gaze_target_3d_semi = batch['face_origin_3d'][i] + output['gaze_direction'][i] * 100
-            gaze_target_3d_semi = batch['face_origin_3d'][i] + true_gaze_direction * 100
+            gaze_target_3d_semi = batch['face_origin_3d'][i] + output['gaze_direction'][i] * 100
+            # gaze_target_3d_semi = batch['face_origin_3d'][i] + true_gaze_direction * 100
             gaze_target_3d_semi = gaze_target_3d_semi.detach().cpu().numpy()
             gaze_target_2d, _ = cv2.projectPoints(
                 gaze_target_3d_semi, 

@@ -29,6 +29,7 @@ class MPIIFaceGazeDataset(Dataset):
     def __init__(
             self, 
             dataset_dir: Union[pathlib.Path, str], 
+            participants: List[int],
             face_size: Tuple[int, int] = None,
             img_size: Tuple[int, int] = None,
             dataset_size: Optional[int] = None,
@@ -42,6 +43,10 @@ class MPIIFaceGazeDataset(Dataset):
         self.img_size = img_size
         self.face_size = face_size
         self.dataset_size = dataset_size
+        self.participants = participants
+
+        if not self.participants:
+            raise ValueError("No participants were selected.")
 
         # Setup MediaPipe Face Facial Landmark model
         base_options = python.BaseOptions(model_asset_path=str(CWD / 'face_landmarker_v2_with_blendshapes.task'))
@@ -52,7 +57,8 @@ class MPIIFaceGazeDataset(Dataset):
         self.face_landmarker = vision.FaceLandmarker.create_from_options(options)
 
         # Determine the number of samples in the dataset
-        participant_dirs = [p for p in self.dataset_dir.iterdir() if p.is_dir()]
+        # participant_dirs = [p for p in self.dataset_dir.iterdir() if p.is_dir()]
+        participant_dirs = [self.dataset_dir / f'p{p:02d}' for p in self.participants]
 
         # Saving information
         self.samples: List[Sample] = []
@@ -367,7 +373,8 @@ if __name__ == '__main__':
 
     dataset = MPIIFaceGazeDataset(
         GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
-        dataset_size=2
+        dataset_size=2,
+        participants=[1]
     )
     print(len(dataset))
 
