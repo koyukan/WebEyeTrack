@@ -14,10 +14,14 @@ from webeyetrack import vis
 # Format [leftmost, rightmost, topmost, bottommost]
 LEFT_EYEAREA_LANDMARKS = [463, 359, 257, 253]
 RIGHT_EYEAREA_LANDMARKS = [130, 243, 27, 23]
+LEFT_EYEAREA_TOTAL_LANDMARKS = [463,  341, 256, 252, 253, 254, 339, 255, 359, 467, 260, 259, 257, 258, 286, 414]
+RIGHT_EYEAREA_TOTAL_LANDMARKS = [130, 25,  110, 24,  23,  22,  26,  112, 243, 190, 56,  28,  27,  29,  30,  247]
 
 # Format [leftmost, rightmost, topmost, bottommost]
-LEFT_EYELID_LANDMARKS = [263, 362, 386, 374]
+LEFT_EYELID_LANDMARKS = [362, 263, 386, 374]
 RIGHT_EYELID_LANDMARKS = [33, 133, 159, 145]
+LEFT_EYELID_TOTAL_LANDMARKS = [ 362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398]
+RIGHT_EYELID_TOTAL_LANDMARKS = [33,  7,   163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246]
 
 RIGHT_IRIS_LANDMARKS = [468, 470, 469, 472, 471] # center, top, right, botton, left
 LEFT_IRIS_LANDMARKS = [473, 475, 474, 477, 476] # center, top, right, botton, left
@@ -99,29 +103,47 @@ if __name__ == '__main__':
         left_2d_eye_px = face_landmarks_all[LEFT_EYEAREA_LANDMARKS, :2] * np.array([frame.shape[1], frame.shape[0]])
         left_2d_eyelid_px = face_landmarks_all[LEFT_EYELID_LANDMARKS, :2] * np.array([frame.shape[1], frame.shape[0]])
         left_2d_iris_px = face_landmarks_all[LEFT_IRIS_LANDMARKS, :2] * np.array([frame.shape[1], frame.shape[0]])
+        left_2d_eyearea_total_px = face_landmarks_all[LEFT_EYEAREA_TOTAL_LANDMARKS, :2] * np.array([frame.shape[1], frame.shape[0]])
+        left_2d_eyelid_total_px = face_landmarks_all[LEFT_EYELID_TOTAL_LANDMARKS, :2] * np.array([frame.shape[1], frame.shape[0]])
+        
         right_2d_eye_px = face_landmarks_all[RIGHT_EYEAREA_LANDMARKS, :2] * np.array([frame.shape[1], frame.shape[0]])
         right_2d_eyelid_px = face_landmarks_all[RIGHT_EYELID_LANDMARKS, :2] * np.array([frame.shape[1], frame.shape[0]])
         right_2d_iris_px = face_landmarks_all[RIGHT_IRIS_LANDMARKS, :2] * np.array([frame.shape[1], frame.shape[0]])
+        right_2d_eyearea_total_px = face_landmarks_all[RIGHT_EYEAREA_TOTAL_LANDMARKS, :2] * np.array([frame.shape[1], frame.shape[0]])
+        right_2d_eyelid_total_px = face_landmarks_all[RIGHT_EYELID_TOTAL_LANDMARKS, :2] * np.array([frame.shape[1], frame.shape[0]])
 
         # 3D
         left_eye_fl = face_landmarks_all[LEFT_EYELID_LANDMARKS, :3]
         right_eye_fl = face_landmarks_all[RIGHT_EYELID_LANDMARKS, :3]
 
+        left_landmarks = [
+            left_2d_eye_px, 
+            left_2d_eyelid_px,
+            left_2d_eyearea_total_px,
+            left_2d_eyelid_total_px
+        ]
+        right_landmarks = [
+            right_2d_eye_px, 
+            right_2d_eyelid_px,
+            right_2d_eyearea_total_px,
+            right_2d_eyelid_total_px
+        ]
+
         eye_images = {}
         gaze_vectors = {}
         gaze_origins = {}
-        for i, (eye, eyelid) in {'left': [left_2d_eye_px, left_2d_eyelid_px], 'right': [right_2d_eye_px, right_2d_eyelid_px]}.items():
+        for i, (eye, eyelid, eyearea, eyelid_total) in {'left': left_landmarks, 'right': right_landmarks}.items():
             centroid = np.mean(eye, axis=0)
             width = np.abs(eye[0,0] - eye[1, 0]) * (1 + EYE_PADDING_WIDTH)
             height = width * EYE_HEIGHT_RATIO
 
             # Determine if closed by the eyelid
             eyelid_width = np.abs(eyelid[0,0] - eyelid[1, 0])
-            eyelid_height= np.abs(eyelid[3,1] - eyelid[2, 1])
+            eyelid_height = np.abs(eyelid[3,1] - eyelid[2, 1])
             is_closed = False
 
             # Determine if the eye is closed by the ratio of the height based on the width
-            if eyelid_height / eyelid_width < 0.1:
+            if eyelid_height / eyelid_width < 0.05:
                 is_closed = True
 
             if width == 0 or height == 0:
@@ -142,6 +164,30 @@ if __name__ == '__main__':
             new_width, new_height = 400, int(400*EYE_HEIGHT_RATIO)
             eye_image = cv2.resize(eye_image, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
             eye_images[i] = eye_image
+
+            # Draw the outline of the eyearea
+            shifted_eyearea_px = eyearea - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
+            prior_px = None
+            for px in shifted_eyearea_px:
+                resized_px = px * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+                if prior_px is not None:
+                    cv2.line(eye_image, tuple(prior_px.astype(int)), tuple(resized_px.astype(int)), (0, 255, 0), 1)
+                prior_px = resized_px
+            # Draw the last line to close the loop
+            resized_first_px = shifted_eyearea_px[0] * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+            cv2.line(eye_image, tuple(prior_px.astype(int)), tuple(resized_first_px.astype(int)), (0, 255, 0), 1)
+
+            # Draw the outline of the eyelid
+            shifted_eyelid_px = eyelid_total - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
+            prior_px = None
+            for px in shifted_eyelid_px:
+                resized_px = px * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+                if prior_px is not None:
+                    cv2.line(eye_image, tuple(prior_px.astype(int)), tuple(resized_px.astype(int)), (255, 0, 0), 1)
+                prior_px = resized_px
+            # Draw the last line to close the loop
+            resized_first_px = shifted_eyelid_px[0] * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+            cv2.line(eye_image, tuple(prior_px.astype(int)), tuple(resized_first_px.astype(int)), (255, 0, 0), 1)
 
             # Draw if the eye is closed on the top left corner
             if is_closed:
