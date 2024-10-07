@@ -9,6 +9,9 @@ import seaborn as sns
 import pandas as pd
 import yaml
 
+import matplotlib
+matplotlib.use('TkAgg')
+
 from webeyetrack.constants import GIT_ROOT
 from webeyetrack.datasets import MPIIFaceGazeDataset
 from webeyetrack.pipelines import FLGE
@@ -68,14 +71,17 @@ def euclidean_distance(y, y_hat):
 def eval():
 
     # Create pipeline
-    algo = FLGE()
+    algo = FLGE(
+        str(GIT_ROOT / 'python' / 'weights' / 'face_landmarker_v2_with_blendshapes.task')
+    )
     
     # Create a dataset object
     dataset = MPIIFaceGazeDataset(
         GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
+        participants=config['datasets']['MPIIFaceGaze']['val_subjects'],
         # img_size=[244,244],
         # face_size=[244,244],
-        # dataset_size=10
+        dataset_size=10
     )
 
     metric_functions = {

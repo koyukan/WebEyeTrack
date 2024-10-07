@@ -57,14 +57,14 @@ class FLGE():
                                             num_faces=1)
         self.face_landmarker = vision.FaceLandmarker.create_from_options(options)
 
-    def estimate_inter_pupillary_distance_2d(self, sample):
+    def estimate_inter_pupillary_distance_2d(self, facial_landmarks, height, width):
         data_2d_pairs = {
-            'left': sample['facial_landmarks_2d'][LEFT_EYE_LANDMARKS],
-            'right': sample['facial_landmarks_2d'][RIGHT_EYE_LANDMARKS]
+            'left': facial_landmarks[LEFT_EYE_LANDMARKS][:, :2] * np.array([width, height]),
+            'right': facial_landmarks[RIGHT_EYE_LANDMARKS][:, :2] * np.array([width, height])
         }
         data_3d_pairs = {
-            'left': sample['facial_landmarks'][LEFT_EYE_LANDMARKS][:, :3],
-            'right': sample['facial_landmarks'][RIGHT_EYE_LANDMARKS][:, :3]
+            'left': facial_landmarks[LEFT_EYE_LANDMARKS][:, :3],
+            'right': facial_landmarks[RIGHT_EYE_LANDMARKS][:, :3]
         }
 
         # Compute the 2D eye origin
@@ -98,20 +98,20 @@ class FLGE():
             'image_ipd': image_ipd
         }
     
-    def estimate_depth_and_scale(self, sample):
+    def estimate_depth_and_scale(self, facial_landmarks, face_rt, height, width):
         # First, compute the inter-pupillary distance
-        distances = self.estimate_inter_pupillary_distance_2d(sample)
+        distances = self.estimate_inter_pupillary_distance_2d(facial_landmarks, height, width)
 
         # Correct the image_ipd with the facial rotation
-        face_rt = sample['facial_rt']
-        # theta = np.arccos((np.trace(face_rt[:3, :3]) - 1) / 2)
+        theta = np.arccos((np.trace(face_rt[:3, :3]) - 1) / 2)
 
         # Estimate the scale
         metric_scale = REAL_WORLD_IPD / distances['canonical_ipd_3d']
 
         # Estimate the depth
         # Assuming the focal length is half the image width
-        focal_length_pixels = sample['original_img_size'][1] / 2
+        # focal_length_pixels = sample['original_img_size'][1] / 2
+        focal_length_pixels = width / 2
         # depth_cm = (focal_length_pixels * REAL_WORLD_IPD * np.cos(theta)) / distances['image_ipd']
         depth_cm = (focal_length_pixels * REAL_WORLD_IPD) / distances['image_ipd']
         depth_mm = depth_cm * 10 * 1.718
@@ -122,19 +122,24 @@ class FLGE():
             **distances
         }
     
-    def compute_gaze_origin_and_direction(self, sample, data):
-        metric_scale = data['metric_scale']
-        depth_mm = data['depth']
-        gaze_2d_origins = data['2d_eye_origins']
+    def compute_gaze_origin_and_direction(self, 
+            facial_landmarks, 
+            facial_rt, 
+            face_blendshapes,
+            metric_scale, 
+            depth_mm, 
+            gaze_2d_origins,
+            intrinsics
+        ):
 
         # Get the transformation matrix
-        transform = sample['facial_rt']
+        transform = facial_rt
 
         # Invert the y and z axis
         transform = np.diag([-1, 1, 1, 1]) @ transform
 
         # Apply the metric scaling of the face points
-        face_points = np.copy(sample['facial_landmarks'][:, :3])
+        face_points = np.copy(facial_landmarks[:, :3])
         face_points *= metric_scale
 
         # Compute the average of the 2D eye origins
@@ -142,7 +147,7 @@ class FLGE():
 
         # Compute the position based on the 2D xy and the depth
         pixel_coords = np.array([eye_origin[0], eye_origin[1], 1])
-        K = sample['intrinsics']
+        K = intrinsics
         K_inv = np.linalg.inv(K)
 
         # Back project the pixel coordinates to the 3D coordinates
@@ -167,7 +172,7 @@ class FLGE():
         # Compute the iris direction
         gaze_directions = {}
         for option, value in {'left': LEFT_BLENDSHAPES, 'right': RIGHT_BLENDSHAPES}.items():
-            blendshapes = sample['face_blendshapes']
+            blendshapes = face_blendshapes
             look_in, look_out, look_up, look_down = ([blendshapes[i] for i in value])
             hfov = np.deg2rad(HFOV)
             vfov = np.deg2rad(VFOV)
@@ -210,66 +215,7 @@ class FLGE():
             'gaze_origin_2d': eye_origin
         }
     
-    def compute_pog(self, sample, data):
-        
-        # Perform intersection with plane using gaze origin and vector
-        left_pog_mm = screen_plane_intersection(
-            data['gaze_origins']['left'],
-            data['gaze_vectors']['left'],
-            sample['screen_R'],
-            sample['screen_t']
-        )
-        right_pog_mm = screen_plane_intersection(
-            data['gaze_origins']['right'],
-            data['gaze_vectors']['right'],
-            sample['screen_R'],
-            sample['screen_t']
-        )
-
-        # Convert mm to normalized coordinates
-        left_pog_norm = np.array([left_pog_mm[0] / sample['screen_width_mm'], left_pog_mm[1] / sample['screen_height_mm']])
-        right_pog_norm = np.array([right_pog_mm[0] / sample['screen_width_mm'], right_pog_mm[1] / sample['screen_height_mm']])
-
-        # Convert normalized coordinates to pixel coordinates
-        left_pog_px = np.array([left_pog_norm[0] * sample['screen_width_px'], left_pog_norm[1] * sample['screen_height_px']])
-        right_pog_px = np.array([right_pog_norm[0] * sample['screen_width_px'], right_pog_norm[1] * sample['screen_height_px']])
-
-        return {
-            'pog_mm': (left_pog_mm + right_pog_mm) / 2,
-            'pog_px': (left_pog_px + right_pog_px) / 2
-        }
-
-    def process_sample(self, sample: Dict[str, Any]):
-
-        # Get the depth and scale
-        data = self.estimate_depth_and_scale(sample)
-
-        # Compute the metric transformation matrix
-        data2 = self.compute_gaze_origin_and_direction(sample, data)
-
-        # Compute the PoG
-        data3 = self.compute_pog(sample, data2)
-
-        return {
-            **data,
-            **data2,
-            **data3
-        }
-
-    def process_frame(self, frame: np.ndarray, render: bool = False) -> Dict[str, Any]:
-
-        # Return container
-        output = {}
-        
-        # Detect the landmarks
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame.astype(np.uint8))
-        detection_results = self.face_landmarker.detect(mp_image)
-
-        # Compute the face bounding box based on the MediaPipe landmarks
-        try:
-            face_landmarks_proto = detection_results.face_landmarks[0]
-        except:
-            return output
+    def estimate_gaze_vector(self, face_landmarks_proto, frame, render=False):
         
         # Compute the bbox by using the edges of the each eyes
         face_landmarks_all = np.array([[lm.x, lm.y, lm.z, lm.visibility, lm.presence] for lm in face_landmarks_proto])
@@ -415,49 +361,135 @@ class FLGE():
                 new_shifted_iris_px_center = shifted_iris_px[0] * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
                 cv2.line(eye_image, (int(new_width/2), int(new_height/2)), tuple(new_shifted_iris_px_center.astype(int)), (0, 255, 0), 2)
 
-        # Draw the landmarks
-        # frame = draw_landmarks_on_image(frame, detection_results)
-        output['eye_closed'] = eye_closed
-        output['eye_images'] = eye_images
-        output['gaze_vectors'] = gaze_vectors
-        output['gaze_origins'] = gaze_origins
+        return {
+            'eye_closed': eye_closed,
+            'eye_images': eye_images,
+            'gaze_vectors': gaze_vectors,
+            'gaze_origins': gaze_origins
+        }
+    
+    def compute_pog(self, gaze_origins, gaze_vectors, screen_R, screen_t, screen_width_mm, screen_height_mm, screen_width_px, screen_height_px):
+        
+        # Perform intersection with plane using gaze origin and vector
+        left_pog_mm = screen_plane_intersection(
+            gaze_origins['left'],
+            gaze_vectors['left'],
+            screen_R,
+            screen_t
+        )
+        right_pog_mm = screen_plane_intersection(
+            gaze_origins['right'],
+            gaze_vectors['right'],
+            screen_R,
+            screen_t
+        )
 
-        # Define intrinsics baesed on the image size
-        intrinsics = np.array([
-            [frame.shape[1], 0, frame.shape[1] / 2],
-            [0, frame.shape[0], frame.shape[0] / 2],
-            [0, 0, 1]
-        ]).astype(np.float32)
+        # Convert mm to normalized coordinates
+        left_pog_norm = np.array([left_pog_mm[0] / screen_width_mm, left_pog_mm[1] / screen_height_mm])
+        right_pog_norm = np.array([right_pog_mm[0] / screen_width_mm, right_pog_mm[1] / screen_height_mm])
 
+        # Convert normalized coordinates to pixel coordinates
+        left_pog_px = np.array([left_pog_norm[0] * screen_width_px, left_pog_norm[1] * screen_height_px])
+        right_pog_px = np.array([right_pog_norm[0] * screen_width_px, right_pog_norm[1] * screen_height_mm])
+
+        return {
+            'pog_mm': (left_pog_mm + right_pog_mm) / 2,
+            'pog_px': (left_pog_px + right_pog_px) / 2
+        }
+
+    def process_sample(self, sample: Dict[str, Any]):
+
+        # Get the depth and scale
+        facial_landmarks = sample['facial_landmarks']
+        original_img_size = sample['original_img_size']
+        face_rt = sample['facial_rt']
+        data = self.estimate_depth_and_scale(
+            facial_landmarks, 
+            face_rt,
+            original_img_size[0], 
+            original_img_size[1]
+        )
+
+        # Compute the metric transformation matrix
+        data2 = self.compute_gaze_origin_and_direction(
+            facial_landmarks,
+            face_rt,
+            sample['face_blendshapes'],
+            data['metric_scale'],
+            data['depth'],
+            data['2d_eye_origins'],
+            sample['intrinsics']
+        )
+
+        # Compute the PoG
+        data3 = self.compute_pog(
+            data2['gaze_origins'],
+            data2['gaze_vectors'],
+            sample['screen_R'],
+            sample['screen_t'],
+            sample['screen_width_mm'],
+            sample['screen_height_mm'],
+            sample['screen_width_px'],
+            sample['screen_height_px']
+        )
+
+        return {
+            **data,
+            **data2,
+            **data3
+        }
+    
+    def process_frame(self, frame: np.ndarray, render: bool = False) -> Dict[str, Any]:
+
+        # Return container
+        output = {}
+        
+        # Detect the landmarks
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame.astype(np.uint8))
+        detection_results = self.face_landmarker.detect(mp_image)
+
+        # Compute the face bounding box based on the MediaPipe landmarks
+        try:
+            face_landmarks_proto = detection_results.face_landmarks[0]
+        except:
+            return output
+        
+        # Estimate the gaze
+        gaze_estimation = self.estimate_gaze_vector(face_landmarks_proto, frame, render=render)
+        output.update(gaze_estimation)
+
+        # If render is True, render the gaze visualization
+        if render:
+            self.render(output, frame)
+
+        return output
+    
+    def render(self, output: Dict[str, Any], frame: np.ndarray):
         h, w = frame.shape[:2]
 
         # Assuming eye_images contains the left and right eye images (both resized to 400x280)
-        if render:
+        # Draw the 3D Gaze vector
+        for eye in ['left', 'right']:
+            if eye not in output['gaze_origins']:
+                continue
+            gaze_origin = output['gaze_origins'][eye]
+            gaze_origin = output['gaze_origins'][eye] * np.array([w, h, 1])
+            gaze_pitch_yaw = output['gaze_vectors'][eye]
+            frame = draw_axis(frame, gaze_pitch_yaw[1], gaze_pitch_yaw[0], 0, tdx=gaze_origin[0], tdy=gaze_origin[1], size=100)
 
-            # Draw the 3D Gaze vector
-            for eye in ['left', 'right']:
-                if eye not in gaze_origins:
-                    continue
-                gaze_origin = gaze_origins[eye]
-                gaze_origin = gaze_origins[eye] * np.array([w, h, 1])
-                gaze_pitch_yaw = gaze_vectors[eye]
-                frame = draw_axis(frame, gaze_pitch_yaw[1], gaze_pitch_yaw[0], 0, tdx=gaze_origin[0], tdy=gaze_origin[1], size=100)
+        if 'left' in output['eye_images'] and 'right' in output['eye_images']:
+            left_eye_image = output['eye_images']['left']
+            right_eye_image = output['eye_images']['right']
 
-            if 'left' in eye_images and 'right' in eye_images:
-                left_eye_image = eye_images['left']
-                right_eye_image = eye_images['right']
+            # Concatenate the eye images horizontally
+            eyes_combined = cv2.hconcat([right_eye_image, left_eye_image])
 
-                # Concatenate the eye images horizontally
-                eyes_combined = cv2.hconcat([right_eye_image, left_eye_image])
+            # Resize the combined eyes horizontally to match the width of the frame (640 pixels wide)
+            eyes_combined_resized = cv2.resize(eyes_combined, (frame.shape[1], eyes_combined.shape[0]))
 
-                # Resize the combined eyes horizontally to match the width of the frame (640 pixels wide)
-                eyes_combined_resized = cv2.resize(eyes_combined, (frame.shape[1], eyes_combined.shape[0]))
+            # Concatenate the combined eyes image vertically with the frame
+            final_image = cv2.vconcat([frame, eyes_combined_resized])
 
-                # Concatenate the combined eyes image vertically with the frame
-                final_image = cv2.vconcat([frame, eyes_combined_resized])
-
-                # Display the final concatenated image
-                # cv2.imshow('Gaze Visualization', final_image)
-                output['gaze_visualization'] = final_image
-
-        return output
+            # Display the final concatenated image
+            # cv2.imshow('Gaze Visualization', final_image)
+            output['gaze_visualization'] = final_image
