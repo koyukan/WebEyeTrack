@@ -135,11 +135,12 @@ class FLGE():
         depth_cm = (focal_length_pixels * REAL_WORLD_IPD) / distances['image_ipd']
         depth_mm = depth_cm * 10 * 1.718
 
-        return {
-            'depth': depth_mm,
-            'metric_scale': metric_scale,
-            **distances
-        }
+        # return {
+        #     'depth': depth_mm,
+        #     'metric_scale': metric_scale,
+        #     **distances
+        # }
+        return depth_mm, metric_scale, distances
     
     def compute_gaze_origin_and_direction(self, 
             facial_landmarks, 
@@ -225,14 +226,15 @@ class FLGE():
         gaze_vector = (gaze_vectors['left'] + gaze_vectors['right'])
         gaze_vector /= np.linalg.norm(gaze_vector)
 
-        return {
-            'gaze_origins': gaze_origins,
-            'gaze_directions': gaze_directions,
-            'gaze_vectors': gaze_vectors,
-            'gaze_origin': gaze_origin,
-            'face_gaze_vector': gaze_vector,
-            'gaze_origin_2d': eye_origin
-        }
+        # return {
+        #     'gaze_origins': gaze_origins,
+        #     'gaze_directions': gaze_directions,
+        #     'gaze_vectors': gaze_vectors,
+        #     'gaze_origin': gaze_origin,
+        #     'face_gaze_vector': gaze_vector,
+        #     'gaze_origin_2d': eye_origin
+        # }
+        return gaze_origins, gaze_directions, gaze_vectors, gaze_origin, gaze_vector, eye_origin
     
     def estimate_gaze_vector(self, face_landmarks_proto, frame, render=False):
         
@@ -422,7 +424,7 @@ class FLGE():
         facial_landmarks = sample['facial_landmarks']
         original_img_size = sample['original_img_size']
         face_rt = sample['facial_rt']
-        data = self.estimate_depth_and_scale(
+        depth_mm, metric_scale, distances = self.estimate_depth_and_scale(
             facial_landmarks, 
             face_rt,
             original_img_size[0], 
@@ -430,20 +432,20 @@ class FLGE():
         )
 
         # Compute the metric transformation matrix
-        data2 = self.compute_gaze_origin_and_direction(
+        gaze_origins, gaze_directions, gaze_vector, gaze_origin, face_gaze_vector, gaze_origin_2d = self.compute_gaze_origin_and_direction(
             facial_landmarks,
             face_rt,
             sample['face_blendshapes'],
-            data['metric_scale'],
-            data['depth'],
-            data['2d_eye_origins'],
+            metric_scale,
+            depth_mm,
+            distances['2d_eye_origins'],
             sample['intrinsics']
         )
 
         # Compute the PoG
         data3 = self.compute_pog(
-            data2['gaze_origins'],
-            data2['gaze_vectors'],
+            gaze_origins,
+            gaze_directions,
             sample['screen_R'],
             sample['screen_t'],
             sample['screen_width_mm'],
@@ -454,20 +456,20 @@ class FLGE():
 
         # Return the result
         return FLGEResult(
-            face_origin=data2['gaze_origin'],
-            face_origin_2d=data2['gaze_origin_2d'],
-            face_gaze=data2['face_gaze_vector'],
+            face_origin=gaze_origin,
+            face_origin_2d=gaze_origin_2d,
+            face_gaze=face_gaze_vector,
             left=EyeResult(
                 is_closed=False,
-                origin=data2['gaze_origins']['left'],
-                direction=data2['gaze_vectors']['left'],
+                origin=gaze_origins['left'],
+                direction=gaze_directions['left'],
                 pog_px=data3['pog_px'],
                 pog_mm=data3['pog_mm']
             ),
             right=EyeResult(
                 is_closed=False,
-                origin=data2['gaze_origins']['right'],
-                direction=data2['gaze_vectors']['right'],
+                origin=gaze_origins['right'],
+                direction=gaze_directions['right'],
                 pog_px=data3['pog_px'],
                 pog_mm=data3['pog_mm']
             ),

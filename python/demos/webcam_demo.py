@@ -8,11 +8,12 @@ from mediapipe.tasks.python import vision
 import imutils
 import math
 
+from webeyetrack.constants import GIT_ROOT
 from webeyetrack.datasets.utils import draw_landmarks_on_image
 from webeyetrack import vis
 from webeyetrack.pipelines.flge import FLGE
 
-CWD = pathlib.Path(__file__).parent
+# CWD = pathlib.Path(__file__).parent
 
 if __name__ == '__main__':
     
@@ -20,7 +21,7 @@ if __name__ == '__main__':
     cap = cv2.VideoCapture(0)
 
     # Pipeline
-    pipeline = FLGE(str(CWD / 'face_landmarker_v2_with_blendshapes.task'))
+    pipeline = FLGE(str(GIT_ROOT / 'python'/ 'weights' / 'face_landmarker_v2_with_blendshapes.task'))
 
     # Load the frames and draw the landmarks
     while True:

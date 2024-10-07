@@ -36,8 +36,7 @@ def angle(y, y_hat):
 def visualize_gaze_vectors(sample, output):
     
     # Draw the gaze vectors
-    import pdb; pdb.set_trace()
-    img = np.moveaxis(sample['image'], 0, -1)
+    img = cv2.cvtColor(np.moveaxis(sample['image'], 0, -1) * 255, cv2.COLOR_RGB2BGR)
     gt_gaze = vis.draw_gaze_direction(img, sample['face_origin_2d'], sample['gaze_target_2d'], color=(0, 0, 255))
     gaze_target_3d_semi = sample['face_origin_3d'] + output['face_gaze_vector'] * 100
     gaze_target_2d, _ = cv2.projectPoints(
@@ -59,11 +58,11 @@ def visualize_gaze_vectors(sample, output):
     # plt.show()
 
 def visualize_gaze_2d_origin(img, point_a, point_b):
-    img = np.moveaxis(img, 0, -1)
+    img = cv2.cvtColor(np.moveaxis(img, 0, -1) * 255, cv2.COLOR_RGB2BGR)
     # Draw the gaze origin from the sample in 2D
-    draw_img = vis.draw_gaze_origin(img, point_a, color=(255, 0, 0)) 
+    draw_img = vis.draw_gaze_origin(img, point_a, color=(0, 0, 255)) 
     # Draw the gaze origin from the output in 2D
-    draw_img = vis.draw_gaze_origin(draw_img, point_b, color=(0, 0, 255))
+    draw_img = vis.draw_gaze_origin(draw_img, point_b, color=(255, 0, 0))
     return draw_img
 
 def euclidean_distance(y, y_hat):
@@ -110,15 +109,10 @@ def eval():
             'gaze_origin': gaze_result.face_origin,
             'gaze_origin_2d': gaze_result.face_origin_2d,
             'face_gaze_vector': gaze_result.face_gaze,
-            # 'gaze_origin-x': gaze_result.face_origin[1],
-            # 'gaze_origin-y': gaze_result.face_origin[0],
-            # 'gaze_origin-z': gaze_result.face_origin[2],
+            'gaze_origin-x': gaze_result.face_origin[1],
+            'gaze_origin-y': gaze_result.face_origin[0],
+            'gaze_origin-z': gaze_result.face_origin[2],
         }
-
-        # # Separate the xyz gaze origin
-        # output['gaze_origin-x'] = output['gaze_origin'][0]
-        # output['gaze_origin-y'] = output['gaze_origin'][1]
-        # output['gaze_origin-z'] = output['gaze_origin'][2]
 
         # Compute the error
         actual = {
@@ -140,7 +134,7 @@ def eval():
         # Write to the output directory
         img = visualize_gaze_vectors(sample, output)
         cv2.imwrite(str(OUTPUTS_DIR / f'gaze_vectors_{i}.png'), img)
-        # img = visualize_gaze_2d_origin(sample['image'], sample['face_origin_2d'], gaze_result.face_origin_2d)
+        img = visualize_gaze_2d_origin(sample['image'], sample['face_origin_2d'], gaze_result.face_origin_2d)
         cv2.imwrite(str(OUTPUTS_DIR / f'gaze_origin_{i}.png'), img)
 
     # Generate box plots for the metrics
@@ -185,8 +179,9 @@ def eval():
             axes.set_title(f'{name.capitalize()}\nMean: {mean:.2f}, Std: {std:.2f}')
 
         
-    plt.tight_layout()
-    plt.show()
+    # plt.tight_layout()
+    # plt.show()
+    print(df)
 
 if __name__ == '__main__':
     eval()
