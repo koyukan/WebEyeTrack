@@ -17,7 +17,9 @@ from webeyetrack.datasets import MPIIFaceGazeDataset
 from webeyetrack.pipelines import FLGE
 import webeyetrack.vis as vis
 
+CWD = pathlib.Path(__file__).parent
 FILE_DIR = pathlib.Path(__file__).parent
+OUTPUTS_DIR = CWD / 'outputs'
 
 with open(FILE_DIR / 'config.yaml', 'r') as f:
     config = yaml.safe_load(f)
@@ -34,6 +36,7 @@ def angle(y, y_hat):
 def visualize_gaze_vectors(sample, output):
     
     # Draw the gaze vectors
+    import pdb; pdb.set_trace()
     img = np.moveaxis(sample['image'], 0, -1)
     gt_gaze = vis.draw_gaze_direction(img, sample['face_origin_2d'], sample['gaze_target_2d'], color=(0, 0, 255))
     gaze_target_3d_semi = sample['face_origin_3d'] + output['face_gaze_vector'] * 100
@@ -51,19 +54,17 @@ def visualize_gaze_vectors(sample, output):
         color=(255, 0, 0)
     )
 
-    plt.imshow(gt_pred_gaze)
-    plt.show()
+    return gt_pred_gaze
+    # plt.imshow(gt_pred_gaze)
+    # plt.show()
 
-def visualize_gaze_2d_origin(sample, output):
-    img = np.moveaxis(sample['image'], 0, -1)
+def visualize_gaze_2d_origin(img, point_a, point_b):
+    img = np.moveaxis(img, 0, -1)
     # Draw the gaze origin from the sample in 2D
-    draw_img = vis.draw_gaze_origin(img, sample['face_origin_2d'], color=(255, 0, 0)) 
+    draw_img = vis.draw_gaze_origin(img, point_a, color=(255, 0, 0)) 
     # Draw the gaze origin from the output in 2D
-    plt.imshow(vis.draw_gaze_origin(draw_img, output['gaze_origin_2d'], color=(0, 0, 255)))
-
-    print(f'Sample gaze origin: {sample["face_origin_2d"]}')
-    print(f'Output gaze origin: {output["gaze_origin_2d"]}')
-    plt.show()
+    draw_img = vis.draw_gaze_origin(draw_img, point_b, color=(0, 0, 255))
+    return draw_img
 
 def euclidean_distance(y, y_hat):
     return np.linalg.norm(y - y_hat)
@@ -85,7 +86,7 @@ def eval():
     )
 
     metric_functions = {
-        # 'depth': distance, 
+        'depth': distance, 
         'face_gaze_vector': angle, 
         'gaze_origin': euclidean_distance, 
         'gaze_origin-x': euclidean_distance, 
@@ -98,16 +99,26 @@ def eval():
     for i, sample in tqdm(enumerate(dataset), total=len(dataset)):
 
         # Process the sample
-        try:
-            output = algo.process_sample(sample)
-        except Exception as e:
-            print(e)
-            continue
+        # try:
+        gaze_result = algo.process_sample(sample)
+        # except Exception as e:
+        #     print(e)
+        #     continue
 
-        # Separate the xyz gaze origin
-        output['gaze_origin-x'] = output['gaze_origin'][0]
-        output['gaze_origin-y'] = output['gaze_origin'][1]
-        output['gaze_origin-z'] = output['gaze_origin'][2]
+        output = {
+            'depth': gaze_result.face_origin[2],
+            'gaze_origin': gaze_result.face_origin,
+            'gaze_origin_2d': gaze_result.face_origin_2d,
+            'face_gaze_vector': gaze_result.face_gaze,
+            # 'gaze_origin-x': gaze_result.face_origin[1],
+            # 'gaze_origin-y': gaze_result.face_origin[0],
+            # 'gaze_origin-z': gaze_result.face_origin[2],
+        }
+
+        # # Separate the xyz gaze origin
+        # output['gaze_origin-x'] = output['gaze_origin'][0]
+        # output['gaze_origin-y'] = output['gaze_origin'][1]
+        # output['gaze_origin-z'] = output['gaze_origin'][2]
 
         # Compute the error
         actual = {
@@ -126,8 +137,11 @@ def eval():
                 continue
             metrics[name].append(function(actual[name], output[name]))
 
-        # visualize_gaze_vectors(sample, output)
-        # visualize_gaze_2d_origin(sample, output)
+        # Write to the output directory
+        img = visualize_gaze_vectors(sample, output)
+        cv2.imwrite(str(OUTPUTS_DIR / f'gaze_vectors_{i}.png'), img)
+        # img = visualize_gaze_2d_origin(sample['image'], sample['face_origin_2d'], gaze_result.face_origin_2d)
+        cv2.imwrite(str(OUTPUTS_DIR / f'gaze_origin_{i}.png'), img)
 
     # Generate box plots for the metrics
     df = pd.DataFrame(metrics)
@@ -149,17 +163,27 @@ def eval():
     for i, name in enumerate(metrics.keys()):
         mean = df[name].mean()
         std = df[name].std()
-        
-        # Plot the boxplot for each metric
-        sns.boxplot(data=df, y=name, ax=axes[i])
-        
+          
         # Add mean and std as text in the figure
-        axes[i].text(0.05, 0.95, f'Mean: {mean:.2f}\nStd: {std:.2f}', 
-                     transform=axes[i].transAxes, 
-                     verticalalignment='top')
-        
-        # Set the title with mean and std
-        axes[i].set_title(f'{name.capitalize()}\nMean: {mean:.2f}, Std: {std:.2f}')
+        if num_metrics > 1:
+            # Plot the boxplot for each metric
+            sns.boxplot(data=df, y=name, ax=axes[i])
+            axes[i].text(0.05, 0.95, f'Mean: {mean:.2f}\nStd: {std:.2f}', 
+                        transform=axes[i].transAxes, 
+                        verticalalignment='top')
+            
+            # Set the title with mean and std
+            axes[i].set_title(f'{name.capitalize()}\nMean: {mean:.2f}, Std: {std:.2f}')
+        else:
+            # Plot the boxplot for each metric
+            sns.boxplot(data=df, y=name, ax=axes)
+            axes.text(0.05, 0.95, f'Mean: {mean:.2f}\nStd: {std:.2f}', 
+                        transform=axes.transAxes, 
+                        verticalalignment='top')
+            
+            # Set the title with mean and std
+            axes.set_title(f'{name.capitalize()}\nMean: {mean:.2f}, Std: {std:.2f}')
+
         
     plt.tight_layout()
     plt.show()

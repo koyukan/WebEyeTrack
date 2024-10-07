@@ -1,4 +1,5 @@
 from typing import Dict, Any
+from dataclasses import dataclass
 
 import numpy as np
 import cv2
@@ -44,6 +45,24 @@ def compute_2d_origin(points):
 
     center = np.array([cx, cy], dtype=np.int32)
     return center
+
+@dataclass
+class EyeResult:
+    is_closed: bool
+    origin: np.ndarray # X, Y, Z
+    direction: np.ndarray # Pitch, Yaw
+    pog_px: np.ndarray
+    pog_mm: np.ndarray
+
+@dataclass
+class FLGEResult:
+    face_origin: np.ndarray # X, Y, Z
+    face_origin_2d: np.ndarray # X, Y
+    face_gaze: np.ndarray # Pitch, Yaw
+    left: EyeResult
+    right: EyeResult
+    pog_px: np.ndarray
+    pog_mm: np.ndarray
 
 # Facial Landmark Gaze Estimation
 class FLGE():
@@ -397,7 +416,7 @@ class FLGE():
             'pog_px': (left_pog_px + right_pog_px) / 2
         }
 
-    def process_sample(self, sample: Dict[str, Any]):
+    def process_sample(self, sample: Dict[str, Any]) -> FLGEResult:
 
         # Get the depth and scale
         facial_landmarks = sample['facial_landmarks']
@@ -433,11 +452,28 @@ class FLGE():
             sample['screen_height_px']
         )
 
-        return {
-            **data,
-            **data2,
-            **data3
-        }
+        # Return the result
+        return FLGEResult(
+            face_origin=data2['gaze_origin'],
+            face_origin_2d=data2['gaze_origin_2d'],
+            face_gaze=data2['face_gaze_vector'],
+            left=EyeResult(
+                is_closed=False,
+                origin=data2['gaze_origins']['left'],
+                direction=data2['gaze_vectors']['left'],
+                pog_px=data3['pog_px'],
+                pog_mm=data3['pog_mm']
+            ),
+            right=EyeResult(
+                is_closed=False,
+                origin=data2['gaze_origins']['right'],
+                direction=data2['gaze_vectors']['right'],
+                pog_px=data3['pog_px'],
+                pog_mm=data3['pog_mm']
+            ),
+            pog_px=data3['pog_px'],
+            pog_mm=data3['pog_mm']
+        )
     
     def process_frame(self, frame: np.ndarray, render: bool = False) -> Dict[str, Any]:
 
