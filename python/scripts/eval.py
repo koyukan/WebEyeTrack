@@ -34,7 +34,7 @@ def scale(y, y_hat):
 def angle(y, y_hat):
     return np.degrees(np.arccos(np.clip(np.dot(y, y_hat), -1.0, 1.0)))
 
-def visualize_gaze_vectors(sample, output):
+def visualize_differences(sample, output):
     
     # Draw the gaze vectors
     img = cv2.cvtColor(np.moveaxis(sample['image'], 0, -1) * 255, cv2.COLOR_RGB2BGR)
@@ -45,9 +45,11 @@ def visualize_gaze_vectors(sample, output):
         sample['gaze_target_2d'], 
         color=(0, 0, 255)
     )
+    cv2.circle(gt_gaze, (int(sample['face_origin_2d'][0]), int(sample['face_origin_2d'][1])), 10, (0, 0, 255), -1)
 
     # gt_gaze = vis.draw_gaze_direction(img, sample['face_origin_2d'], sample['gaze_target_2d'], color=(0, 0, 255))
-    gaze_target_3d_semi = sample['face_origin_3d'] + output['face_gaze_vector'] * 100
+    # gaze_target_3d_semi = sample['face_origin_3d'] + output['face_gaze_vector'] * 100
+    gaze_target_3d_semi = output['face_origin'] + output['face_gaze_vector'] * 100
     gaze_target_2d, _ = cv2.projectPoints(
         gaze_target_3d_semi, 
         np.array([0, 0, 0], dtype=np.float32),
@@ -57,20 +59,14 @@ def visualize_gaze_vectors(sample, output):
     )
     gt_pred_gaze = vis.draw_gaze_direction(
         gt_gaze,
-        sample['face_origin_2d'],
+        # sample['face_origin_2d'],
+        output['face_origin_2d'],
         gaze_target_2d.flatten(),
         color=(255, 0, 0)
     )
+    cv2.circle(gt_pred_gaze, (int(output['face_origin_2d'][0]), int(output['face_origin_2d'][1])), 10, (255, 0, 0), -1)
 
     return gt_pred_gaze
-
-def visualize_gaze_2d_origin(img, point_a, point_b):
-    img = cv2.cvtColor(np.moveaxis(img, 0, -1) * 255, cv2.COLOR_RGB2BGR)
-    # Draw the gaze origin from the sample in 2D
-    draw_img = vis.draw_gaze_origin(img, point_a, color=(0, 0, 255)) 
-    # Draw the gaze origin from the output in 2D
-    draw_img = vis.draw_gaze_origin(draw_img, point_b, color=(255, 0, 0))
-    return draw_img
 
 def euclidean_distance(y, y_hat):
     return np.linalg.norm(y - y_hat)
@@ -138,10 +134,12 @@ def eval():
             metrics[name].append(function(actual[name], output[name]))
 
         # Write to the output directory
-        img = visualize_gaze_vectors(sample, output)
-        cv2.imwrite(str(OUTPUTS_DIR / f'gaze_vectors_{i}.png'), img)
-        img = visualize_gaze_2d_origin(sample['image'], sample['face_origin_2d'], gaze_result.face_origin_2d)
-        cv2.imwrite(str(OUTPUTS_DIR / f'gaze_origin_{i}.png'), img)
+        # img = visualize_gaze_vectors(sample, output)
+        # cv2.imwrite(str(OUTPUTS_DIR / f'gaze_vectors_{i}.png'), img)
+        # img = visualize_gaze_2d_origin(sample['image'], sample['face_origin_2d'], gaze_result.face_origin_2d)
+        # cv2.imwrite(str(OUTPUTS_DIR / f'gaze_origin_{i}.png'), img)
+        img = visualize_differences(sample, output)
+        cv2.imwrite(str(OUTPUTS_DIR / f'gaze_diff_{i}.png'), img)
 
     # Generate box plots for the metrics
     df = pd.DataFrame(metrics)
