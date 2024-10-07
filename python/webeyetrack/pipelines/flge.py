@@ -1,5 +1,6 @@
-from typing import Dict, Any
+from typing import Dict, Any, Literal
 from dataclasses import dataclass
+
 
 import numpy as np
 import cv2
@@ -42,7 +43,6 @@ EYEBALL_RADIUS = 1.15
 
 def compute_2d_origin(points):
     (cx, cy), radius = cv2.minEnclosingCircle(points.astype(np.float32))
-
     center = np.array([cx, cy], dtype=np.int32)
     return center
 
@@ -67,7 +67,11 @@ class FLGEResult:
 # Facial Landmark Gaze Estimation
 class FLGE():
 
-    def __init__(self, model_asset_path: str):
+    def __init__(self, model_asset_path: str, gaze_direction_estimation: Literal['landmark', 'blendshape'] = 'blendshape'):
+
+        # Saving options
+        self.gaze_direction_estimation = gaze_direction_estimation
+        
         # Setup MediaPipe Face Facial Landmark model
         base_options = python.BaseOptions(model_asset_path=model_asset_path)
         options = vision.FaceLandmarkerOptions(base_options=base_options,
@@ -104,157 +108,41 @@ class FLGE():
         l, r = origins_2d['left'], origins_2d['right']
         image_ipd = np.sqrt(np.power(l[0] - r[0], 2) + np.power(l[1] - r[1], 2))
 
-        return {
-            '2d_eye_origins': {
+        positions = {
+            'eye_origins_2d': {
                 'left': l,
                 'right': r
             },
-            '3d_eye_origins': {
+            'eye_origins_3d_canonical': {
                 'left': origins_3d['left'],
                 'right': origins_3d['right']
-            },
+            }
+        }
+        distances = {
             'canonical_ipd_3d': canonical_ipd,
             'image_ipd': image_ipd
         }
-    
-    def estimate_depth_and_scale(self, facial_landmarks, face_rt, height, width):
-        # First, compute the inter-pupillary distance
-        distances = self.estimate_inter_pupillary_distance_2d(facial_landmarks, height, width)
 
-        # Correct the image_ipd with the facial rotation
-        theta = np.arccos((np.trace(face_rt[:3, :3]) - 1) / 2)
+        return (positions, distances)
 
-        # Estimate the scale
-        metric_scale = REAL_WORLD_IPD / distances['canonical_ipd_3d']
-
-        # Estimate the depth
-        # Assuming the focal length is half the image width
-        # focal_length_pixels = sample['original_img_size'][1] / 2
-        focal_length_pixels = width / 2
-        # depth_cm = (focal_length_pixels * REAL_WORLD_IPD * np.cos(theta)) / distances['image_ipd']
-        depth_cm = (focal_length_pixels * REAL_WORLD_IPD) / distances['image_ipd']
-        depth_mm = depth_cm * 10 * 1.718
-
-        # return {
-        #     'depth': depth_mm,
-        #     'metric_scale': metric_scale,
-        #     **distances
-        # }
-        return depth_mm, metric_scale, distances
-    
-    def compute_gaze_origin_and_direction(self, 
-            facial_landmarks, 
-            facial_rt, 
-            face_blendshapes,
-            metric_scale, 
-            depth_mm, 
-            gaze_2d_origins,
-            intrinsics
-        ):
-
-        # Get the transformation matrix
-        transform = facial_rt
-
-        # Invert the y and z axis
-        transform = np.diag([-1, 1, 1, 1]) @ transform
-
-        # Apply the metric scaling of the face points
-        face_points = np.copy(facial_landmarks[:, :3])
-        face_points *= metric_scale
-
-        # Compute the average of the 2D eye origins
-        eye_origin = (gaze_2d_origins['left'] + gaze_2d_origins['right']) / 2
-
-        # Compute the position based on the 2D xy and the depth
-        pixel_coords = np.array([eye_origin[0], eye_origin[1], 1])
-        K = intrinsics
-        K_inv = np.linalg.inv(K)
-
-        # Back project the pixel coordinates to the 3D coordinates
-        translation = depth_mm * K_inv @ pixel_coords
-
-        # Apply the translation to the face points
-        face_points += translation
-
-        # Compute the gaz
-        gaze_origins = {
-            'left': face_points[LEFT_EYE_LANDMARKS],
-            'right': face_points[RIGHT_EYE_LANDMARKS]
-        }
-
-        # Compute the 3D eye origin
-        for k, v in gaze_origins.items():
-            gaze_origins[k] = np.mean(v, axis=0)
-
-        # Compute average gaze origin
-        gaze_origin = (gaze_origins['left'] + gaze_origins['right']) / 2
-
-        # Compute the iris direction
-        gaze_directions = {}
-        for option, value in {'left': LEFT_BLENDSHAPES, 'right': RIGHT_BLENDSHAPES}.items():
-            blendshapes = face_blendshapes
-            look_in, look_out, look_up, look_down = ([blendshapes[i] for i in value])
-            hfov = np.deg2rad(HFOV)
-            vfov = np.deg2rad(VFOV)
-
-            rx = hfov * 0.5 * (look_down - look_up)
-            ry = vfov * 0.5 * (look_in - look_out) * (1 if option == 'left' else -1)
-
-            # Create euler angle
-            euler_angles = np.array([rx, ry, 0])
-
-            # # Convert to rotation matrix
-            rotation_matrix = cv2.Rodrigues(euler_angles)[0]
-
-            # Compute the gaze direction
-            gaze_directions[option] = rotation_matrix
-
-        # Apply the rotation to the gaze direction
-        for k, v in gaze_directions.items():
-            rotation_matrix = transform[:3, :3]
-            gaze_directions[k] = v.dot(rotation_matrix)
-
-        # Compute the gaze direction by apply the rotation to a [0,0,-1] vector
-        gaze_vectors = {
-            'left': np.array([0,0,-1]),
-            'right': np.array([0,0,-1])
-        }
-        for k, v in gaze_directions.items():
-            gaze_vectors[k] = v.dot(gaze_vectors[k])
-
-        # Compute the average gaze vector
-        gaze_vector = (gaze_vectors['left'] + gaze_vectors['right'])
-        gaze_vector /= np.linalg.norm(gaze_vector)
-
-        # return {
-        #     'gaze_origins': gaze_origins,
-        #     'gaze_directions': gaze_directions,
-        #     'gaze_vectors': gaze_vectors,
-        #     'gaze_origin': gaze_origin,
-        #     'face_gaze_vector': gaze_vector,
-        #     'gaze_origin_2d': eye_origin
-        # }
-        return gaze_origins, gaze_directions, gaze_vectors, gaze_origin, gaze_vector, eye_origin
-    
-    def estimate_gaze_vector(self, face_landmarks_proto, frame, render=False):
+    def estimate_gaze_vector_based_on_eye_landmarks(self, facial_landmarks, height, width):
         
         # Compute the bbox by using the edges of the each eyes
-        face_landmarks_all = np.array([[lm.x, lm.y, lm.z, lm.visibility, lm.presence] for lm in face_landmarks_proto])
-        left_2d_eye_px = face_landmarks_all[LEFT_EYEAREA_LANDMARKS, :2] * np.array([frame.shape[1], frame.shape[0]])
-        left_2d_eyelid_px = face_landmarks_all[LEFT_EYELID_LANDMARKS, :2] * np.array([frame.shape[1], frame.shape[0]])
-        left_2d_iris_px = face_landmarks_all[LEFT_IRIS_LANDMARKS, :2] * np.array([frame.shape[1], frame.shape[0]])
-        left_2d_eyearea_total_px = face_landmarks_all[LEFT_EYEAREA_TOTAL_LANDMARKS, :2] * np.array([frame.shape[1], frame.shape[0]])
-        left_2d_eyelid_total_px = face_landmarks_all[LEFT_EYELID_TOTAL_LANDMARKS, :2] * np.array([frame.shape[1], frame.shape[0]])
+        left_2d_eye_px = facial_landmarks[LEFT_EYEAREA_LANDMARKS, :2] * np.array([width, height])
+        left_2d_eyelid_px = facial_landmarks[LEFT_EYELID_LANDMARKS, :2] * np.array([width, height])
+        left_2d_iris_px = facial_landmarks[LEFT_IRIS_LANDMARKS, :2] * np.array([width, height])
+        left_2d_eyearea_total_px = facial_landmarks[LEFT_EYEAREA_TOTAL_LANDMARKS, :2] * np.array([width, height])
+        left_2d_eyelid_total_px = facial_landmarks[LEFT_EYELID_TOTAL_LANDMARKS, :2] * np.array([width, height])
         
-        right_2d_eye_px = face_landmarks_all[RIGHT_EYEAREA_LANDMARKS, :2] * np.array([frame.shape[1], frame.shape[0]])
-        right_2d_eyelid_px = face_landmarks_all[RIGHT_EYELID_LANDMARKS, :2] * np.array([frame.shape[1], frame.shape[0]])
-        right_2d_iris_px = face_landmarks_all[RIGHT_IRIS_LANDMARKS, :2] * np.array([frame.shape[1], frame.shape[0]])
-        right_2d_eyearea_total_px = face_landmarks_all[RIGHT_EYEAREA_TOTAL_LANDMARKS, :2] * np.array([frame.shape[1], frame.shape[0]])
-        right_2d_eyelid_total_px = face_landmarks_all[RIGHT_EYELID_TOTAL_LANDMARKS, :2] * np.array([frame.shape[1], frame.shape[0]])
+        right_2d_eye_px = facial_landmarks[RIGHT_EYEAREA_LANDMARKS, :2] * np.array([width, height])
+        right_2d_eyelid_px = facial_landmarks[RIGHT_EYELID_LANDMARKS, :2] * np.array([width, height])
+        right_2d_iris_px = facial_landmarks[RIGHT_IRIS_LANDMARKS, :2] * np.array([width, height])
+        right_2d_eyearea_total_px = facial_landmarks[RIGHT_EYEAREA_TOTAL_LANDMARKS, :2] * np.array([width, height])
+        right_2d_eyelid_total_px = facial_landmarks[RIGHT_EYELID_TOTAL_LANDMARKS, :2] * np.array([width, height])
 
         # 3D
-        left_eye_fl = face_landmarks_all[LEFT_EYELID_LANDMARKS, :3]
-        right_eye_fl = face_landmarks_all[RIGHT_EYELID_LANDMARKS, :3]
+        left_eye_fl = facial_landmarks[LEFT_EYELID_LANDMARKS, :3]
+        right_eye_fl = facial_landmarks[RIGHT_EYELID_LANDMARKS, :3]
 
         left_landmarks = [
             left_2d_eye_px, 
@@ -388,19 +276,129 @@ class FLGE():
             'gaze_vectors': gaze_vectors,
             'gaze_origins': gaze_origins
         }
+
+    def estimate_gaze_vector_based_on_eye_blendshapes(self, face_blendshapes, face_rt):
+
+        # Get the transformation matrix
+        # Invert the y and z axis
+        transform = face_rt.copy()
+        transform = np.diag([-1, 1, 1, 1]) @ transform
+        
+        # Compute the iris direction
+        gaze_directions = {}
+        for option, value in {'left': LEFT_BLENDSHAPES, 'right': RIGHT_BLENDSHAPES}.items():
+            blendshapes = face_blendshapes
+            look_in, look_out, look_up, look_down = ([blendshapes[i] for i in value])
+            hfov = np.deg2rad(HFOV)
+            vfov = np.deg2rad(VFOV)
+
+            rx = hfov * 0.5 * (look_down - look_up)
+            ry = vfov * 0.5 * (look_in - look_out) * (1 if option == 'left' else -1)
+
+            # Create euler angle
+            euler_angles = np.array([rx, ry, 0])
+
+            # # Convert to rotation matrix
+            rotation_matrix = cv2.Rodrigues(euler_angles)[0]
+
+            # Compute the gaze direction
+            gaze_directions[option] = rotation_matrix
+
+        # Apply the rotation to the gaze direction
+        for k, v in gaze_directions.items():
+            rotation_matrix = transform[:3, :3]
+            gaze_directions[k] = v.dot(rotation_matrix)
+
+        # Compute the gaze direction by apply the rotation to a [0,0,-1] vector
+        gaze_vectors = {
+            'left': np.array([0,0,-1]),
+            'right': np.array([0,0,-1])
+        }
+        for k, v in gaze_directions.items():
+            gaze_vectors[k] = v.dot(gaze_vectors[k])
+
+        # Compute the average gaze vector
+        face_gaze_vector = (gaze_vectors['left'] + gaze_vectors['right'])
+        face_gaze_vector /= np.linalg.norm(face_gaze_vector)
+
+        return {
+            'face': face_gaze_vector,
+            'eyes': gaze_vectors
+        }
+
+    def estimate_2d_3d_eye_face_origins(self, facial_landmarks, face_rt, height, width, intrinsics):
+        
+        # First, compute the inter-pupillary distance
+        positions, distances = self.estimate_inter_pupillary_distance_2d(
+            facial_landmarks, 
+            height, 
+            width
+        )
+
+        # Estimate the scale
+        metric_scale = REAL_WORLD_IPD / distances['canonical_ipd_3d']
+
+        # Estimate the depth
+        focal_length_pixels = width / 2
+        # depth_cm = (focal_length_pixels * REAL_WORLD_IPD * np.cos(theta)) / distances['image_ipd']
+        depth_cm = (focal_length_pixels * REAL_WORLD_IPD) / distances['image_ipd']
+        depth_mm = depth_cm * 10 * 1.718
+
+        # Get the transformation matrix
+        # Invert the y and z axis
+        transform = face_rt.copy()
+        transform = np.diag([-1, 1, 1, 1]) @ transform
+
+        # Apply the metric scaling of the face points
+        tf_face_points = np.copy(facial_landmarks[:, :3])
+        tf_face_points *= metric_scale
+
+        # Compute the average of the 2D eye origins
+        face_origin = (positions['eye_origins_2d']['left'] + positions['eye_origins_2d']['right']) / 2
+
+        # Compute the position based on the 2D xy and the depth
+        pixel_coords = np.array([face_origin[0], face_origin[1], 1])
+        K = intrinsics
+        K_inv = np.linalg.inv(K)
+
+        # Back project the pixel coordinates to the 3D coordinates
+        translation = depth_mm * K_inv @ pixel_coords
+
+        # Apply the translation to the face points
+        tf_face_points += translation
+
+        # Compute the eye gaze origin in metric space
+        eye_g_o = {
+            'left': tf_face_points[LEFT_EYE_LANDMARKS],
+            'right': tf_face_points[RIGHT_EYE_LANDMARKS]
+        }
+
+        # Compute the 3D eye origin
+        for k, v in eye_g_o.items():
+            eye_g_o[k] = np.mean(v, axis=0)
+
+        # Compute face gaze origin
+        face_g_o = (eye_g_o['left'] + eye_g_o['right']) / 2
+
+        return {
+            'face_origin_3d': face_g_o,
+            'face_origin_2d': face_origin,
+            'eye_origins_3d': eye_g_o,
+            'eye_origins_2d': positions['eye_origins_2d']
+        }
     
     def compute_pog(self, gaze_origins, gaze_vectors, screen_R, screen_t, screen_width_mm, screen_height_mm, screen_width_px, screen_height_px):
         
         # Perform intersection with plane using gaze origin and vector
         left_pog_mm = screen_plane_intersection(
-            gaze_origins['left'],
-            gaze_vectors['left'],
+            gaze_origins['eye_origins_3d']['left'],
+            gaze_vectors['eyes']['left'],
             screen_R,
             screen_t
         )
         right_pog_mm = screen_plane_intersection(
-            gaze_origins['right'],
-            gaze_vectors['right'],
+            gaze_origins['eye_origins_3d']['right'],
+            gaze_vectors['eyes']['right'],
             screen_R,
             screen_t
         )
@@ -414,8 +412,14 @@ class FLGE():
         right_pog_px = np.array([right_pog_norm[0] * screen_width_px, right_pog_norm[1] * screen_height_mm])
 
         return {
-            'pog_mm': (left_pog_mm + right_pog_mm) / 2,
-            'pog_px': (left_pog_px + right_pog_px) / 2
+            'face_pog_mm': (left_pog_mm + right_pog_mm) / 2,
+            'face_pog_px': (left_pog_px + right_pog_px) / 2,
+            'eye': {
+                'left_pog_mm': left_pog_mm,
+                'left_pog_px': left_pog_px,
+                'right_pog_mm': right_pog_mm,
+                'right_pog_px': right_pog_px
+            }
         }
 
     def process_sample(self, sample: Dict[str, Any]) -> FLGEResult:
@@ -424,28 +428,33 @@ class FLGE():
         facial_landmarks = sample['facial_landmarks']
         original_img_size = sample['original_img_size']
         face_rt = sample['facial_rt']
-        depth_mm, metric_scale, distances = self.estimate_depth_and_scale(
-            facial_landmarks, 
-            face_rt,
-            original_img_size[0], 
-            original_img_size[1]
-        )
 
-        # Compute the metric transformation matrix
-        gaze_origins, gaze_directions, gaze_vector, gaze_origin, face_gaze_vector, gaze_origin_2d = self.compute_gaze_origin_and_direction(
+        # Estimate the 2D and 3D position of the eye-center and the face-center
+        gaze_origins = self.estimate_2d_3d_eye_face_origins(
             facial_landmarks,
             face_rt,
-            sample['face_blendshapes'],
-            metric_scale,
-            depth_mm,
-            distances['2d_eye_origins'],
+            original_img_size[0],
+            original_img_size[1],
             sample['intrinsics']
         )
 
+        # Compute the gaze vectors
+        if self.gaze_direction_estimation == 'landmark':
+            gaze_vectors = self.estimate_gaze_vector_based_on_eye_landmarks(
+                facial_landmarks,
+                original_img_size[0],
+                original_img_size[1]
+            )
+        elif self.gaze_direction_estimation == 'blendshape':
+            gaze_vectors = self.estimate_gaze_vector_based_on_eye_blendshapes(
+                sample['face_blendshapes'],
+                face_rt
+            )
+
         # Compute the PoG
-        data3 = self.compute_pog(
+        pog = self.compute_pog(
             gaze_origins,
-            gaze_directions,
+            gaze_vectors,
             sample['screen_R'],
             sample['screen_t'],
             sample['screen_width_mm'],
@@ -456,25 +465,25 @@ class FLGE():
 
         # Return the result
         return FLGEResult(
-            face_origin=gaze_origin,
-            face_origin_2d=gaze_origin_2d,
-            face_gaze=face_gaze_vector,
+            face_origin=gaze_origins['face_origin_3d'],
+            face_origin_2d=gaze_origins['face_origin_2d'],
+            face_gaze=gaze_vectors['face'],
             left=EyeResult(
                 is_closed=False,
-                origin=gaze_origins['left'],
-                direction=gaze_directions['left'],
-                pog_px=data3['pog_px'],
-                pog_mm=data3['pog_mm']
+                origin=gaze_origins['eye_origins_2d']['left'],
+                direction=gaze_vectors['eyes']['left'],
+                pog_px=pog['eye']['left_pog_px'],
+                pog_mm=pog['eye']['left_pog_mm']
             ),
             right=EyeResult(
                 is_closed=False,
-                origin=gaze_origins['right'],
-                direction=gaze_directions['right'],
-                pog_px=data3['pog_px'],
-                pog_mm=data3['pog_mm']
+                origin=gaze_origins['eye_origins_2d']['right'],
+                direction=gaze_vectors['eyes']['right'],
+                pog_px=pog['eye']['right_pog_px'],
+                pog_mm=pog['eye']['right_pog_mm']
             ),
-            pog_px=data3['pog_px'],
-            pog_mm=data3['pog_mm']
+            pog_px=pog['face_pog_px'],
+            pog_mm=pog['face_pog_mm']
         )
     
     def process_frame(self, frame: np.ndarray, render: bool = False) -> Dict[str, Any]:
