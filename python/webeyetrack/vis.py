@@ -4,7 +4,7 @@ from matplotlib import pyplot as plt
 from matplotlib.colors import Normalize
 import math
 
-def draw_axis(img, yaw, pitch, roll, tdx=None, tdy=None, size = 100):
+def draw_axis(img, yaw, pitch, roll=0, tdx=None, tdy=None, size = 100):
 
     pitch = -(pitch * np.pi / 180)
     yaw = (yaw * np.pi / 180)
@@ -31,7 +31,68 @@ def draw_axis(img, yaw, pitch, roll, tdx=None, tdy=None, size = 100):
     x3 = size * (math.sin(yaw)) + tdx
     y3 = size * (-math.cos(yaw) * math.sin(pitch)) + tdy
 
-    cv2.line(img, (int(tdx), int(tdy)), (int(x3),int(y3)),(0,0,255),3)
+    cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x1),int(y1)),(0,0,255),3)
+    cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x2),int(y2)),(0,255,0),3)
+    cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x3),int(y3)),(255,0,0),3)
+
+    return img
+
+def draw_gaze_from_vector(img, face_origin_2d, gaze_direction_3d, scale=100, color=(0, 0, 255)):
+    """
+    Draws a 2D gaze direction based on a 3D unit gaze vector projected onto a 2D plane.
+    
+    Arguments:
+    img -- the image where the gaze will be drawn
+    face_origin_2d -- the 2D position of the face origin (where the gaze starts)
+    gaze_direction_3d -- the 3D gaze direction vector
+    scale -- the scaling factor for the length of the arrow
+    color -- the color of the gaze direction line
+    """
+    # Normalize the 3D gaze direction vector
+    gaze_direction_3d = gaze_direction_3d / np.linalg.norm(gaze_direction_3d)
+
+    # Project the 3D gaze vector onto the 2D plane (ignore Z-axis)
+    gaze_target_2d = face_origin_2d + scale * np.array([gaze_direction_3d[0], gaze_direction_3d[1]])
+
+    # Draw the gaze direction as an arrowed line
+    cv2.arrowedLine(img, 
+                    (int(face_origin_2d[0]), int(face_origin_2d[1])), 
+                    (int(gaze_target_2d[0]), int(gaze_target_2d[1])), 
+                    color, 3, tipLength=0.3)
+
+    return img
+
+def draw_axis_from_rotation_matrix(img, R, tdx=None, tdy=None, size=100):
+    """
+    Draws the transformed 3D axes using the provided rotation matrix `R`.
+    """
+    # Define the 3D axes (X, Y, Z)
+    x_axis = np.array([1, 0, 0])  # X-axis (Red)
+    y_axis = np.array([0, 1, 0])  # Y-axis (Green)
+    z_axis = np.array([0, 0, 1])  # Z-axis (Blue)
+    
+    # Apply the rotation matrix to the axes
+    x_rot = np.dot(R, x_axis)
+    y_rot = np.dot(R, y_axis)
+    z_rot = np.dot(R, z_axis)
+    
+    if tdx is None or tdy is None:
+        height, width = img.shape[:2]
+        tdx = width // 2
+        tdy = height // 2
+
+    # Project the transformed axes onto the image (2D)
+    x1 = size * x_rot[0] + tdx
+    y1 = size * x_rot[1] + tdy
+    x2 = size * y_rot[0] + tdx
+    y2 = size * y_rot[1] + tdy
+    x3 = size * z_rot[0] + tdx
+    y3 = size * z_rot[1] + tdy
+
+    # Draw the axes
+    cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x1), int(y1)), (0, 0, 255), 3)  # X-axis (Red)
+    cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x2), int(y2)), (0, 255, 0), 3)  # Y-axis (Green)
+    cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x3), int(y3)), (255, 0, 0), 3)  # Z-axis (Blue)
 
     return img
 

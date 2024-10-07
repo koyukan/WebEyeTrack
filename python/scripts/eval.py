@@ -16,6 +16,7 @@ from webeyetrack.constants import GIT_ROOT
 from webeyetrack.datasets import MPIIFaceGazeDataset
 from webeyetrack.pipelines import FLGE
 import webeyetrack.vis as vis
+import webeyetrack.core as core
 
 CWD = pathlib.Path(__file__).parent
 FILE_DIR = pathlib.Path(__file__).parent
@@ -37,7 +38,15 @@ def visualize_gaze_vectors(sample, output):
     
     # Draw the gaze vectors
     img = cv2.cvtColor(np.moveaxis(sample['image'], 0, -1) * 255, cv2.COLOR_RGB2BGR)
-    gt_gaze = vis.draw_gaze_direction(img, sample['face_origin_2d'], sample['gaze_target_2d'], color=(0, 0, 255))
+
+    gt_gaze = vis.draw_gaze_direction(
+        img, 
+        sample['face_origin_2d'], 
+        sample['gaze_target_2d'], 
+        color=(0, 0, 255)
+    )
+
+    # gt_gaze = vis.draw_gaze_direction(img, sample['face_origin_2d'], sample['gaze_target_2d'], color=(0, 0, 255))
     gaze_target_3d_semi = sample['face_origin_3d'] + output['face_gaze_vector'] * 100
     gaze_target_2d, _ = cv2.projectPoints(
         gaze_target_3d_semi, 
@@ -54,8 +63,6 @@ def visualize_gaze_vectors(sample, output):
     )
 
     return gt_pred_gaze
-    # plt.imshow(gt_pred_gaze)
-    # plt.show()
 
 def visualize_gaze_2d_origin(img, point_a, point_b):
     img = cv2.cvtColor(np.moveaxis(img, 0, -1) * 255, cv2.COLOR_RGB2BGR)
@@ -105,22 +112,21 @@ def eval():
         #     continue
 
         output = {
-            'depth': gaze_result.face_origin[2],
-            'gaze_origin': gaze_result.face_origin,
-            'gaze_origin_2d': gaze_result.face_origin_2d,
+            'face_origin': gaze_result.face_origin,
+            'face_origin_2d': gaze_result.face_origin_2d,
+            'face_origin-x': gaze_result.face_origin[1],
+            'face_origin-y': gaze_result.face_origin[0],
+            'face_origin-z': gaze_result.face_origin[2],
             'face_gaze_vector': gaze_result.face_gaze,
-            'gaze_origin-x': gaze_result.face_origin[1],
-            'gaze_origin-y': gaze_result.face_origin[0],
-            'gaze_origin-z': gaze_result.face_origin[2],
         }
 
         # Compute the error
         actual = {
-            'depth': sample['face_origin_3d'][2],
-            'gaze_origin': sample['face_origin_3d'],
-            'gaze_origin-x': sample['face_origin_3d'][1],
-            'gaze_origin-y': sample['face_origin_3d'][0],
-            'gaze_origin-z': sample['face_origin_3d'][2],
+            'face_origin': sample['face_origin_3d'],
+            'face_origin_2d': sample['face_origin_2d'],
+            'face_origin-x': sample['face_origin_3d'][1],
+            'face_origin-y': sample['face_origin_3d'][0],
+            'face_origin-z': sample['face_origin_3d'][2],
             'face_gaze_vector': sample['gaze_direction_3d'],
             'pog_px': sample['pog_px'],
             'pog_mm': sample['pog_mm']
