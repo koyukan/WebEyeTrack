@@ -61,3 +61,4 @@ class FLGEResult:
     right: EyeResult
     pog_px: np.ndarray
     pog_mm: np.ndarray
+    duration: float # seconds

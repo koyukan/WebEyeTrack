@@ -1,3 +1,4 @@
+import time
 from typing import Dict, Any, Literal, Optional
 from dataclasses import dataclass
 
@@ -380,7 +381,11 @@ class FLGE():
             screen_height_mm=None,
             screen_width_px=None,
             screen_height_px=None,
+            tic=None
         ):
+
+        if not tic:
+            tic = time.perf_counter()
         
         # Estimate the 2D and 3D position of the eye-center and the face-center
         gaze_origins = self.estimate_2d_3d_eye_face_origins(
@@ -428,6 +433,8 @@ class FLGE():
                 screen_height_px,
             )
 
+        toc = time.perf_counter()
+
         # Return the result
         return FLGEResult(
             facial_landmarks=facial_landmarks,
@@ -453,7 +460,8 @@ class FLGE():
                 pog_mm=pog['eye']['right_pog_mm']
             ),
             pog_px=pog['face_pog_px'],
-            pog_mm=pog['face_pog_mm']
+            pog_mm=pog['face_pog_mm'],
+            duration=toc - tic
         )
     
     def process_sample(self, sample: Dict[str, Any]) -> FLGEResult:
@@ -480,6 +488,9 @@ class FLGE():
  
     def process_frame(self, frame: np.ndarray, intrinsics: np.ndarray) -> Optional[FLGEResult]:
 
+        # Start a timer
+        tic = time.perf_counter()
+
         # Detect the landmarks
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame.astype(np.uint8))
         detection_results = self.face_landmarker.detect(mp_image)
@@ -501,7 +512,8 @@ class FLGE():
             detection_results.face_blendshapes[0],
             frame.shape[0],
             frame.shape[1],
-            intrinsics
+            intrinsics,
+            tic=tic
         )
     
     def render(self, output: Dict[str, Any], frame: np.ndarray):

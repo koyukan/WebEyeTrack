@@ -5,6 +5,7 @@ from matplotlib.colors import Normalize
 import math
 
 from .data_protocols import FLGEResult, EyeResult
+from .core import vector_to_pitch_yaw
 
 LEFT_EYE_LANDMARKS = [263, 362, 386, 374, 380]
 RIGHT_EYE_LANDMARKS = [33, 133, 159, 145, 153]
@@ -141,22 +142,30 @@ def landmark_gaze_render(frame: np.ndarray, result: FLGEResult):
         # Compute the line between the iris center and the centroid
         new_shifted_iris_px_center = shifted_iris_px[0] * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
         cv2.line(eye_image, (int(new_width/2), int(new_height/2)), tuple(new_shifted_iris_px_center.astype(int)), (0, 255, 0), 2)
-        
+  
         if is_closed:
             cv2.putText(eye_image, 'Closed', (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
             continue
 
         # Draw the gaze direction on the original frame
-        gaze_target_3d_semi = eye_result.origin + eye_result.direction * 100
-        gaze_target_2d, _ = cv2.projectPoints(
-            gaze_target_3d_semi, 
-            np.array([0, 0, 0], dtype=np.float32),
-            np.array([0, 0, 0], dtype=np.float32),
-            intrinsics,
-            np.zeros((5,1), dtype=np.float32)
-        )
-        # cv2.arrowedLine(frame, tuple(eye[0].astype(int)), tuple(gaze_target_2d.flatten().astype(int)), (0, 0, 255), 2)
-        cv2.circle(frame, tuple(centroid.astype(int)), 3, (0, 0, 255), -1)
+        # gaze_target_3d_semi = eye_result.origin + np.array([1,0,0])
+        # gaze_target_2d, _ = cv2.projectPoints(
+        #     gaze_target_3d_semi, 
+        #     np.array([0, 0, 0], dtype=np.float32),
+        #     np.array([0, 0, 0], dtype=np.float32),
+        #     intrinsics,
+        #     np.zeros((5,1), dtype=np.float32)
+        # )
+        # cv2.arrowedLine(frame, tuple(centroid.astype(int)), tuple(gaze_target_2d.flatten().astype(int)), (0, 0, 255), 2)
+        # cv2.circle(frame, tuple(centroid.astype(int)), 3, (0, 0, 255), -1)
+
+        # Convert 3D to pitch and yaw
+        pitch, yaw = vector_to_pitch_yaw(eye_result.direction)
+        frame = draw_axis(frame, pitch, yaw, 0, int(centroid[0]), int(centroid[1]), 100)
+
+    # Draw the FPS on the topright
+    fps = 1/result.duration
+    cv2.putText(frame, f'FPS: {fps:.2f}', (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
 
     # Concatenate the images
     right_eye_image = eye_images['right']
@@ -169,7 +178,7 @@ def landmark_gaze_render(frame: np.ndarray, result: FLGEResult):
     # Concatenate the combined eyes image vertically with the frame
     return cv2.vconcat([frame, eyes_combined_resized])
 
-def draw_axis(img, yaw, pitch, roll=0, tdx=None, tdy=None, size = 100):
+def draw_axis(img, pitch, yaw, roll=0, tdx=None, tdy=None, size = 100):
 
     pitch = -(pitch * np.pi / 180)
     yaw = (yaw * np.pi / 180)
@@ -184,21 +193,21 @@ def draw_axis(img, yaw, pitch, roll=0, tdx=None, tdy=None, size = 100):
         tdy = height / 2
 
     # X-Axis pointing to right. drawn in red
-    x1 = size * (math.cos(yaw) * math.cos(roll)) + tdx
-    y1 = size * (math.cos(pitch) * math.sin(roll) + math.cos(roll) * math.sin(pitch) * math.sin(yaw)) + tdy
+    # x1 = size * (math.cos(yaw) * math.cos(roll)) + tdx
+    # y1 = size * (math.cos(pitch) * math.sin(roll) + math.cos(roll) * math.sin(pitch) * math.sin(yaw)) + tdy
 
     # Y-Axis | drawn in green
     #        v
-    x2 = size * (-math.cos(yaw) * math.sin(roll)) + tdx
-    y2 = size * (math.cos(pitch) * math.cos(roll) - math.sin(pitch) * math.sin(yaw) * math.sin(roll)) + tdy
+    # x2 = size * (-math.cos(yaw) * math.sin(roll)) + tdx
+    # y2 = size * (math.cos(pitch) * math.cos(roll) - math.sin(pitch) * math.sin(yaw) * math.sin(roll)) + tdy
 
     # Z-Axis (out of the screen) drawn in blue
     x3 = size * (math.sin(yaw)) + tdx
     y3 = size * (-math.cos(yaw) * math.sin(pitch)) + tdy
 
-    cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x1),int(y1)),(0,0,255),3)
-    cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x2),int(y2)),(0,255,0),3)
-    cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x3),int(y3)),(255,0,0),3)
+    # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x1),int(y1)),(255,0,0),3)
+    # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x2),int(y2)),(0,255,0),3)
+    cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x3),int(y3)),(0,0,255),3)
 
     return img
 
