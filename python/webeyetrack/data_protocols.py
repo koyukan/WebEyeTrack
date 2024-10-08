@@ -38,3 +38,26 @@ class Sample:
     participant_id: str
     image_fp: pathlib.Path
     annotations: Annotations
+
+
+@dataclass
+class EyeResult:
+    is_closed: bool
+    origin: np.ndarray # X, Y, Z
+    origin_2d: np.ndarray # u, v
+    direction: np.ndarray # X, Y, Z
+    pog_px: np.ndarray
+    pog_mm: np.ndarray
+
+@dataclass
+class FLGEResult:
+    facial_landmarks: np.ndarray
+    face_rt: np.ndarray
+    face_blendshapes: np.ndarray
+    face_origin: np.ndarray # X, Y, Z
+    face_origin_2d: np.ndarray # X, Y
+    face_gaze: np.ndarray # X, Y, Z
+    left: EyeResult
+    right: EyeResult
+    pog_px: np.ndarray
+    pog_mm: np.ndarray

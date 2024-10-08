@@ -10,6 +10,7 @@ from mediapipe.tasks.python import vision
 from webeyetrack.datasets.utils import screen_plane_intersection
 from ..vis import draw_axis
 from ..core import pitch_yaw_to_gaze_vector
+from ..data_protocols import FLGEResult, EyeResult
 
 LEFT_EYE_LANDMARKS = [263, 362, 386, 374, 380]
 RIGHT_EYE_LANDMARKS = [33, 133, 159, 145, 153]
@@ -46,24 +47,6 @@ def compute_2d_origin(points):
     center = np.array([cx, cy], dtype=np.int32)
     return center
 
-@dataclass
-class EyeResult:
-    is_closed: bool
-    origin: np.ndarray # X, Y, Z
-    direction: np.ndarray # Pitch, Yaw
-    pog_px: np.ndarray
-    pog_mm: np.ndarray
-
-@dataclass
-class FLGEResult:
-    face_origin: np.ndarray # X, Y, Z
-    face_origin_2d: np.ndarray # X, Y
-    face_gaze: np.ndarray # Pitch, Yaw
-    left: EyeResult
-    right: EyeResult
-    pog_px: np.ndarray
-    pog_mm: np.ndarray
-
 # Facial Landmark Gaze Estimation
 class FLGE():
 
@@ -71,7 +54,7 @@ class FLGE():
 
         # Saving options
         self.gaze_direction_estimation = gaze_direction_estimation
-        
+
         # Setup MediaPipe Face Facial Landmark model
         base_options = python.BaseOptions(model_asset_path=model_asset_path)
         options = vision.FaceLandmarkerOptions(base_options=base_options,
@@ -131,14 +114,10 @@ class FLGE():
         left_2d_eye_px = facial_landmarks[LEFT_EYEAREA_LANDMARKS, :2] * np.array([width, height])
         left_2d_eyelid_px = facial_landmarks[LEFT_EYELID_LANDMARKS, :2] * np.array([width, height])
         left_2d_iris_px = facial_landmarks[LEFT_IRIS_LANDMARKS, :2] * np.array([width, height])
-        left_2d_eyearea_total_px = facial_landmarks[LEFT_EYEAREA_TOTAL_LANDMARKS, :2] * np.array([width, height])
-        left_2d_eyelid_total_px = facial_landmarks[LEFT_EYELID_TOTAL_LANDMARKS, :2] * np.array([width, height])
         
         right_2d_eye_px = facial_landmarks[RIGHT_EYEAREA_LANDMARKS, :2] * np.array([width, height])
         right_2d_eyelid_px = facial_landmarks[RIGHT_EYELID_LANDMARKS, :2] * np.array([width, height])
         right_2d_iris_px = facial_landmarks[RIGHT_IRIS_LANDMARKS, :2] * np.array([width, height])
-        right_2d_eyearea_total_px = facial_landmarks[RIGHT_EYEAREA_TOTAL_LANDMARKS, :2] * np.array([width, height])
-        right_2d_eyelid_total_px = facial_landmarks[RIGHT_EYELID_TOTAL_LANDMARKS, :2] * np.array([width, height])
 
         # 3D
         left_eye_fl = facial_landmarks[LEFT_EYELID_LANDMARKS, :3]
@@ -147,21 +126,17 @@ class FLGE():
         left_landmarks = [
             left_2d_eye_px, 
             left_2d_eyelid_px,
-            left_2d_eyearea_total_px,
-            left_2d_eyelid_total_px
         ]
         right_landmarks = [
             right_2d_eye_px, 
             right_2d_eyelid_px,
-            right_2d_eyearea_total_px,
-            right_2d_eyelid_total_px
         ]
 
         eye_closed = {}
         eye_images = {}
         gaze_vectors = {}
         gaze_origins = {}
-        for i, (eye, eyelid, eyearea, eyelid_total) in {'left': left_landmarks, 'right': right_landmarks}.items():
+        for i, (eye, eyelid) in {'left': left_landmarks, 'right': right_landmarks}.items():
             centroid = np.mean(eye, axis=0)
             width = np.abs(eye[0,0] - eye[1, 0]) * (1 + EYE_PADDING_WIDTH)
             height = width * EYE_HEIGHT_RATIO
@@ -221,18 +196,26 @@ class FLGE():
             gaze_origins[i] = gaze_origin
 
         # Compute the average gaze vector
-        face_gaze_vector = (gaze_vectors['left'] + gaze_vectors['right'])
-        face_gaze_vector /= np.linalg.norm(face_gaze_vector)
+        if 'left' in gaze_vectors and 'right' in gaze_vectors:
+            face_gaze_vector = (gaze_vectors['left'] + gaze_vectors['right'])
+            face_gaze_vector /= np.linalg.norm(face_gaze_vector)
+        elif 'left' in gaze_vectors:
+            face_gaze_vector = gaze_vectors['left']
+            gaze_vectors['right'] = np.array([0,0,1])
+        elif 'right' in gaze_vectors:
+            face_gaze_vector = gaze_vectors['right']
+            gaze_vectors['left'] = np.array([0,0,1])
+        else:
+            face_gaze_vector = np.array([0,0,1])
+            gaze_vectors['left'] = np.array([0,0,1])
+            gaze_vectors['right'] = np.array([0,0,1])
 
-        # return {
-        #     'eye_closed': eye_closed,
-        #     'eye_images': eye_images,
-        #     'gaze_vectors': gaze_vectors,
-        #     'gaze_origins': gaze_origins
-        # }
         return {
             'face': face_gaze_vector,
-            'eyes': gaze_vectors
+            'eyes': {
+                'is_closed': eye_closed,
+                'vector': gaze_vectors
+            }
         }
 
     def estimate_gaze_vector_based_on_eye_blendshapes(self, face_blendshapes, face_rt):
@@ -281,7 +264,10 @@ class FLGE():
 
         return {
             'face': face_gaze_vector,
-            'eyes': gaze_vectors
+            'eyes': {
+                'is_closed': {'left': False, 'right': False},
+                'vector': gaze_vectors,
+            }            
         }
 
     def estimate_2d_3d_eye_face_origins(self, facial_landmarks, face_rt, height, width, intrinsics):
@@ -444,20 +430,25 @@ class FLGE():
 
         # Return the result
         return FLGEResult(
+            facial_landmarks=facial_landmarks,
+            face_rt=face_rt,
+            face_blendshapes=face_blendshapes,
             face_origin=gaze_origins['face_origin_3d'],
             face_origin_2d=gaze_origins['face_origin_2d'],
             face_gaze=gaze_vectors['face'],
             left=EyeResult(
-                is_closed=False,
-                origin=gaze_origins['eye_origins_2d']['left'],
-                direction=gaze_vectors['eyes']['left'],
+                is_closed=gaze_vectors['eyes']['is_closed']['left'],
+                origin=gaze_origins['eye_origins_3d']['left'],
+                origin_2d=gaze_origins['eye_origins_2d']['left'],
+                direction=gaze_vectors['eyes']['vector']['left'],
                 pog_px=pog['eye']['left_pog_px'],
                 pog_mm=pog['eye']['left_pog_mm']
             ),
             right=EyeResult(
-                is_closed=False,
-                origin=gaze_origins['eye_origins_2d']['right'],
-                direction=gaze_vectors['eyes']['right'],
+                is_closed=gaze_vectors['eyes']['is_closed']['right'],
+                origin=gaze_origins['eye_origins_3d']['right'],
+                origin_2d=gaze_origins['eye_origins_2d']['right'],
+                direction=gaze_vectors['eyes']['vector']['right'],
                 pog_px=pog['eye']['right_pog_px'],
                 pog_mm=pog['eye']['right_pog_mm']
             ),
@@ -504,7 +495,7 @@ class FLGE():
         face_rt = detection_results.facial_transformation_matrixes[0]
 
         # Perform step
-        flge_result = self.step(
+        return self.step(
             face_landmarks,
             face_rt,
             detection_results.face_blendshapes[0],
@@ -512,8 +503,6 @@ class FLGE():
             frame.shape[1],
             intrinsics
         )
-
-        return flge_result
     
     def render(self, output: Dict[str, Any], frame: np.ndarray):
         h, w = frame.shape[:2]

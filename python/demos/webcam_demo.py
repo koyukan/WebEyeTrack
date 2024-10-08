@@ -13,7 +13,7 @@ from webeyetrack.datasets.utils import draw_landmarks_on_image
 from webeyetrack import vis
 from webeyetrack.pipelines.flge import FLGE
 
-# CWD = pathlib.Path(__file__).parent
+EYE_TRACKING_APPROACH = "landmark"
 
 if __name__ == '__main__':
     
@@ -21,7 +21,7 @@ if __name__ == '__main__':
     cap = cv2.VideoCapture(0)
 
     # Pipeline
-    pipeline = FLGE(str(GIT_ROOT / 'python'/ 'weights' / 'face_landmarker_v2_with_blendshapes.task'))
+    pipeline = FLGE(str(GIT_ROOT / 'python'/ 'weights' / 'face_landmarker_v2_with_blendshapes.task'), EYE_TRACKING_APPROACH)
 
     # Load the frames and draw the landmarks
     while True:
@@ -36,9 +36,10 @@ if __name__ == '__main__':
         result = pipeline.process_frame(frame, intrinsics)
 
         if result:
-            print(result)
-            # if 'gaze_visualization' in output:
-            #     cv2.imshow('gaze visualization', output['gaze_visualization'])
+            if EYE_TRACKING_APPROACH == "landmark":
+                img = vis.landmark_gaze_render(frame, result)
+                if type(img) == np.ndarray:
+                    cv2.imshow('frame', img)
 
         # cv2.imshow('frame', frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
