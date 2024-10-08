@@ -1,5 +1,28 @@
 import numpy as np
 
+def pitch_yaw_to_gaze_vector(pitch, yaw):
+    """
+    Converts pitch and yaw angles into a 3D gaze direction vector (unit vector).
+
+    Arguments:
+    pitch -- pitch angle in degrees
+    yaw -- yaw angle in degrees
+
+    Returns:
+    A 3D unit gaze direction vector as a numpy array [x, y, z].
+    """
+    # Convert degrees to radians
+    pitch_rad = np.radians(pitch)
+    yaw_rad = np.radians(yaw)
+
+    # Calculate the 3D gaze vector using spherical-to-Cartesian transformation
+    x = np.cos(pitch_rad) * np.cos(yaw_rad)
+    y = np.cos(pitch_rad) * np.sin(yaw_rad)
+    z = np.sin(pitch_rad)
+
+    # Return the 3D gaze vector
+    return np.array([x, y, z])
+
 def vector_to_pitch_yaw(vector):
     # Ensure the input vector is normalized (unit vector)
     vector = vector / np.linalg.norm(vector)

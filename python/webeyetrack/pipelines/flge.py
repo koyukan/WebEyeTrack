@@ -1,6 +1,5 @@
-from typing import Dict, Any, Literal
+from typing import Dict, Any, Literal, Optional
 from dataclasses import dataclass
-
 
 import numpy as np
 import cv2
@@ -10,6 +9,7 @@ from mediapipe.tasks.python import vision
 
 from webeyetrack.datasets.utils import screen_plane_intersection
 from ..vis import draw_axis
+from ..core import pitch_yaw_to_gaze_vector
 
 LEFT_EYE_LANDMARKS = [263, 362, 386, 374, 380]
 RIGHT_EYE_LANDMARKS = [33, 133, 159, 145, 153]
@@ -67,7 +67,7 @@ class FLGEResult:
 # Facial Landmark Gaze Estimation
 class FLGE():
 
-    def __init__(self, model_asset_path: str, gaze_direction_estimation: Literal['landmark', 'blendshape'] = 'blendshape'):
+    def __init__(self, model_asset_path: str, gaze_direction_estimation: Literal['landmark', 'blendshape'] = 'landmark'):
 
         # Saving options
         self.gaze_direction_estimation = gaze_direction_estimation
@@ -178,52 +178,14 @@ class FLGE():
             if width == 0 or height == 0:
                 continue
 
-            # Crop the eye
-            eye_image = frame[
-                int(centroid[1] - height/2):int(centroid[1] + height/2),
-                int(centroid[0] - width/2):int(centroid[0] + width/2)
-            ]
-
-            if eye_image.shape[0] == 0 or eye_image.shape[1] == 0:
-                continue
-
             # Resize the eye
-            # eye_image = imutils.resize(eye_image, width=400)
-            original_height, original_width = eye_image.shape[:2]
-            new_width, new_height = 400, int(400*EYE_HEIGHT_RATIO)
-            eye_image = cv2.resize(eye_image, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
-            eye_images[i] = eye_image
-
-            # Draw the outline of the eyearea
-            if render:
-                shifted_eyearea_px = eyearea - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
-                prior_px = None
-                for px in shifted_eyearea_px:
-                    resized_px = px * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
-                    if prior_px is not None:
-                        cv2.line(eye_image, tuple(prior_px.astype(int)), tuple(resized_px.astype(int)), (0, 255, 0), 1)
-                    prior_px = resized_px
-                # Draw the last line to close the loop
-                resized_first_px = shifted_eyearea_px[0] * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
-                cv2.line(eye_image, tuple(prior_px.astype(int)), tuple(resized_first_px.astype(int)), (0, 255, 0), 1)
-
-                # Draw the outline of the eyelid
-                shifted_eyelid_px = eyelid_total - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
-                prior_px = None
-                for px in shifted_eyelid_px:
-                    resized_px = px * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
-                    if prior_px is not None:
-                        cv2.line(eye_image, tuple(prior_px.astype(int)), tuple(resized_px.astype(int)), (255, 0, 0), 1)
-                    prior_px = resized_px
-                # Draw the last line to close the loop
-                resized_first_px = shifted_eyelid_px[0] * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
-                cv2.line(eye_image, tuple(prior_px.astype(int)), tuple(resized_first_px.astype(int)), (255, 0, 0), 1)
+            # new_width, new_height = 400, int(400*EYE_HEIGHT_RATIO)
+            # eye_image = cv2.resize(eye_image, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
+            # eye_images[i] = eye_image
 
             # Draw if the eye is closed on the top left corner
             eye_closed[i] = is_closed
             if is_closed:
-                if render:
-                    cv2.putText(eye_image, 'Closed', (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
                 continue
 
             # Shift the IRIS landmarks to the cropped eye
@@ -249,32 +211,28 @@ class FLGE():
             # Compute pitch (vertical rotation)
             pitch = np.arctan2(gaze_vector_2d[1] * 0.1, z_depth) * (180 / np.pi)  # Convert from radians to degrees
 
-            # Store pitch and yaw
-            gaze_vectors[i] = np.array([pitch, yaw])
+            # Convert the pitch and yaw to a 3D vector
+            gaze_vector = pitch_yaw_to_gaze_vector(pitch, yaw)
+            gaze_vectors[i] = gaze_vector
 
             # Compute 3D gaze origin
             eye_fl = left_eye_fl if i == 'left' else right_eye_fl
             gaze_origin = np.mean(eye_fl, axis=0)
             gaze_origins[i] = gaze_origin
 
-            # Draw the center dot
-            if render:
-                for iris_px in shifted_iris_px:
-                    resized_iris_px = iris_px * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
-                    cv2.circle(eye_image, tuple(resized_iris_px.astype(int)), 3, (0, 0, 255), -1)
+        # Compute the average gaze vector
+        face_gaze_vector = (gaze_vectors['left'] + gaze_vectors['right'])
+        face_gaze_vector /= np.linalg.norm(face_gaze_vector)
 
-                # Draw the centroid of the eyeball
-                cv2.circle(eye_image, (int(new_width/2), int(new_height/2)), 3, (255, 0, 0), -1)
-
-                # Compute the line between the iris center and the centroid
-                new_shifted_iris_px_center = shifted_iris_px[0] * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
-                cv2.line(eye_image, (int(new_width/2), int(new_height/2)), tuple(new_shifted_iris_px_center.astype(int)), (0, 255, 0), 2)
-
+        # return {
+        #     'eye_closed': eye_closed,
+        #     'eye_images': eye_images,
+        #     'gaze_vectors': gaze_vectors,
+        #     'gaze_origins': gaze_origins
+        # }
         return {
-            'eye_closed': eye_closed,
-            'eye_images': eye_images,
-            'gaze_vectors': gaze_vectors,
-            'gaze_origins': gaze_origins
+            'face': face_gaze_vector,
+            'eyes': gaze_vectors
         }
 
     def estimate_gaze_vector_based_on_eye_blendshapes(self, face_blendshapes, face_rt):
@@ -422,46 +380,67 @@ class FLGE():
             }
         }
 
-    def process_sample(self, sample: Dict[str, Any]) -> FLGEResult:
-
-        # Get the depth and scale
-        facial_landmarks = sample['facial_landmarks']
-        original_img_size = sample['original_img_size']
-        face_rt = sample['facial_rt']
-
+    def step(
+            self, 
+            facial_landmarks, 
+            face_rt, 
+            face_blendshapes, 
+            height, 
+            width, 
+            intrinsics,
+            screen_R=None,
+            screen_t=None,
+            screen_width_mm=None,
+            screen_height_mm=None,
+            screen_width_px=None,
+            screen_height_px=None,
+        ):
+        
         # Estimate the 2D and 3D position of the eye-center and the face-center
         gaze_origins = self.estimate_2d_3d_eye_face_origins(
             facial_landmarks,
             face_rt,
-            original_img_size[0],
-            original_img_size[1],
-            sample['intrinsics']
+            width,
+            height,
+            intrinsics
         )
 
         # Compute the gaze vectors
         if self.gaze_direction_estimation == 'landmark':
             gaze_vectors = self.estimate_gaze_vector_based_on_eye_landmarks(
                 facial_landmarks,
-                original_img_size[0],
-                original_img_size[1]
+                width,
+                height
             )
         elif self.gaze_direction_estimation == 'blendshape':
             gaze_vectors = self.estimate_gaze_vector_based_on_eye_blendshapes(
-                sample['face_blendshapes'],
+                face_blendshapes,
                 face_rt
             )
 
         # Compute the PoG
-        pog = self.compute_pog(
-            gaze_origins,
-            gaze_vectors,
-            sample['screen_R'],
-            sample['screen_t'],
-            sample['screen_width_mm'],
-            sample['screen_height_mm'],
-            sample['screen_width_px'],
-            sample['screen_height_px']
-        )
+        if screen_R is None or screen_t is None or screen_width_mm is None or screen_height_mm is None or screen_width_px is None or screen_height_px is None:
+            pog = {
+                'face_pog_mm': np.array([0,0]),
+                'face_pog_px': np.array([0,0]),
+                'eye': {
+                    'left_pog_mm': np.array([0,0]),
+                    'left_pog_px': np.array([0,0]),
+                    'right_pog_mm': np.array([0,0]),
+                    'right_pog_px': np.array([0,0])
+                }
+            }
+        else:
+            pog = self.compute_pog(
+                gaze_origins,
+                gaze_vectors,
+                screen_R,
+                screen_t,
+                screen_width_mm,
+                screen_height_mm,
+                screen_width_px,
+                screen_height_px,
+            )
 
         # Return the result
         return FLGEResult(
@@ -486,11 +465,30 @@ class FLGE():
             pog_mm=pog['face_pog_mm']
         )
     
-    def process_frame(self, frame: np.ndarray, render: bool = False) -> Dict[str, Any]:
+    def process_sample(self, sample: Dict[str, Any]) -> FLGEResult:
 
-        # Return container
-        output = {}
-        
+        # Get the depth and scale
+        facial_landmarks = sample['facial_landmarks']
+        original_img_size = sample['original_img_size']
+        face_rt = sample['facial_rt']
+
+        return self.step(
+            facial_landmarks,
+            face_rt,
+            sample['face_blendshapes'],
+            original_img_size[0],
+            original_img_size[1],
+            sample['intrinsics'],
+            sample['screen_R'],
+            sample['screen_t'],
+            sample['screen_width_mm'],
+            sample['screen_height_mm'],
+            sample['screen_width_px'],
+            sample['screen_height_px']
+        )
+ 
+    def process_frame(self, frame: np.ndarray, intrinsics: np.ndarray) -> Optional[FLGEResult]:
+
         # Detect the landmarks
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame.astype(np.uint8))
         detection_results = self.face_landmarker.detect(mp_image)
@@ -499,17 +497,23 @@ class FLGE():
         try:
             face_landmarks_proto = detection_results.face_landmarks[0]
         except:
-            return output
+            return None
         
-        # Estimate the gaze
-        gaze_estimation = self.estimate_gaze_vector(face_landmarks_proto, frame, render=render)
-        output.update(gaze_estimation)
+        # Extract information fro the results
+        face_landmarks = np.array([[lm.x, lm.y, lm.z, lm.visibility, lm.presence] for lm in face_landmarks_proto])
+        face_rt = detection_results.facial_transformation_matrixes[0]
 
-        # If render is True, render the gaze visualization
-        if render:
-            self.render(output, frame)
+        # Perform step
+        flge_result = self.step(
+            face_landmarks,
+            face_rt,
+            detection_results.face_blendshapes[0],
+            frame.shape[0],
+            frame.shape[1],
+            intrinsics
+        )
 
-        return output
+        return flge_result
     
     def render(self, output: Dict[str, Any], frame: np.ndarray):
         h, w = frame.shape[:2]

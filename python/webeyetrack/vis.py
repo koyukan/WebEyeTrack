@@ -4,6 +4,45 @@ from matplotlib import pyplot as plt
 from matplotlib.colors import Normalize
 import math
 
+def landmark_gaze_render():
+
+    # Draw the outline of the eyearea
+    shifted_eyearea_px = eyearea - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
+    prior_px = None
+    for px in shifted_eyearea_px:
+        resized_px = px * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+        if prior_px is not None:
+            cv2.line(eye_image, tuple(prior_px.astype(int)), tuple(resized_px.astype(int)), (0, 255, 0), 1)
+        prior_px = resized_px
+    # Draw the last line to close the loop
+    resized_first_px = shifted_eyearea_px[0] * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+    cv2.line(eye_image, tuple(prior_px.astype(int)), tuple(resized_first_px.astype(int)), (0, 255, 0), 1)
+
+    # Draw the outline of the eyelid
+    shifted_eyelid_px = eyelid_total - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
+    prior_px = None
+    for px in shifted_eyelid_px:
+        resized_px = px * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+        if prior_px is not None:
+            cv2.line(eye_image, tuple(prior_px.astype(int)), tuple(resized_px.astype(int)), (255, 0, 0), 1)
+        prior_px = resized_px
+    # Draw the last line to close the loop
+    resized_first_px = shifted_eyelid_px[0] * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+    cv2.line(eye_image, tuple(prior_px.astype(int)), tuple(resized_first_px.astype(int)), (255, 0, 0), 1)
+
+    cv2.putText(eye_image, 'Closed', (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+
+    for iris_px in shifted_iris_px:
+        resized_iris_px = iris_px * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+        cv2.circle(eye_image, tuple(resized_iris_px.astype(int)), 3, (0, 0, 255), -1)
+
+    # Draw the centroid of the eyeball
+    cv2.circle(eye_image, (int(new_width/2), int(new_height/2)), 3, (255, 0, 0), -1)
+
+    # Compute the line between the iris center and the centroid
+    new_shifted_iris_px_center = shifted_iris_px[0] * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+    cv2.line(eye_image, (int(new_width/2), int(new_height/2)), tuple(new_shifted_iris_px_center.astype(int)), (0, 255, 0), 2)
+
 def draw_axis(img, yaw, pitch, roll=0, tdx=None, tdy=None, size = 100):
 
     pitch = -(pitch * np.pi / 180)

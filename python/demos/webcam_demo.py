@@ -29,11 +29,16 @@ if __name__ == '__main__':
         if not ret:
             break
 
-        output = pipeline.process_frame(frame, render=True)
+        # Define intrinsics based on the frame
+        width, height = frame.shape[:2]
+        intrinsics = np.array([[width, 0, width // 2], [0, height, height // 2], [0, 0, 1]])
 
-        if output is not None:
-            if 'gaze_visualization' in output:
-                cv2.imshow('gaze visualization', output['gaze_visualization'])
+        result = pipeline.process_frame(frame, intrinsics)
+
+        if result:
+            print(result)
+            # if 'gaze_visualization' in output:
+            #     cv2.imshow('gaze visualization', output['gaze_visualization'])
 
         # cv2.imshow('frame', frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
