@@ -99,10 +99,10 @@ def eval():
     dataset = MPIIFaceGazeDataset(
         GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
         # participants=config['datasets']['MPIIFaceGaze']['val_subjects'],
-        participants=[8],
+        participants=[1,2],
         # img_size=[244,244],
         # face_size=[244,244],
-        dataset_size=20
+        dataset_size=100
     )
 
     metric_functions = {

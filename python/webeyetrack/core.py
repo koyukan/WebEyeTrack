@@ -1,18 +1,20 @@
 import numpy as np
 
-def rotation_matrix_to_pitch_yaw_no_roll(R):
+def rotation_matrix_to_euler_angles(R):
     # Ensure the matrix is 3x3
     assert R.shape == (3, 3)
     
-    # Extract pitch (rotation around X) and yaw (rotation around Y) while keeping roll = 0
+    # Extract pitch, yaw, roll from the rotation matrix
     pitch = np.arcsin(-R[2, 0])  # Pitch around X-axis
-    yaw = np.arctan2(R[1, 0], R[0, 0])  # Yaw around Y-axis
+    yaw = np.arctan2(R[2, 1], R[2, 2])  # Yaw around Y-axis
+    roll = np.arctan2(R[1, 0], R[0, 0])  # Roll around Z-axis (optional)
 
     # Convert radians to degrees if necessary
     pitch = np.degrees(pitch)
     yaw = np.degrees(yaw)
+    roll = np.degrees(roll)
 
-    return pitch, yaw
+    return pitch, yaw, roll
 
 def pitch_yaw_to_gaze_vector(pitch, yaw):
     """
