@@ -5,7 +5,7 @@ from matplotlib.colors import Normalize
 import math
 
 from .data_protocols import FLGEResult, EyeResult
-from .core import vector_to_pitch_yaw
+from .core import vector_to_pitch_yaw, rotation_matrix_to_pitch_yaw_no_roll
 
 LEFT_EYE_LANDMARKS = [263, 362, 386, 374, 380]
 RIGHT_EYE_LANDMARKS = [33, 133, 159, 145, 153]
@@ -161,11 +161,17 @@ def landmark_gaze_render(frame: np.ndarray, result: FLGEResult):
 
         # Convert 3D to pitch and yaw
         pitch, yaw = vector_to_pitch_yaw(eye_result.direction)
-        frame = draw_axis(frame, -pitch, yaw, 0, int(centroid[0]), int(centroid[1]), 500)
+        frame = draw_axis(frame, -pitch, yaw, 0, int(centroid[0]), int(centroid[1]), 100)
 
     # Draw the FPS on the topright
     fps = 1/result.duration
     cv2.putText(frame, f'FPS: {fps:.2f}', (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+
+    # Draw the headpose on the frame
+    headrot = result.face_rt[:3, :3]
+    pitch, yaw = rotation_matrix_to_pitch_yaw_no_roll(headrot)
+    face_origin = result.face_origin_2d
+    frame = draw_axis(frame, yaw, pitch, 0, int(face_origin[0]), int(face_origin[1]), 100)
 
     # Concatenate the images
     right_eye_image = eye_images['right']
@@ -253,9 +259,9 @@ def draw_axis(img, pitch, yaw, roll=0, tdx=None, tdy=None, size = 100):
     # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x2),int(y2)),(0,255,0),3)
     # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x3),int(y3)),(0,0,255),3)
     
-    # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x1),int(y1)),(0,0,0),3)
-    # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x2),int(y2)),(100,100,100),3)
-    cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x3),int(y3)),(255,255,255),3)
+    cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x1),int(y1)),(0,0,0),3, tipLength=0.2)
+    cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x2),int(y2)),(100,100,100),3, tipLength=0.2)
+    cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x3),int(y3)),(255,255,255),3, tipLength=0.2)
 
     return img
 

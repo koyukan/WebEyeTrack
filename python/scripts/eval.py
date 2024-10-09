@@ -43,24 +43,24 @@ def visualize_differences(sample, output):
     height, width = img.shape[:2]
     print(height, width)
 
-    img = vis.draw_gaze_direction(
-        img, 
-        sample['face_origin_2d'], 
-        sample['gaze_target_2d'], 
-        color=(0, 0, 255)
-    )
-    cv2.circle(img, (int(sample['face_origin_2d'][0]), int(sample['face_origin_2d'][1])), 5, (0, 0, 255), -1)
+    # img = vis.draw_gaze_direction(
+    #     img, 
+    #     sample['face_origin_2d'], 
+    #     sample['gaze_target_2d'], 
+    #     color=(0, 0, 255)
+    # )
+    # cv2.circle(img, (int(sample['face_origin_2d'][0]), int(sample['face_origin_2d'][1])), 5, (0, 0, 255), -1)
 
     # Draw the centers 
-    cv2.circle(img, (int(output['face_origin_2d'][0]), int(output['face_origin_2d'][1])), 5, (255, 0, 0), -1)
+    # cv2.circle(img, (int(output['face_origin_2d'][0]), int(output['face_origin_2d'][1])), 5, (255, 0, 0), -1)
     for eye in ['left', 'right']:
         eye_result = output['results'].left if eye == 'left' else output['results'].right
         centroid = eye_result.origin_2d
         cv2.circle(img, (int(centroid[0]), int(centroid[1])), 5, (255, 0, 0), -1)
 
         # Convert 3D to pitch and yaw
-        pitch, yaw = core.vector_to_pitch_yaw(eye_result.direction)
-        img = vis.draw_axis(img, -pitch, yaw, 0, tdx=centroid[0], tdy=centroid[1], size=500)
+        # pitch, yaw = core.vector_to_pitch_yaw(eye_result.direction)
+        # img = vis.draw_axis(img, -pitch, yaw, 0, tdx=centroid[0], tdy=centroid[1], size=500)
         # img = vis.draw_axis(img, -yaw, pitch, 0, tdx=centroid[0], tdy=centroid[1], size=500)
 
     # gt_gaze = vis.draw_gaze_direction(img, sample['face_origin_2d'], sample['gaze_target_2d'], color=(0, 0, 255))
@@ -99,7 +99,7 @@ def eval():
     dataset = MPIIFaceGazeDataset(
         GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
         # participants=config['datasets']['MPIIFaceGaze']['val_subjects'],
-        participants=[5],
+        participants=[8],
         # img_size=[244,244],
         # face_size=[244,244],
         dataset_size=20

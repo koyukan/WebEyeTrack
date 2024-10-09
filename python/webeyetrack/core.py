@@ -1,5 +1,19 @@
 import numpy as np
 
+def rotation_matrix_to_pitch_yaw_no_roll(R):
+    # Ensure the matrix is 3x3
+    assert R.shape == (3, 3)
+    
+    # Extract pitch (rotation around X) and yaw (rotation around Y) while keeping roll = 0
+    pitch = np.arcsin(-R[2, 0])  # Pitch around X-axis
+    yaw = np.arctan2(R[1, 0], R[0, 0])  # Yaw around Y-axis
+
+    # Convert radians to degrees if necessary
+    pitch = np.degrees(pitch)
+    yaw = np.degrees(yaw)
+
+    return pitch, yaw
+
 def pitch_yaw_to_gaze_vector(pitch, yaw):
     """
     Converts pitch and yaw angles into a 3D gaze direction vector (unit vector).

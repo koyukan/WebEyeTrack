@@ -40,6 +40,10 @@ LEFT_IRIS_LANDMARKS = [473, 475, 474, 477, 476] # center, top, right, botton, le
 EYE_PADDING_WIDTH = 0.3
 EYE_HEIGHT_RATIO = 0.7
 
+# Position of eyeball center based on canonical coordinate system
+LEFT_EYEBALL_CENTER = np.array([3.0278, -2.7526, 2.7234]) * 10 # X, Y, Z
+RIGHT_EYEBALL_CENTER = np.array([-3.0278, -2.7526, 2.7234]) * 10 # X, Y, Z
+
 # Average radius of an eyeball in cm
 EYEBALL_RADIUS = 1.15
 
@@ -109,8 +113,8 @@ class FLGE():
 
         return (positions, distances)
 
-    def estimate_gaze_vector_based_on_eye_landmarks(self, facial_landmarks, height, width):
-        
+    def estimate_gaze_vector_based_on_eye_landmarks(self, facial_landmarks, face_rt, height, width):
+
         # Compute the bbox by using the edges of the each eyes
         left_2d_eye_px = facial_landmarks[LEFT_EYEAREA_LANDMARKS, :2] * np.array([width, height])
         left_2d_eyelid_px = facial_landmarks[LEFT_EYELID_LANDMARKS, :2] * np.array([width, height])
@@ -119,6 +123,20 @@ class FLGE():
         right_2d_eye_px = facial_landmarks[RIGHT_EYEAREA_LANDMARKS, :2] * np.array([width, height])
         right_2d_eyelid_px = facial_landmarks[RIGHT_EYELID_LANDMARKS, :2] * np.array([width, height])
         right_2d_iris_px = facial_landmarks[RIGHT_IRIS_LANDMARKS, :2] * np.array([width, height])
+
+        # Apply face_rt to the EYEBALL_CENTERs to get the 3D position
+        # canonical_lefteye_center_homo = np.append(LEFT_EYEBALL_CENTER, 1)
+        # canonical_righteye_center_homo = np.append(RIGHT_EYEBALL_CENTER, 1)
+        # left_eye_ball_center = np.dot(face_rt[:3, :3], LEFT_EYEBALL_CENTER) + face_rt[:3, 3]
+        # right_eye_ball_center = np.dot(face_rt[:3, :3], RIGHT_EYEBALL_CENTER) + face_rt[:3, 3]
+
+        # tf_lefteye_center_homo = face_rt @ canonical_lefteye_center_homo
+        # tf_lefteye_center = tf_lefteye_center_homo[:3] / tf_lefteye_center_homo[-1]
+        # u_normalized = tf_lefteye_center[0] / width
+        # v_normalized = tf_lefteye_center[1] / height
+        # z_relative = tf_lefteye_center[2] / tf_lefteye_center[0]
+        # actual_UVZ = facial_landmarks[LEFT_EYEAREA_LANDMARKS[0], :3]
+        # UVZ = (u_normalized, v_normalized, z_relative)
 
         # 3D
         left_eye_fl = facial_landmarks[LEFT_EYELID_LANDMARKS, :3]
@@ -173,7 +191,7 @@ class FLGE():
             # Compute the radius of the iris
             left_iris_radius = np.linalg.norm(iris_center - shifted_iris_px[2])
             right_iris_radius = np.linalg.norm(iris_center - shifted_iris_px[4])
-            iris_radius = np.mean([left_iris_radius, right_iris_radius])
+            iris_radius = np.mean([left_iris_radius, right_iris_radius]) # 10
 
             # Based on the direction and magnitude of the line, compute the gaze direction
             # Compute 2D vector from eyeball center to iris center
@@ -183,11 +201,9 @@ class FLGE():
 
             # Estimate the depth (Z) based on the 2D vector length
             # z_depth = EYEBALL_RADIUS / np.linalg.norm(gaze_vector_2d)
-            # import pdb; pdb.set_trace()
-            # z_depth = 2.0
+            z_depth = 2.0
             # Estimate the depth (Z) based on the size of the iris
-            z_depth = EYEBALL_RADIUS
-            # import pdb; pdb.set_trace()
+            # z_depth = EYEBALL_RADIUS
 
             # Compute yaw (horizontal rotation)
             yaw = np.arctan2(gaze_vector_2d[0] / iris_radius, z_depth) * (180 / np.pi)  # Convert from radians to degrees
@@ -408,6 +424,7 @@ class FLGE():
         if self.gaze_direction_estimation == 'landmark':
             gaze_vectors = self.estimate_gaze_vector_based_on_eye_landmarks(
                 facial_landmarks,
+                face_rt,
                 width,
                 height
             )
@@ -513,7 +530,7 @@ class FLGE():
         face_landmarks = np.array([[lm.x, lm.y, lm.z, lm.visibility, lm.presence] for lm in face_landmarks_proto])
         face_rt = detection_results.facial_transformation_matrixes[0]
         face_blendshapes = np.array([bs.score for bs in detection_results.face_blendshapes[0]])
-
+        
         # Perform step
         return self.step(
             face_landmarks,
@@ -523,34 +540,4 @@ class FLGE():
             frame.shape[1],
             intrinsics,
             tic=tic
-        )
-    
-    def render(self, output: Dict[str, Any], frame: np.ndarray):
-        h, w = frame.shape[:2]
-
-        # Assuming eye_images contains the left and right eye images (both resized to 400x280)
-        # Draw the 3D Gaze vector
-        for eye in ['left', 'right']:
-            if eye not in output['gaze_origins']:
-                continue
-            gaze_origin = output['gaze_origins'][eye]
-            gaze_origin = output['gaze_origins'][eye] * np.array([w, h, 1])
-            gaze_pitch_yaw = output['gaze_vectors'][eye]
-            frame = draw_axis(frame, gaze_pitch_yaw[1], gaze_pitch_yaw[0], 0, tdx=gaze_origin[0], tdy=gaze_origin[1], size=100)
-
-        if 'left' in output['eye_images'] and 'right' in output['eye_images']:
-            left_eye_image = output['eye_images']['left']
-            right_eye_image = output['eye_images']['right']
-
-            # Concatenate the eye images horizontally
-            eyes_combined = cv2.hconcat([right_eye_image, left_eye_image])
-
-            # Resize the combined eyes horizontally to match the width of the frame (640 pixels wide)
-            eyes_combined_resized = cv2.resize(eyes_combined, (frame.shape[1], eyes_combined.shape[0]))
-
-            # Concatenate the combined eyes image vertically with the frame
-            final_image = cv2.vconcat([frame, eyes_combined_resized])
-
-            # Display the final concatenated image
-            # cv2.imshow('Gaze Visualization', final_image)
-            output['gaze_visualization'] = final_image
+        ) 
