@@ -161,7 +161,7 @@ def landmark_gaze_render(frame: np.ndarray, result: FLGEResult):
 
         # Convert 3D to pitch and yaw
         pitch, yaw = vector_to_pitch_yaw(eye_result.direction)
-        frame = draw_axis(frame, -pitch, yaw, 0, int(centroid[0]), int(centroid[1]), 100)
+        frame = draw_axis(frame, -pitch, yaw, 0, int(centroid[0]), int(centroid[1]), 500)
 
     # Draw the FPS on the topright
     fps = 1/result.duration

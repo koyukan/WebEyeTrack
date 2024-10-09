@@ -170,6 +170,11 @@ class FLGE():
             iris_center = shifted_iris_px[0]
             eye_center = np.array([width/2, height/2])
 
+            # Compute the radius of the iris
+            left_iris_radius = np.linalg.norm(iris_center - shifted_iris_px[2])
+            right_iris_radius = np.linalg.norm(iris_center - shifted_iris_px[4])
+            iris_radius = np.mean([left_iris_radius, right_iris_radius])
+
             # Based on the direction and magnitude of the line, compute the gaze direction
             # Compute 2D vector from eyeball center to iris center
             # gaze_vector_2d = shifted_iris_px[0] - iris_px[0]
@@ -179,13 +184,16 @@ class FLGE():
             # Estimate the depth (Z) based on the 2D vector length
             # z_depth = EYEBALL_RADIUS / np.linalg.norm(gaze_vector_2d)
             # import pdb; pdb.set_trace()
-            z_depth = 2.0
+            # z_depth = 2.0
+            # Estimate the depth (Z) based on the size of the iris
+            z_depth = EYEBALL_RADIUS
+            # import pdb; pdb.set_trace()
 
             # Compute yaw (horizontal rotation)
-            yaw = np.arctan2(gaze_vector_2d[0] * 0.1, z_depth) * (180 / np.pi)  # Convert from radians to degrees
+            yaw = np.arctan2(gaze_vector_2d[0] / iris_radius, z_depth) * (180 / np.pi)  # Convert from radians to degrees
 
             # Compute pitch (vertical rotation)
-            pitch = np.arctan2(gaze_vector_2d[1] * 0.1, z_depth) * (180 / np.pi)  # Convert from radians to degrees
+            pitch = np.arctan2(gaze_vector_2d[1] / iris_radius, z_depth) * (180 / np.pi)  # Convert from radians to degrees
 
             # Convert the pitch and yaw to a 3D vector
             gaze_vector = pitch_yaw_to_gaze_vector(pitch, yaw)
@@ -337,13 +345,13 @@ class FLGE():
         # Perform intersection with plane using gaze origin and vector
         left_pog_mm = screen_plane_intersection(
             gaze_origins['eye_origins_3d']['left'],
-            gaze_vectors['eyes']['left'],
+            gaze_vectors['eyes']['vector']['left'],
             screen_R,
             screen_t
         )
         right_pog_mm = screen_plane_intersection(
             gaze_origins['eye_origins_3d']['right'],
-            gaze_vectors['eyes']['right'],
+            gaze_vectors['eyes']['vector']['right'],
             screen_R,
             screen_t
         )
@@ -391,8 +399,8 @@ class FLGE():
         gaze_origins = self.estimate_2d_3d_eye_face_origins(
             facial_landmarks,
             face_rt,
-            width,
             height,
+            width,
             intrinsics
         )
 
