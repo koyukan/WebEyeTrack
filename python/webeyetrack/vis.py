@@ -161,7 +161,7 @@ def landmark_gaze_render(frame: np.ndarray, result: FLGEResult):
 
         # Convert 3D to pitch and yaw
         pitch, yaw = vector_to_pitch_yaw(eye_result.direction)
-        frame = draw_axis(frame, pitch, yaw, 0, int(centroid[0]), int(centroid[1]), 100)
+        frame = draw_axis(frame, -pitch, yaw, 0, int(centroid[0]), int(centroid[1]), 100)
 
     # Draw the FPS on the topright
     fps = 1/result.duration
@@ -178,9 +178,49 @@ def landmark_gaze_render(frame: np.ndarray, result: FLGEResult):
     # Concatenate the combined eyes image vertically with the frame
     return cv2.vconcat([frame, eyes_combined_resized])
 
+def blendshape_gaze_render(frame: np.ndarray, result: FLGEResult):
+
+    # Extract the information
+    facial_landmarks = result.facial_landmarks
+    height, width = frame.shape[:2]
+
+    left_2d_eye_px = facial_landmarks[LEFT_EYEAREA_LANDMARKS, :2] * np.array([width, height])
+    right_2d_eye_px = facial_landmarks[RIGHT_EYEAREA_LANDMARKS, :2] * np.array([width, height])
+
+    for i, eye in {'left': left_2d_eye_px, 'right': right_2d_eye_px}.items():
+        centroid = np.mean(eye, axis=0)
+        eye_result = result.left if i == 'left' else result.right 
+
+        # Apply a correct R to the gaze direction
+        # R = np.array([
+        #     [1, 0, 0],
+        #     [0, 1, 0],
+        #     [0, 0, -1]
+        # ])
+        # rotvec = np.array([90, 0, 0], dtype=np.float32) # in degree
+        rotvec = np.array([0, 90, 0], dtype=np.float32) # in degree
+        rotvec = np.radians(rotvec)
+        R = cv2.Rodrigues(rotvec)[0]
+        corrected_gaze_direction = np.dot(R, eye_result.direction) * np.array([1, 1, 1])
+
+        # if i == 'right':
+        #     pitch, yaw = vector_to_pitch_yaw(eye_result.direction)
+        #     frame = draw_axis(frame, pitch, yaw, 0, int(centroid[0]), int(centroid[1]), 100)
+        #     cv2.putText(frame, f"{i}", (int(centroid[0]), int(centroid[1])), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+        # else:
+        pitch, yaw = vector_to_pitch_yaw(corrected_gaze_direction)
+        frame = draw_axis(frame, -yaw, pitch, 0, int(centroid[0]), int(centroid[1]), 100)
+        # cv2.putText(frame, f"{i}", (int(centroid[0]), int(centroid[1])), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+    
+    # Draw the FPS on the topright
+    fps = 1/result.duration
+    cv2.putText(frame, f'FPS: {fps:.2f}', (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+
+    return frame
+
 def draw_axis(img, pitch, yaw, roll=0, tdx=None, tdy=None, size = 100):
 
-    pitch = -(pitch * np.pi / 180)
+    pitch = (pitch * np.pi / 180)
     yaw = (yaw * np.pi / 180)
     roll = roll * np.pi / 180
 
@@ -193,21 +233,29 @@ def draw_axis(img, pitch, yaw, roll=0, tdx=None, tdy=None, size = 100):
         tdy = height / 2
 
     # X-Axis pointing to right. drawn in red
-    # x1 = size * (math.cos(yaw) * math.cos(roll)) + tdx
-    # y1 = size * (math.cos(pitch) * math.sin(roll) + math.cos(roll) * math.sin(pitch) * math.sin(yaw)) + tdy
+    x1 = size * (math.cos(yaw) * math.cos(roll)) + tdx
+    y1 = size * (math.cos(pitch) * math.sin(roll) + math.cos(roll) * math.sin(pitch) * math.sin(yaw)) + tdy
 
     # Y-Axis | drawn in green
     #        v
-    # x2 = size * (-math.cos(yaw) * math.sin(roll)) + tdx
-    # y2 = size * (math.cos(pitch) * math.cos(roll) - math.sin(pitch) * math.sin(yaw) * math.sin(roll)) + tdy
+    x2 = size * (-math.cos(yaw) * math.sin(roll)) + tdx
+    y2 = size * (math.cos(pitch) * math.cos(roll) - math.sin(pitch) * math.sin(yaw) * math.sin(roll)) + tdy
 
     # Z-Axis (out of the screen) drawn in blue
     x3 = size * (math.sin(yaw)) + tdx
     y3 = size * (-math.cos(yaw) * math.sin(pitch)) + tdy
 
+    # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x1),int(y1)),(0,0,255),3)
+    # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x2),int(y2)),(0,255,0),3)
+    # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x3),int(y3)),(255,0,0),3)
+    
     # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x1),int(y1)),(255,0,0),3)
     # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x2),int(y2)),(0,255,0),3)
-    cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x3),int(y3)),(0,0,255),3)
+    # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x3),int(y3)),(0,0,255),3)
+    
+    # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x1),int(y1)),(0,0,0),3)
+    # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x2),int(y2)),(100,100,100),3)
+    cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x3),int(y3)),(255,255,255),3)
 
     return img
 

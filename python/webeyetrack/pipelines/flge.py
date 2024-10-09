@@ -504,12 +504,13 @@ class FLGE():
         # Extract information fro the results
         face_landmarks = np.array([[lm.x, lm.y, lm.z, lm.visibility, lm.presence] for lm in face_landmarks_proto])
         face_rt = detection_results.facial_transformation_matrixes[0]
+        face_blendshapes = np.array([bs.score for bs in detection_results.face_blendshapes[0]])
 
         # Perform step
         return self.step(
             face_landmarks,
             face_rt,
-            detection_results.face_blendshapes[0],
+            face_blendshapes,
             frame.shape[0],
             frame.shape[1],
             intrinsics,

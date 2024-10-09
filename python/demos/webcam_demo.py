@@ -14,6 +14,7 @@ from webeyetrack import vis
 from webeyetrack.pipelines.flge import FLGE
 
 EYE_TRACKING_APPROACH = "landmark"
+# EYE_TRACKING_APPROACH = "blendshape"
 
 if __name__ == '__main__':
     
@@ -38,6 +39,10 @@ if __name__ == '__main__':
         if result:
             if EYE_TRACKING_APPROACH == "landmark":
                 img = vis.landmark_gaze_render(frame, result)
+                if type(img) == np.ndarray:
+                    cv2.imshow('frame', img)
+            elif EYE_TRACKING_APPROACH == 'blendshape':
+                img = vis.blendshape_gaze_render(frame, result)
                 if type(img) == np.ndarray:
                     cv2.imshow('frame', img)
 
