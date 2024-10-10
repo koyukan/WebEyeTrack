@@ -1,3 +1,4 @@
+import os
 import pathlib
 from collections import defaultdict
 
@@ -21,6 +22,9 @@ import webeyetrack.core as core
 CWD = pathlib.Path(__file__).parent
 FILE_DIR = pathlib.Path(__file__).parent
 OUTPUTS_DIR = CWD / 'outputs'
+SKIP_COUNT = 1
+
+os.makedirs(str(OUTPUTS_DIR / 'imgs'), exist_ok=True)
 
 with open(FILE_DIR / 'config.yaml', 'r') as f:
     config = yaml.safe_load(f)
@@ -32,7 +36,6 @@ def scale(y, y_hat):
     return np.abs(y / y_hat)
 
 def angle(y, y_hat):
-    # import pdb; pdb.set_trace()
     return np.degrees(np.arccos(np.clip(np.dot(y, y_hat), -1.0, 1.0)))
 
 def visualize_differences(sample, output):
@@ -77,10 +80,10 @@ def eval():
     dataset = MPIIFaceGazeDataset(
         GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
         participants=config['datasets']['MPIIFaceGaze']['val_subjects'] + config['datasets']['MPIIFaceGaze']['train_subjects'],
-        # participants=[1,2],
         # img_size=[244,244],
         # face_size=[244,244],
-        # dataset_size=10
+        # dataset_size=100
+        per_participant_size=10
     )
 
     print("FINISHED LOADING DATASET")
@@ -134,16 +137,12 @@ def eval():
                 continue
             metrics[name].append(function(actual[name], output[name]))
 
-        if i % 100 == 0:
+        # if i % SKIP_COUNT == 0:
             # Write to the output directory
-            # img = visualize_gaze_vectors(sample, output)
-            # cv2.imwrite(str(OUTPUTS_DIR / f'gaze_vectors_{i}.png'), img)
-            # img = visualize_gaze_2d_origin(sample['image'], sample['face_origin_2d'], results.face_origin_2d)
-            # cv2.imwrite(str(OUTPUTS_DIR / f'gaze_origin_{i}.png'), img)
-            img = visualize_differences(sample, output)
-            cv2.imwrite(str(OUTPUTS_DIR / 'imgs' / f'gaze_diff_{i}.png'), img)
-            # img = vis.landmark_gaze_render(img, results)
-            # cv2.imwrite(str(OUTPUTS_DIR / f'landmark_{i}.png'), img)
+        img = visualize_differences(sample, output)
+        cv2.imwrite(str(OUTPUTS_DIR / 'imgs' / f'gaze_diff_{i}.png'), img)
+        img = vis.landmark_gaze_render(img, results)
+        cv2.imwrite(str(OUTPUTS_DIR / 'imgs' / f'landmark_{i}.png'), img)
 
     # Generate box plots for the metrics
     df = pd.DataFrame(metrics)

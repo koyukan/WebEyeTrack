@@ -33,6 +33,7 @@ class MPIIFaceGazeDataset(Dataset):
             face_size: Tuple[int, int] = None,
             img_size: Tuple[int, int] = None,
             dataset_size: Optional[int] = None,
+            per_participant_size: Optional[int] = None
         ):
 
         # Process input variables
@@ -43,7 +44,11 @@ class MPIIFaceGazeDataset(Dataset):
         self.img_size = img_size
         self.face_size = face_size
         self.dataset_size = dataset_size
+        self.per_participant_size = per_participant_size
         self.participants = participants
+
+        # Only dataset size or per participant size can be set
+        assert (self.dataset_size is None) or (self.per_participant_size is None), "Only one of dataset_size or per_participant_size can be set."
 
         if not self.participants:
             raise ValueError("No participants were selected.")
@@ -97,6 +102,7 @@ class MPIIFaceGazeDataset(Dataset):
                 monitor_width_px=screen_size_mat['width_pixel']
             )
             self.participant_calibration_data[participant_id] = calibration_data
+            per_participant_samples = 0
 
             # Load the meta data
             annotations = {} 
@@ -105,6 +111,9 @@ class MPIIFaceGazeDataset(Dataset):
                 for line in tqdm(lines, total=len(lines)):
 
                     if self.dataset_size is not None and num_samples >= self.dataset_size:
+                        break
+
+                    if self.per_participant_size is not None and per_participant_samples >= self.per_participant_size:
                         break
 
                     items = line.split(' ')
@@ -235,6 +244,7 @@ class MPIIFaceGazeDataset(Dataset):
             
                     annotations[items[0]] = annotation
                     num_samples += 1
+                    per_participant_samples += 1
  
             day_folders = [d for d in participant_dir.glob('day*') if d.is_dir()]
             for day_folder in day_folders:

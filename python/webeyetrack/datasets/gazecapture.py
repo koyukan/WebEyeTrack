@@ -23,7 +23,7 @@ from mediapipe.tasks.python import vision
 
 from ..constants import GIT_ROOT
 from ..vis import draw_gaze_origin
-from .data_protocols import Annotations, CalibrationData, Sample
+from ..data_protocols import Annotations, CalibrationData, Sample
 from .utils import resize_annotations, resize_intrinsics, draw_landmarks_on_image, compute_uv_texture
 
 CWD = pathlib.Path(__file__).parent
@@ -46,7 +46,7 @@ class GazeCaptureDataset(Dataset):
         self.dataset_size = dataset_size
 
         # Setup MediaPipe Face Facial Landmark model
-        base_options = python.BaseOptions(model_asset_path=str(CWD / 'face_landmarker_v2_with_blendshapes.task'))
+        base_options = python.BaseOptions(model_asset_path=str(GIT_ROOT / 'python' / 'weights' / 'face_landmarker_v2_with_blendshapes.task'))
         options = vision.FaceLandmarkerOptions(base_options=base_options,
                                             output_face_blendshapes=True,
                                             output_facial_transformation_matrixes=True,
@@ -69,7 +69,6 @@ class GazeCaptureDataset(Dataset):
 
         # Saving information
         self.samples: List[Sample] = []
-        # self.annotations: Dict[str, Annotations] = {}
         self.participant_calibration_data: Dict[CalibrationData] = {}
 
         # Open the ``frames.json`` file with a list of frame names
@@ -82,10 +81,9 @@ class GazeCaptureDataset(Dataset):
                 dot_info = json.load(f)
             dot_info_df = pd.DataFrame(dot_info)
 
-            # import pdb; pdb.set_trace()
-
-            for frame in frames_fname_list:
+            for i, frame in enumerate(frames_fname_list):
                 frame_fp = part_dir / 'frames' / frame
+                dot_info = dot_info_df.iloc[i]
 
                 # Load the image
                 image_np = cv2.imread(str(frame_fp))
@@ -106,6 +104,25 @@ class GazeCaptureDataset(Dataset):
                 face_landmarks_rt = detection_results.facial_transformation_matrixes[0]
                 face_blendshapes = detection_results.face_blendshapes[0]
                 face_landmarks = np.array([[lm.x * image_np.shape[0], lm.y * image_np.shape[1]] for lm in face_landmarks_proto])
+                
+                # Draw the landmarks on the image
+                # image_landmarks = draw_landmarks_on_image(image_np, detection_results)
+                # cv2.imshow('image', image_landmarks)
+                # cv2.waitKey(0)
+
+                # Compute the gaze origin (between the eyes) in 2D
+                data_2d_pairs = {
+                    'left': face_landmarks[LEFT_EYE_LANDMARKS] * np.array([image_np.shape[0], image_np.shape[1]]),
+                    'right': face_landmarks[RIGHT_EYE_LANDMARKS] * np.array([image_np.shape[0], image_np.shape[1]])
+                }
+
+                # Compute the eye origin in 2D
+                eye_origins_2d = {}
+                for k, v in data_2d_pairs.items():
+                    eye_origins_2d[k] = np.mean(v, axis=0)
+
+                # Compute the face origin in 2D
+                face_origin_2d = np.mean([eye_origins_2d['left'], eye_origins_2d['right']], axis=0)
 
                 # Compute the bounding box
                 face_bbox = np.array([
@@ -125,25 +142,51 @@ class GazeCaptureDataset(Dataset):
                     'right': t_face_landmarks_xyz[RIGHT_EYE_LANDMARKS][:, :3]
                 }
 
-                # Compute the 3D eye origins
+                # Create the 3D gaze target from the dot
+                gaze_3d_target = np.array([dot_info['XCam'], dot_info['YCam'], 0])
+                # import pdb; pdb.set_trace()
+
+                # Compute the 3D eye origins and vectors
                 origins_3d = {}
+                eye_gaze_vectors = {}
                 for k, v in data_3d_pairs.items():
                     origins_3d[k] = np.mean(v, axis=0)
 
-                # Take the average to get the gaze origin
-                gaze_origin = (origins_3d['left'] + origins_3d['right']) / 2
+                    # Compute the gaze vector from the eye origin to the gaze target
+                    gaze_vector = gaze_3d_target - origins_3d[k]
+                    gaze_vector = gaze_vector / np.linalg.norm(gaze_vector)
+                    eye_gaze_vectors[k] = gaze_vector
 
-                # Draw the gaze origin on the image
+                # Compute the face gaze vector
+                face_gaze_vector = np.mean([eye_gaze_vectors['left'], eye_gaze_vectors['right']], axis=0)
+                face_gaze_vector = face_gaze_vector / np.linalg.norm(face_gaze_vector)
 
-                # Draw the landmarks on the image
-                # image_landmarks = draw_landmarks_on_image(image_np, detection_results)
-                # cv2.imshow('image', image_landmarks)
-                # cv2.waitKey(0)
+                # Compute the face origin
+                face_origin_3d = np.mean([origins_3d['left'], origins_3d['right']], axis=0)
+
+                import pdb; pdb.set_trace()
 
                 # Create the annotation
                 annotation = Annotations(
+                    original_img_size=np.array(image_np.shape),
+                    facial_landmarks=face_landmarks_all,
+                    facial_landmarks_2d=face_landmarks,
+                    facial_rt=face_landmarks_rt,
+                    face_blendshapes=face_blendshapes,
+                    face_bbox=face_bbox,
+                    head_pose_3d=np.array([0, 0, 0, 0, 0, 0]), # From MPIIFaceGaze, not GazeCapture
+                    face_origin_3d=face_origin_3d,
+                    face_origin_2d=face_origin_2d,
+                    gaze_direction_3d=face_gaze_vector,
+                    gaze_target_3d=gaze_3d_target,
+                    gaze_target_2d=np.array([dot_info['XCam'], dot_info['YCam']]),
                 )
-                # self.annotations[participant_id]
+
+                # Create a sample
+                # sample = Sample(
+                # )
+
+                # self.samples.append(sample)
 
             break
 
@@ -151,7 +194,7 @@ class GazeCaptureDataset(Dataset):
         return {}
 
     def __len__(self):
-        return self.dataset_size
+        return len(self.samples)
     
 if __name__ == "__main__":
     

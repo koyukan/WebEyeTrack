@@ -4,7 +4,6 @@ import pathlib
 
 @dataclass
 class Annotations:
-    pog_px: np.ndarray # (2,)
 
     # Original frame information
     original_img_size: np.ndarray # (3,)
@@ -31,6 +30,7 @@ class Annotations:
     # Target information
     gaze_target_3d: np.ndarray # (3,)
     gaze_target_2d: np.ndarray # (2,)
+    pog_px: np.ndarray # (2,)
 
 @dataclass
 class CalibrationData:
