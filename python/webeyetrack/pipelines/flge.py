@@ -175,11 +175,6 @@ class FLGE():
             if width == 0 or height == 0:
                 continue
 
-            # Resize the eye
-            # new_width, new_height = 400, int(400*EYE_HEIGHT_RATIO)
-            # eye_image = cv2.resize(eye_image, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
-            # eye_images[i] = eye_image
-
             # Draw if the eye is closed on the top left corner
             eye_closed[i] = is_closed
             if is_closed:

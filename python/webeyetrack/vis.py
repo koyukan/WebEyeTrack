@@ -213,13 +213,66 @@ def blendshape_gaze_render(frame: np.ndarray, result: FLGEResult):
 
     return frame
 
-def draw_axis(img, pitch, yaw, roll=0, tdx=None, tdy=None, size = 100):
+# def draw_axis(img, pitch, yaw, roll=0, tdx=None, tdy=None, size = 100):
 
-    pitch = -(pitch * np.pi / 180)
+#     pitch = -(pitch * np.pi / 180)
+#     yaw = (yaw * np.pi / 180)
+#     roll = roll * np.pi / 180
+
+#     if tdx != None and tdy != None:
+#         tdx = tdx
+#         tdy = tdy
+#     else:
+#         height, width = img.shape[:2]
+#         tdx = width / 2
+#         tdy = height / 2
+
+#     # X-Axis pointing to right. drawn in red
+#     x1 = size * (math.cos(yaw) * math.cos(roll)) + tdx
+#     y1 = size * (math.cos(pitch) * math.sin(roll) + math.cos(roll) * math.sin(pitch) * math.sin(yaw)) + tdy
+
+#     # Y-Axis | drawn in green
+#     #        v
+#     x2 = size * (-math.cos(yaw) * math.sin(roll)) + tdx
+#     y2 = size * (math.cos(pitch) * math.cos(roll) - math.sin(pitch) * math.sin(yaw) * math.sin(roll)) + tdy
+
+#     # Z-Axis (out of the screen) drawn in blue
+#     x3 = size * (math.sin(yaw)) + tdx
+#     y3 = size * (-math.cos(yaw) * math.sin(pitch)) + tdy
+
+#     # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x1),int(y1)),(0,0,255),3)
+#     # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x2),int(y2)),(0,255,0),3)
+#     # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x3),int(y3)),(255,0,0),3)
+    
+#     # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x1),int(y1)),(255,0,0),3)
+#     # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x2),int(y2)),(0,255,0),3)
+#     # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x3),int(y3)),(0,0,255),3)
+    
+#     cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x1),int(y1)),(0,0,0),3, tipLength=0.2)
+#     cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x2),int(y2)),(100,100,100),3, tipLength=0.2)
+#     cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x3),int(y3)),(255,255,255),3, tipLength=0.2)
+
+#     return img
+
+def draw_axis(img, pitch, yaw, roll=0, tdx=None, tdy=None, size=100):
+    """
+    Draws the 3D axes based on the given pitch, yaw, and roll. The Z-axis is drawn
+    pointing towards the negative Z direction.
+    
+    Arguments:
+    img -- the image to draw the axes on
+    pitch -- pitch angle in degrees
+    yaw -- yaw angle in degrees
+    roll -- roll angle in degrees
+    tdx -- x translation (optional)
+    tdy -- y translation (optional)
+    size -- the length of the axis to be drawn
+    """
+    pitch = (pitch * np.pi / 180)
     yaw = (yaw * np.pi / 180)
     roll = roll * np.pi / 180
 
-    if tdx != None and tdy != None:
+    if tdx is not None and tdy is not None:
         tdx = tdx
         tdy = tdy
     else:
@@ -236,21 +289,14 @@ def draw_axis(img, pitch, yaw, roll=0, tdx=None, tdy=None, size = 100):
     x2 = size * (-math.cos(yaw) * math.sin(roll)) + tdx
     y2 = size * (math.cos(pitch) * math.cos(roll) - math.sin(pitch) * math.sin(yaw) * math.sin(roll)) + tdy
 
-    # Z-Axis (out of the screen) drawn in blue
+    # Z-Axis (negative Z) drawn in blue
     x3 = size * (math.sin(yaw)) + tdx
-    y3 = size * (-math.cos(yaw) * math.sin(pitch)) + tdy
+    y3 = size * (math.cos(yaw) * math.sin(pitch)) + tdy  # Note the change here for negative Z
 
-    # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x1),int(y1)),(0,0,255),3)
-    # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x2),int(y2)),(0,255,0),3)
-    # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x3),int(y3)),(255,0,0),3)
-    
-    # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x1),int(y1)),(255,0,0),3)
-    # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x2),int(y2)),(0,255,0),3)
-    # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x3),int(y3)),(0,0,255),3)
-    
-    cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x1),int(y1)),(0,0,0),3, tipLength=0.2)
-    cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x2),int(y2)),(100,100,100),3, tipLength=0.2)
-    cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x3),int(y3)),(255,255,255),3, tipLength=0.2)
+    # Draw the axes with appropriate colors
+    # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x1), int(y1)), (0, 0, 0), 3, tipLength=0.2)  # X-axis (Black)
+    # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x2), int(y2)), (100, 100, 100), 3, tipLength=0.2)  # Y-axis (Gray)
+    cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x3), int(y3)), (255, 255, 255), 3, tipLength=0.2)  # Z-axis (White)
 
     return img
 

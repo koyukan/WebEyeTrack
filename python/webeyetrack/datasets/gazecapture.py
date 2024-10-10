@@ -69,11 +69,12 @@ class GazeCaptureDataset(Dataset):
 
         # Saving information
         self.samples: List[Sample] = []
-        self.annotations: Dict[str, Annotations] = {}
+        # self.annotations: Dict[str, Annotations] = {}
         self.participant_calibration_data: Dict[CalibrationData] = {}
 
         # Open the ``frames.json`` file with a list of frame names
         for part_dir in participant_dir:
+            participant_id = part_dir.name
             frames_json = part_dir / 'frames.json'
             with open(frames_json, 'r') as f:
                 frames_fname_list = json.load(f)
@@ -134,11 +135,15 @@ class GazeCaptureDataset(Dataset):
 
                 # Draw the gaze origin on the image
 
-
                 # Draw the landmarks on the image
                 # image_landmarks = draw_landmarks_on_image(image_np, detection_results)
                 # cv2.imshow('image', image_landmarks)
                 # cv2.waitKey(0)
+
+                # Create the annotation
+                annotation = Annotations(
+                )
+                # self.annotations[participant_id]
 
             break
 

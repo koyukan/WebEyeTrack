@@ -42,48 +42,25 @@ def visualize_differences(sample, output):
 
     # Draw the facial_landmarks
     height, width = img.shape[:2]
-    print(height, width)
 
-    # img = vis.draw_gaze_direction(
-    #     img, 
-    #     sample['face_origin_2d'], 
-    #     sample['gaze_target_2d'], 
-    #     color=(0, 0, 255)
-    # )
-    # cv2.circle(img, (int(sample['face_origin_2d'][0]), int(sample['face_origin_2d'][1])), 5, (0, 0, 255), -1)
+    pitch, yaw = core.vector_to_pitch_yaw(sample['gaze_direction_3d'])
+    cv2.circle(img, (int(sample['face_origin_2d'][0]), int(sample['face_origin_2d'][1])), 5, (0, 0, 255), -1)
+    img = vis.draw_axis(img, pitch, yaw, 0, tdx=sample['face_origin_2d'][0], tdy=sample['face_origin_2d'][1], size=100)
+
+    pitch, yaw = core.vector_to_pitch_yaw(output['face_gaze_vector'])
+    cv2.circle(img, (int(output['face_origin_2d'][0]), int(output['face_origin_2d'][1])), 5, (255, 0, 0), -1)
+    img = vis.draw_axis(img, pitch, yaw, 0, tdx=output['face_origin_2d'][0], tdy=output['face_origin_2d'][1], size=100)
 
     # Draw the centers 
-    # cv2.circle(img, (int(output['face_origin_2d'][0]), int(output['face_origin_2d'][1])), 5, (255, 0, 0), -1)
     for eye in ['left', 'right']:
         eye_result = output['results'].left if eye == 'left' else output['results'].right
         centroid = eye_result.origin_2d
         cv2.circle(img, (int(centroid[0]), int(centroid[1])), 5, (255, 0, 0), -1)
 
         # Convert 3D to pitch and yaw
-        # pitch, yaw = core.vector_to_pitch_yaw(eye_result.direction)
-        # img = vis.draw_axis(img, -pitch, yaw, 0, tdx=centroid[0], tdy=centroid[1], size=500)
-        # img = vis.draw_axis(img, -yaw, pitch, 0, tdx=centroid[0], tdy=centroid[1], size=500)
+        pitch, yaw = core.vector_to_pitch_yaw(eye_result.direction)
+        img = vis.draw_axis(img, pitch, yaw, 0, tdx=centroid[0], tdy=centroid[1], size=100)
 
-    # gt_gaze = vis.draw_gaze_direction(img, sample['face_origin_2d'], sample['gaze_target_2d'], color=(0, 0, 255))
-    # gaze_target_3d_semi = sample['face_origin_3d'] + output['face_gaze_vector'] * 100
-    # gaze_target_3d_semi = output['face_origin'] + output['face_gaze_vector'] * 100
-    # gaze_target_2d, _ = cv2.projectPoints(
-    #     gaze_target_3d_semi, 
-    #     np.array([0, 0, 0], dtype=np.float32),
-    #     np.array([0, 0, 0], dtype=np.float32),
-    #     sample['intrinsics'], 
-    #     sample['dist_coeffs'],
-    # )
-    # gt_pred_gaze = vis.draw_gaze_direction(
-    #     gt_gaze,
-    #     # sample['face_origin_2d'],
-    #     output['face_origin_2d'],
-    #     gaze_target_2d.flatten(),
-    #     color=(255, 0, 0)
-    # )
-    # cv2.circle(gt_pred_gaze, (int(output['face_origin_2d'][0]), int(output['face_origin_2d'][1])), 10, (255, 0, 0), -1)
-
-    # return gt_pred_gaze
     return img
 
 def euclidean_distance(y, y_hat):
@@ -99,12 +76,14 @@ def eval():
     # Create a dataset object
     dataset = MPIIFaceGazeDataset(
         GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
-        # participants=config['datasets']['MPIIFaceGaze']['val_subjects'],
-        participants=[1,2],
+        participants=config['datasets']['MPIIFaceGaze']['val_subjects'] + config['datasets']['MPIIFaceGaze']['train_subjects'],
+        # participants=[1,2],
         # img_size=[244,244],
         # face_size=[244,244],
-        dataset_size=10
+        # dataset_size=10
     )
+
+    print("FINISHED LOADING DATASET")
 
     metric_functions = {
         'depth': distance, 
@@ -155,15 +134,16 @@ def eval():
                 continue
             metrics[name].append(function(actual[name], output[name]))
 
-        # Write to the output directory
-        # img = visualize_gaze_vectors(sample, output)
-        # cv2.imwrite(str(OUTPUTS_DIR / f'gaze_vectors_{i}.png'), img)
-        # img = visualize_gaze_2d_origin(sample['image'], sample['face_origin_2d'], results.face_origin_2d)
-        # cv2.imwrite(str(OUTPUTS_DIR / f'gaze_origin_{i}.png'), img)
-        # img = visualize_differences(sample, output)
-        # cv2.imwrite(str(OUTPUTS_DIR / f'gaze_diff_{i}.png'), img)
-        img = vis.landmark_gaze_render(img, results)
-        cv2.imwrite(str(OUTPUTS_DIR / f'landmark_{i}.png'), img)
+        if i % 100 == 0:
+            # Write to the output directory
+            # img = visualize_gaze_vectors(sample, output)
+            # cv2.imwrite(str(OUTPUTS_DIR / f'gaze_vectors_{i}.png'), img)
+            # img = visualize_gaze_2d_origin(sample['image'], sample['face_origin_2d'], results.face_origin_2d)
+            # cv2.imwrite(str(OUTPUTS_DIR / f'gaze_origin_{i}.png'), img)
+            img = visualize_differences(sample, output)
+            cv2.imwrite(str(OUTPUTS_DIR / 'imgs' / f'gaze_diff_{i}.png'), img)
+            # img = vis.landmark_gaze_render(img, results)
+            # cv2.imwrite(str(OUTPUTS_DIR / f'landmark_{i}.png'), img)
 
     # Generate box plots for the metrics
     df = pd.DataFrame(metrics)
@@ -209,7 +189,10 @@ def eval():
         
     # plt.tight_layout()
     # plt.show()
-    print(df)
+    plt.savefig(str(OUTPUTS_DIR / 'metrics.png'))
+
+    print(df.describe())
+    # print(df)
 
 if __name__ == '__main__':
     eval()

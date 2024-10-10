@@ -4,20 +4,33 @@ import pathlib
 
 @dataclass
 class Annotations:
-    original_img_size: np.ndarray # (3,)
     pog_px: np.ndarray # (2,)
+
+    # Original frame information
+    original_img_size: np.ndarray # (3,)
+
+    # Facial Landmarks information
     facial_landmarks: np.ndarray # (5, N)
     facial_landmarks_2d: np.ndarray # (2, N)
     facial_rt: np.ndarray # (4, 4)
     face_blendshapes: np.ndarray # (N,)
     face_bbox: np.ndarray # (4,)
     head_pose_3d: np.ndarray # (6,), rotation matrix
+
+    # Face Gaze
     face_origin_3d: np.ndarray # (3,)
     face_origin_2d: np.ndarray # (2,)
+    gaze_direction_3d: np.ndarray # (3,)
+
+    # Eye Gaze
+    # left_eye_origin_3d: np.ndarray
+    # right_eye_origin_3d: np.ndarray
+    # left_gaze_vector: np.ndarray
+    # right_gaze_vector: np.ndarray
+
+    # Target information
     gaze_target_3d: np.ndarray # (3,)
     gaze_target_2d: np.ndarray # (2,)
-    gaze_direction_3d: np.ndarray # (3,)
-    # which_eye: str # (left, right)
 
 @dataclass
 class CalibrationData:
