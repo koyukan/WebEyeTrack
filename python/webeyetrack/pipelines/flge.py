@@ -157,7 +157,8 @@ class FLGE():
         gaze_origins_2d = {}
         for i, (eye, eyelid) in {'left': left_landmarks, 'right': right_landmarks}.items():
             centroid = np.mean(eye, axis=0)
-            width = np.abs(eye[0,0] - eye[1, 0]) * (1 + EYE_PADDING_WIDTH)
+            actual_width = np.abs(eye[1,0] - eye[0, 0])
+            width = actual_width * (1 + EYE_PADDING_WIDTH)
             height = width * EYE_HEIGHT_RATIO
 
             gaze_origins_2d[i] = centroid
@@ -199,7 +200,7 @@ class FLGE():
             headrot = face_rt[:3, :3]
             pitch, yaw, roll = rotation_matrix_to_euler_angles(headrot)
             pitch, yaw = yaw, -pitch # Swap the pitch and yaw
-            size = 20
+            size = actual_width / 4
             pitch = (pitch * np.pi / 180)
             yaw = (yaw * np.pi / 180)
             x3 = size * (math.sin(yaw))
@@ -246,11 +247,11 @@ class FLGE():
         face_origin_2d = (gaze_origins_2d['left'] + gaze_origins_2d['right']) / 2
 
         # Draw the headpose on the frame
-        headrot = face_rt[:3, :3]
-        pitch, yaw, roll = rotation_matrix_to_euler_angles(headrot)
-        pitch, yaw = yaw, pitch
-        face_origin = face_origin_2d
-        frame = draw_axis(frame, -pitch, yaw, -roll, int(face_origin[0]), int(face_origin[1]), 100)
+        # headrot = face_rt[:3, :3]
+        # pitch, yaw, roll = rotation_matrix_to_euler_angles(headrot)
+        # pitch, yaw = yaw, pitch
+        # face_origin = face_origin_2d
+        # frame = draw_axis(frame, -pitch, yaw, -roll, int(face_origin[0]), int(face_origin[1]), 100)
 
         # cv2.imshow('frame', frame)
         # if cv2.waitKey(0) & 0xFF == ord('q'):

@@ -147,21 +147,9 @@ def landmark_gaze_render(frame: np.ndarray, result: FLGEResult):
             cv2.putText(eye_image, 'Closed', (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
             continue
 
-        # Draw the gaze direction on the original frame
-        # gaze_target_3d_semi = eye_result.origin + np.array([1,0,0])
-        # gaze_target_2d, _ = cv2.projectPoints(
-        #     gaze_target_3d_semi, 
-        #     np.array([0, 0, 0], dtype=np.float32),
-        #     np.array([0, 0, 0], dtype=np.float32),
-        #     intrinsics,
-        #     np.zeros((5,1), dtype=np.float32)
-        # )
-        # cv2.arrowedLine(frame, tuple(centroid.astype(int)), tuple(gaze_target_2d.flatten().astype(int)), (0, 0, 255), 2)
-        # cv2.circle(frame, tuple(centroid.astype(int)), 3, (0, 0, 255), -1)
-
         # Convert 3D to pitch and yaw
         pitch, yaw = vector_to_pitch_yaw(eye_result.direction)
-        frame = draw_axis(frame, -pitch, yaw, 0, int(centroid[0]), int(centroid[1]), 100)
+        frame = draw_axis(frame, pitch, yaw, 0, int(centroid[0]), int(centroid[1]), 100)
 
     # Draw the FPS on the topright
     fps = 1/result.duration
@@ -172,7 +160,7 @@ def landmark_gaze_render(frame: np.ndarray, result: FLGEResult):
     # pitch, yaw, roll = rotation_matrix_to_euler_angles(headrot)
     # pitch, yaw = yaw, pitch
     # face_origin = result.face_origin_2d
-    # frame = draw_axis(frame, -pitch, yaw, -roll, int(face_origin[0]), int(face_origin[1]), 100)
+    # frame = draw_axis(frame, pitch, yaw, -roll, int(face_origin[0]), int(face_origin[1]), 100)
 
     # Concatenate the images
     right_eye_image = eye_images['right']
@@ -227,7 +215,7 @@ def blendshape_gaze_render(frame: np.ndarray, result: FLGEResult):
 
 def draw_axis(img, pitch, yaw, roll=0, tdx=None, tdy=None, size = 100):
 
-    pitch = (pitch * np.pi / 180)
+    pitch = -(pitch * np.pi / 180)
     yaw = (yaw * np.pi / 180)
     roll = roll * np.pi / 180
 

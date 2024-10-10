@@ -32,6 +32,7 @@ def scale(y, y_hat):
     return np.abs(y / y_hat)
 
 def angle(y, y_hat):
+    # import pdb; pdb.set_trace()
     return np.degrees(np.arccos(np.clip(np.dot(y, y_hat), -1.0, 1.0)))
 
 def visualize_differences(sample, output):
@@ -102,7 +103,7 @@ def eval():
         participants=[1,2],
         # img_size=[244,244],
         # face_size=[244,244],
-        dataset_size=100
+        dataset_size=10
     )
 
     metric_functions = {

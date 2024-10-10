@@ -18,7 +18,8 @@ def rotation_matrix_to_euler_angles(R):
 
 def pitch_yaw_to_gaze_vector(pitch, yaw):
     """
-    Converts pitch and yaw angles into a 3D gaze direction vector (unit vector).
+    Converts pitch and yaw angles into a 3D gaze direction vector (unit vector),
+    with pitch=0 and yaw=0 corresponding to a gaze direction [0, 0, 1] (forward).
 
     Arguments:
     pitch -- pitch angle in degrees
@@ -32,27 +33,38 @@ def pitch_yaw_to_gaze_vector(pitch, yaw):
     yaw_rad = np.radians(yaw)
 
     # Calculate the 3D gaze vector using spherical-to-Cartesian transformation
-    x = np.cos(pitch_rad) * np.cos(yaw_rad)
-    y = np.cos(pitch_rad) * np.sin(yaw_rad)
-    z = np.sin(pitch_rad)
+    z = np.cos(pitch_rad) * np.cos(yaw_rad)  # Z becomes the forward direction
+    x = np.cos(pitch_rad) * np.sin(yaw_rad)  # X is horizontal
+    y = np.sin(pitch_rad)                    # Y is vertical
 
     # Return the 3D gaze vector
     return np.array([x, y, z])
 
 def vector_to_pitch_yaw(vector):
+    """
+    Converts a 3D gaze direction vector (unit vector) into pitch and yaw angles,
+    assuming [0, 0, 1] corresponds to pitch=0 and yaw=0 (forward direction).
+
+    Arguments:
+    vector -- 3D unit gaze direction vector as a numpy array [x, y, z].
+
+    Returns:
+    pitch -- pitch angle in degrees
+    yaw -- yaw angle in degrees
+    """
     # Ensure the input vector is normalized (unit vector)
     vector = vector / np.linalg.norm(vector)
     
     # Extract components
     x, y, z = vector
     
-    # Yaw (azimuth angle): the angle in the XY plane from the X-axis
-    yaw = np.arctan2(y, x)  # In radians, between -π and π
+    # Yaw (azimuth angle): the angle in the XZ plane from the Z-axis
+    yaw = np.arctan2(x, z)  # In radians, between -π and π
     
-    # Pitch (elevation angle): the angle from the XY plane
-    pitch = np.arctan2(z, np.sqrt(x**2 + y**2))  # In radians, between -π/2 and π/2
+    # Pitch (elevation angle): the angle from the XZ plane
+    pitch = np.arctan2(y, np.sqrt(x**2 + z**2))  # In radians, between -π/2 and π/2
 
-    # Convert radians to degrees if needed
+    # Convert radians to degrees
     yaw_deg = np.degrees(yaw)
     pitch_deg = np.degrees(pitch)
     
