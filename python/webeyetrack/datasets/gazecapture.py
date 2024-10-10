@@ -4,16 +4,15 @@ https://github.com/swook/faze_preprocess/blob/master/create_hdf_files_for_faze.p
 """
 
 import pathlib
-from typing import List, Dict, Union, Optional
+from typing import List, Dict, Union, Optional, Tuple
 import shutil
 import json
+from dataclasses import asdict
 
 import pandas as pd
-from scipy.spatial.transform import Rotation
 from tqdm import tqdm
 import cv2
 from PIL import Image
-import scipy.io
 import yaml
 import numpy as np
 from torch.utils.data import Dataset
@@ -22,7 +21,6 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 from ..constants import GIT_ROOT
-from ..vis import draw_gaze_origin
 from ..data_protocols import Annotations, CalibrationData, Sample
 from .utils import resize_annotations, resize_intrinsics, draw_landmarks_on_image, compute_uv_texture
 
@@ -35,15 +33,25 @@ class GazeCaptureDataset(Dataset):
     def __init__(
         self,
         dataset_dir: Union[str, pathlib.Path],
+        face_size: Tuple[int, int] = None,
+        img_size: Tuple[int, int] = None,
         dataset_size: Optional[int] = None,
+        per_participant_size: Optional[int] = None,
     ):
         
         # Process input variables
         if isinstance(dataset_dir, str):
             dataset_dir = pathlib.Path(dataset_dir)
+        assert dataset_dir.is_dir(), f"Dataset directory {dataset_dir} does not exist."
         self.dataset_dir = dataset_dir
-        assert self.dataset_dir.is_dir(), f"Dataset directory {self.dataset_dir} does not exist."
+
+        # Only dataset size or per participant size can be set
+        assert (dataset_size is None) or (per_participant_size is None), "Only one of dataset_size or per_participant_size can be set."
+
         self.dataset_size = dataset_size
+        self.per_participant_size = per_participant_size
+        self.face_size = face_size
+        self.img_size = img_size
 
         # Setup MediaPipe Face Facial Landmark model
         base_options = python.BaseOptions(model_asset_path=str(GIT_ROOT / 'python' / 'weights' / 'face_landmarker_v2_with_blendshapes.task'))
@@ -72,7 +80,12 @@ class GazeCaptureDataset(Dataset):
         self.participant_calibration_data: Dict[CalibrationData] = {}
 
         # Open the ``frames.json`` file with a list of frame names
-        for part_dir in participant_dir:
+        num_samples = 0
+        for part_dir in tqdm(participant_dir, total=len(participant_dir)):
+
+            if self.dataset_size is not None and num_samples >= self.dataset_size:
+                break
+
             participant_id = part_dir.name
             frames_json = part_dir / 'frames.json'
             with open(frames_json, 'r') as f:
@@ -80,8 +93,17 @@ class GazeCaptureDataset(Dataset):
             with open(part_dir / 'dotInfo.json', 'r') as f:
                 dot_info = json.load(f)
             dot_info_df = pd.DataFrame(dot_info)
+            
+            per_participant_samples = 0
 
-            for i, frame in enumerate(frames_fname_list):
+            for i, frame in tqdm(enumerate(frames_fname_list), total=len(frames_fname_list)):
+
+                if self.dataset_size is not None and num_samples >= self.dataset_size:
+                    break
+
+                if self.per_participant_size is not None and per_participant_samples >= self.per_participant_size:
+                    break
+
                 frame_fp = part_dir / 'frames' / frame
                 dot_info = dot_info_df.iloc[i]
 
@@ -164,7 +186,8 @@ class GazeCaptureDataset(Dataset):
                 # Compute the face origin
                 face_origin_3d = np.mean([origins_3d['left'], origins_3d['right']], axis=0)
 
-                import pdb; pdb.set_trace()
+                # Convert face_blendshapes to a proper numpy array
+                np_face_blendshapes = np.array([x.score for x in face_blendshapes])
 
                 # Create the annotation
                 annotation = Annotations(
@@ -172,7 +195,7 @@ class GazeCaptureDataset(Dataset):
                     facial_landmarks=face_landmarks_all,
                     facial_landmarks_2d=face_landmarks,
                     facial_rt=face_landmarks_rt,
-                    face_blendshapes=face_blendshapes,
+                    face_blendshapes=np_face_blendshapes,
                     face_bbox=face_bbox,
                     head_pose_3d=np.array([0, 0, 0, 0, 0, 0]), # From MPIIFaceGaze, not GazeCapture
                     face_origin_3d=face_origin_3d,
@@ -180,18 +203,63 @@ class GazeCaptureDataset(Dataset):
                     gaze_direction_3d=face_gaze_vector,
                     gaze_target_3d=gaze_3d_target,
                     gaze_target_2d=np.array([dot_info['XCam'], dot_info['YCam']]),
+                    pog_px=np.array([dot_info['XPts'], dot_info['YPts']])
                 )
 
                 # Create a sample
-                # sample = Sample(
-                # )
+                sample = Sample(
+                    participant_id=participant_id,
+                    image_fp=frame_fp,
+                    annotations=annotation,
+                )
 
-                # self.samples.append(sample)
+                self.samples.append(sample)
+                num_samples += 1
+                per_participant_samples += 1
 
-            break
+    def __getitem__(self, idx: int):
+        # Make a copy of the sample
+        sample = self.samples[idx]
 
-    def __getitem__(self, idx):
-        return {}
+        # Create torch-compatible data
+        image = Image.open(sample.image_fp)
+        image_np = np.array(image)
+
+        # Convert from uint8 to float32
+        image_np = image_np.astype(np.float32) / 255.0
+
+        # Crop out the face image and resize to have standard size
+        face_bbox = sample.annotations.face_bbox
+        
+        # Clip the face bounding box to the image size and avoid negative indexing
+        face_bbox[0] = np.clip(face_bbox[0], 0, image.size[1] - 1)
+        face_bbox[1] = np.clip(face_bbox[1], 0, image.size[0] - 1)
+        face_bbox[2] = np.clip(face_bbox[2], 0, image.size[1] - 1)
+        face_bbox[3] = np.clip(face_bbox[3], 0, image.size[0] - 1)
+        face_image_np = image_np[face_bbox[0]:face_bbox[2], face_bbox[1]:face_bbox[3]]
+        if self.face_size is not None:
+            face_image_np = cv2.resize(face_image_np, self.face_size, interpolation=cv2.INTER_LINEAR)
+
+        # Revert the image to the correct format
+        image_np = np.moveaxis(image_np, -1, 0)
+        face_image_np = np.moveaxis(face_image_np, -1, 0)
+
+        # Estimate intrinsics from the image size
+        intrinsics = np.array([
+            [image_np.shape[1], 0, image_np.shape[1] / 2],
+            [0, image_np.shape[0], image_np.shape[0] / 2],
+            [0, 0, 1]
+        ])
+
+        sample_dict = {
+            'image': image_np,
+            'face_image': face_image_np,
+            'intrinsics': intrinsics,
+            'dist_coeffs': np.zeros(5),
+        }
+        sample_dict.update(asdict(sample.annotations))
+
+        return sample_dict
 
     def __len__(self):
         return len(self.samples)
@@ -203,8 +271,8 @@ if __name__ == "__main__":
         config = yaml.safe_load(f)
 
     dataset = GazeCaptureDataset(
-        GIT_ROOT / pathlib.Path(config['datasets']['GazeCapture']['path']),
-        dataset_size=1000,
+        dataset_dir=GIT_ROOT / pathlib.Path(config['datasets']['GazeCapture']['path']),
+        per_participant_size=10
     )
     print(len(dataset))
 

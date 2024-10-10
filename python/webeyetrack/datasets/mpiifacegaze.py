@@ -39,16 +39,17 @@ class MPIIFaceGazeDataset(Dataset):
         # Process input variables
         if isinstance(dataset_dir, str):
             dataset_dir = pathlib.Path(dataset_dir)
+        assert dataset_dir.is_dir(), f"Dataset directory {dataset_dir} does not exist."
         self.dataset_dir = dataset_dir
-        assert self.dataset_dir.is_dir(), f"Dataset directory {self.dataset_dir} does not exist."
+        
+        # Only dataset size or per participant size can be set
+        assert (dataset_size is None) or (per_participant_size is None), "Only one of dataset_size or per_participant_size can be set."
+
         self.img_size = img_size
         self.face_size = face_size
         self.dataset_size = dataset_size
         self.per_participant_size = per_participant_size
         self.participants = participants
-
-        # Only dataset size or per participant size can be set
-        assert (self.dataset_size is None) or (self.per_participant_size is None), "Only one of dataset_size or per_participant_size can be set."
 
         if not self.participants:
             raise ValueError("No participants were selected.")
@@ -239,7 +240,6 @@ class MPIIFaceGazeDataset(Dataset):
                         gaze_target_3d=gaze_target_3d,
                         gaze_target_2d=gaze_target_2d.flatten(),
                         gaze_direction_3d=gaze_direction_3d,
-                        # which_eye=items[27]
                     )
             
                     annotations[items[0]] = annotation
@@ -352,7 +352,7 @@ class MPIIFaceGazeDataset(Dataset):
         sample_dict = {
             'image': image_np,
             'face_image': face_image_np,
-            'uv_texture': texture,
+            # 'uv_texture': texture,
             'intrinsics': intrinsics,
             'dist_coeffs': calibration_data.dist_coeffs,
             'screen_R': calibration_data.monitor_rvecs.astype(np.float32),

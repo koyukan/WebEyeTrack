@@ -132,8 +132,8 @@ def landmark_gaze_render(frame: np.ndarray, result: FLGEResult):
         # Shift the IRIS landmarks to the cropped eye
         iris_px = left_2d_iris_px if i == 'left' else right_2d_iris_px
         shifted_iris_px = iris_px - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
-        for iris_px in shifted_iris_px:
-            resized_iris_px = iris_px * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+        for iris_px_pt in shifted_iris_px:
+            resized_iris_px = iris_px_pt * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
             cv2.circle(eye_image, tuple(resized_iris_px.astype(int)), 3, (0, 0, 255), -1)
 
         # Draw the centroid of the eyeball
@@ -148,8 +148,9 @@ def landmark_gaze_render(frame: np.ndarray, result: FLGEResult):
             continue
 
         # Convert 3D to pitch and yaw
+        iris_center = iris_px[0]
         pitch, yaw = vector_to_pitch_yaw(eye_result.direction)
-        frame = draw_axis(frame, pitch, yaw, 0, int(centroid[0]), int(centroid[1]), 100)
+        frame = draw_axis(frame, pitch, yaw, 0, int(iris_center[0]), int(iris_center[1]), 100)
 
     # Draw the FPS on the topright
     fps = 1/result.duration

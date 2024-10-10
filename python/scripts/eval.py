@@ -14,7 +14,7 @@ import matplotlib
 matplotlib.use('TkAgg')
 
 from webeyetrack.constants import GIT_ROOT
-from webeyetrack.datasets import MPIIFaceGazeDataset
+from webeyetrack.datasets import MPIIFaceGazeDataset, GazeCaptureDataset
 from webeyetrack.pipelines import FLGE
 import webeyetrack.vis as vis
 import webeyetrack.core as core
@@ -85,6 +85,11 @@ def eval():
         # dataset_size=100
         per_participant_size=10
     )
+    
+    # Load gazecapture dataset instead
+    # dataset = GazeCapture(
+    #     GIT_ROOT / pathlib.Path(config['datasets']['GazeCapture']['path']),
+    # )
 
     print("FINISHED LOADING DATASET")
 
@@ -141,6 +146,8 @@ def eval():
             # Write to the output directory
         img = visualize_differences(sample, output)
         cv2.imwrite(str(OUTPUTS_DIR / 'imgs' / f'gaze_diff_{i}.png'), img)
+
+        img = cv2.cvtColor(np.moveaxis(sample['image'], 0, -1) * 255, cv2.COLOR_RGB2BGR)
         img = vis.landmark_gaze_render(img, results)
         cv2.imwrite(str(OUTPUTS_DIR / 'imgs' / f'landmark_{i}.png'), img)
 
