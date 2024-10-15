@@ -44,10 +44,6 @@ class GazeCaptureDataset(Dataset):
             dataset_dir = pathlib.Path(dataset_dir)
         assert dataset_dir.is_dir(), f"Dataset directory {dataset_dir} does not exist."
         self.dataset_dir = dataset_dir
-
-        # Only dataset size or per participant size can be set
-        assert (dataset_size is None) or (per_participant_size is None), "Only one of dataset_size or per_participant_size can be set."
-
         self.dataset_size = dataset_size
         self.per_participant_size = per_participant_size
         self.face_size = face_size
@@ -272,7 +268,8 @@ if __name__ == "__main__":
 
     dataset = GazeCaptureDataset(
         dataset_dir=GIT_ROOT / pathlib.Path(config['datasets']['GazeCapture']['path']),
-        per_participant_size=10
+        per_participant_size=10,
+        dataset_size=20
     )
     print(len(dataset))
 

@@ -77,19 +77,19 @@ def eval():
     )
     
     # Create a dataset object
-    dataset = MPIIFaceGazeDataset(
-        GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
-        participants=config['datasets']['MPIIFaceGaze']['val_subjects'] + config['datasets']['MPIIFaceGaze']['train_subjects'],
-        # img_size=[244,244],
-        # face_size=[244,244],
-        # dataset_size=100
-        per_participant_size=10
-    )
+    # dataset = MPIIFaceGazeDataset(
+    #     GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
+    #     participants=config['datasets']['MPIIFaceGaze']['val_subjects'] + config['datasets']['MPIIFaceGaze']['train_subjects'],
+    #     # img_size=[244,244],
+    #     # face_size=[244,244],
+    #     # dataset_size=100
+    #     per_participant_size=10
+    # )
     
     # Load gazecapture dataset instead
-    # dataset = GazeCapture(
-    #     GIT_ROOT / pathlib.Path(config['datasets']['GazeCapture']['path']),
-    # )
+    dataset = GazeCapture(
+        GIT_ROOT / pathlib.Path(config['datasets']['GazeCapture']['path']),
+    )
 
     print("FINISHED LOADING DATASET")
 
