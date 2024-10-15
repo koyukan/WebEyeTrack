@@ -1,6 +1,6 @@
 import pathlib
 from dataclasses import asdict
-from typing import List, Dict, Union, Tuple, Optional
+from typing import List, Dict, Union, Tuple, Optional, Literal
 import copy
 import os
 import json
@@ -18,9 +18,10 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 from ..constants import GIT_ROOT
-from ..vis import draw_gaze_origin
+from ..vis import draw_gaze_origin, draw_axis
 from ..data_protocols import Annotations, CalibrationData, Sample
 from .utils import resize_annotations, resize_intrinsics, draw_landmarks_on_image, compute_uv_texture
+from ..core import vector_to_pitch_yaw
 
 CWD = pathlib.Path(__file__).parent
 
@@ -32,10 +33,14 @@ For the EYEDIAP dataset, we evaluate on VGA images with static head pose for
 fair comparison with similar evaluations from [Wang and Ji 2017].
 Please note that we do not discard the challenging floating target sequences 
 from EYEDIAP.
+
+References:
+https://www.idiap.ch/en/scientific-research/data/eyediap#publications
 """
 
 # Static head pose sessions
-SESSION_INDEX = [0,2,4,6,8,10,11,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62,64,66,68,70,72,74,76,78,80,82,84,86,88,90,92]
+SESSION_INDEX = [0,2,6,8,11,12,16,18,22,24,28,30,34,36,40,42,46,48,52,54,58,60,64,66,70,72,76,78,82,84,88,90]
+# SESSION_INDEX = [0,2,4,6,8,10,11,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62,64,66,68,70,72,74,76,78,80,82,84,86,88,90,92]
 
 # ------------------------  DEFINE THE LIST OF RECORDING SESSIONS -------------------------------------
 sessions = []
@@ -195,7 +200,9 @@ class EyeDiapDataset(Dataset):
             face_size: Tuple[int, int] = None,
             img_size: Tuple[int, int] = None,
             dataset_size: Optional[int] = None,
-            per_participant_size: Optional[int] = None
+            per_participant_size: Optional[int] = None,
+            frame_skip_rate: int = 30,
+            video_type: Literal['vga', 'hd'] = 'vga'
         ):
 
         # Process input variables
@@ -212,6 +219,8 @@ class EyeDiapDataset(Dataset):
         self.dataset_size = dataset_size
         self.per_participant_size = per_participant_size
         self.participants = participants
+        self.frame_skip_rate = frame_skip_rate
+        self.video_type = video_type
 
         if not self.participants:
             raise ValueError("No participants were selected.")
@@ -224,22 +233,23 @@ class EyeDiapDataset(Dataset):
                                             num_faces=1)
         self.face_landmarker = vision.FaceLandmarker.create_from_options(options)
 
-        # Determine the number of samples in the dataset
-        # participant_dirs = [self.dataset_dir / f'EYEDIAP{p}' for p in self.participants]
-
         # Saving information
         self.samples: List[Sample] = []
 
         num_samples = 0
 
         # Tracking the number of loaded samples
-        # for participant_dir in tqdm(participant_dirs, total=len(participant_dirs), desc='Participants Preprocessing'):
-        for session_id in SESSION_INDEX:
+        for session_id in SESSION_INDEX[2:]:
 
             if self.dataset_size is not None and num_samples >= self.dataset_size:
                 break
 
             P, C, T, H = sessions[session_id]
+
+            # Skip T='FT', as it does not contain PoG 
+            if T == 'FT':
+                continue    
+
             session_str = get_session_string(session_id)
             session_fp = self.dataset_dir / f'EYEDIAP{P}' / 'EYEDIAP' / 'Data' / session_str
 
@@ -292,6 +302,8 @@ class EyeDiapDataset(Dataset):
                 ball_vals, screen_vals = None, None
                 screen_img = None
                 while all_ok and key != ord('q'):
+
+                    # Load the data
                     ok_rgb, frame_rgb     = rgb_vga.read()
                     ok_depth, frame_depth = depth.read()
                     if rgb_hd  is not None:
@@ -311,13 +323,131 @@ class EyeDiapDataset(Dataset):
                     all_ok = ok_rgb and ok_depth and ok_hd and eyes_vals is not None and head_vals is not None and target_vals is not None
 
                     if all_ok:
+
+                        # Select the frame to use
+                        desired_frame = None
+                        if self.video_type == 'vga':
+                            desired_frame = frame_rgb
+                        elif self.video_type == 'hd':
+                            desired_frame = frame_hd
+                        else:
+                            raise ValueError("Invalid video type. Must be 'vga' or 'hd'.")
+
+                        # Obtain facial landmarks
+                        detection_results, face_landmarks_proto = self.obtain_facial_landmarks(desired_frame)
+                        if detection_results is None:
+                            continue
+
+                        # Face landmakrs
+                        face_landmarks_all = np.array([[lm.x, lm.y, lm.z, lm.visibility, lm.presence] for lm in face_landmarks_proto])
+                        face_landmarks_rt = detection_results.facial_transformation_matrixes[0]
+                        face_blendshapes = detection_results.face_blendshapes[0]
+                        face_landmarks = np.array([[lm.x * desired_frame.shape[0], lm.y * desired_frame.shape[1]] for lm in face_landmarks_proto])
+
+                        # Compute the bounding box
+                        face_bbox = np.array([
+                            int(np.min(face_landmarks[:, 1])), 
+                            int(np.min(face_landmarks[:, 0])), 
+                            int(np.max(face_landmarks[:, 1])), 
+                            int(np.max(face_landmarks[:, 0]))
+                        ])
+
+                        # Determine the eye information
+                        left_eye_origin_3d = np.array(eyes_vals[-6:-3])
+                        right_eye_origin_3d = np.array(eyes_vals[-3:])
+
+                        if self.video_type == 'vga':
+                            left_eye_origin_2d = np.array(eyes_vals[:2])
+                            right_eye_origin_2d = np.array(eyes_vals[2:4])
+                        elif self.video_type == 'hd':
+                            left_eye_origin_2d = np.array(eyes_vals[8:10])
+                            right_eye_origin_2d = np.array(eyes_vals[10:12])
+
+                        # Obtain the target information
+                        if ball_track:
+                            gaze_target_2d = np.zeros((2))
+                            gaze_target_3d = np.array(ball_vals[-3:])
+                        elif screen_track:
+                            gaze_target_2d = np.array(screen_vals[:2])
+                            gaze_target_3d = np.array(screen_vals[2:])
+
+                        # Compute the gaze angle from the eye origin to the target for both eyes
+                        left_gaze_vector = gaze_target_3d - left_eye_origin_3d
+                        left_gaze_vector = left_gaze_vector / np.linalg.norm(left_gaze_vector)
+                        right_gaze_vector = gaze_target_3d - right_eye_origin_3d
+                        right_gaze_vector = right_gaze_vector / np.linalg.norm(right_gaze_vector)
+
+                        # Compute the average gaze vector for the face
+                        face_gaze_vector = (left_gaze_vector + right_gaze_vector) / 2
+                        face_gaze_vector = face_gaze_vector / np.linalg.norm(face_gaze_vector)
+
+                        # Compute the average gaze origin for the face
+                        face_origin_3d = (left_eye_origin_3d + right_eye_origin_3d) / 2
+                        face_origin_2d = (left_eye_origin_2d + right_eye_origin_2d) / 2
+
+                        # Create an annotation
+                        annotation = Annotations(
+                            original_img_size=np.array([desired_frame.shape[0], desired_frame.shape[1],desired_frame.shape[2]]),
+                            # Facial landmarks
+                            facial_detection_results=detection_results,
+                            facial_landmarks=face_landmarks_all,
+                            facial_landmarks_2d=face_landmarks,
+                            facial_rt=face_landmarks_rt,
+                            face_blendshapes=face_blendshapes,
+                            face_bbox=face_bbox,
+                            head_pose_3d=head_vals[:6],
+                            # Face Gaze
+                            face_origin_3d=face_origin_3d,
+                            face_origin_2d=face_origin_2d,
+                            face_gaze_vector=face_gaze_vector,
+                            # EyeGaze
+                            left_eye_origin_3d=left_eye_origin_3d,
+                            right_eye_origin_3d=right_eye_origin_3d,
+                            left_eye_origin_2d=left_eye_origin_2d,
+                            right_eye_origin_2d=right_eye_origin_3d,
+                            left_gaze_vector=left_gaze_vector,
+                            right_gaze_vector=right_gaze_vector,
+                            # Target information
+                            gaze_target_3d=gaze_target_3d,
+                            gaze_target_2d=gaze_target_2d,
+                            pog_px=gaze_target_2d
+                        )
+
+                        # Create a sample
+                        sample = Sample(
+                            participant_id=P,
+                            image_fp=None,
+                            annotations=annotation
+                        )
+                        self.samples.append(sample)
+
+                        # Draw the landmarks
+                        desired_frame = draw_landmarks_on_image(desired_frame, detection_results)
+                        if self.video_type == 'vga':
+                            frame_rgb = desired_frame
+                        elif self.video_type == 'hd':
+                            frame_hd = desired_frame
+
+                        # Visualize sample
                         frames = (frame_rgb, frame_depth, frame_hd)
                         if ball_vals is not None:
                             draw_ball(frames, ball_vals)
                         if screen_vals is not None:
                             screen_img = np.zeros((1000, 1680, 3), dtype=np.uint8)
                             draw_screen(screen_img, screen_vals)
-                        draw_eyes(frames, eyes_vals)
+
+                        for origin, vector in zip([left_eye_origin_2d, right_eye_origin_2d], [left_gaze_vector, right_gaze_vector]):
+                            pitch, yaw = vector_to_pitch_yaw(vector)
+
+                            if self.video_type == 'vga':
+                                frame_rgb = draw_axis(frame_rgb, pitch, yaw, 0, int(origin[0]), int(origin[1]), 100)
+                            elif self.video_type == 'hd':
+                                frame_hd = draw_axis(frame_hd, pitch, yaw, 0, int(origin[0]), int(origin[1]), 100)
+                        
+                        frames = (frame_rgb, frame_depth, frame_hd)
+
+                        # Draw the gaze
+                        # draw_eyes(frames, eyes_vals)
                         headHD_2D= draw_head_pose(frames, head_vals, calibrations)
                         if screen_img is not None:
                             cv2.imshow('screen', screen_img)
@@ -341,7 +471,9 @@ class EyeDiapDataset(Dataset):
                                 fps -= 5
                                 if fps < 1:
                                     fps = 1
+
                     frameIndex += 1
+            
             rgb_vga.release()
             depth.release()
             if rgb_hd is not None:
@@ -352,6 +484,26 @@ class EyeDiapDataset(Dataset):
                 screen_track.close()
 
             break
+
+    def obtain_facial_landmarks(self, frame):
+
+        # Detect the facial landmarks via MediaPipe
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
+        detection_results = self.face_landmarker.detect(mp_image)
+        
+        # Compute the face bounding box based on the MediaPipe landmarks
+        try:
+            face_landmarks_proto = detection_results.face_landmarks[0]
+        except:
+            return None, None
+
+        return detection_results, face_landmarks_proto
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, index: int):
+        return {}
 
 if __name__ == '__main__':
 

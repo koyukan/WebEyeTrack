@@ -1,6 +1,8 @@
+from typing import Any
 from dataclasses import dataclass
 import numpy as np
 import pathlib
+import mediapipe.python as mp
 
 @dataclass
 class Annotations:
@@ -9,6 +11,7 @@ class Annotations:
     original_img_size: np.ndarray # (3,)
 
     # Facial Landmarks information
+    facial_detection_results: Any
     facial_landmarks: np.ndarray # (5, N)
     facial_landmarks_2d: np.ndarray # (2, N)
     facial_rt: np.ndarray # (4, 4)
@@ -19,13 +22,15 @@ class Annotations:
     # Face Gaze
     face_origin_3d: np.ndarray # (3,)
     face_origin_2d: np.ndarray # (2,)
-    gaze_direction_3d: np.ndarray # (3,)
+    face_gaze_vector: np.ndarray # (3,)
 
     # Eye Gaze
-    # left_eye_origin_3d: np.ndarray
-    # right_eye_origin_3d: np.ndarray
-    # left_gaze_vector: np.ndarray
-    # right_gaze_vector: np.ndarray
+    left_eye_origin_3d: np.ndarray
+    right_eye_origin_3d: np.ndarray
+    left_eye_origin_2d: np.ndarray
+    right_eye_origin_2d: np.ndarray
+    left_gaze_vector: np.ndarray
+    right_gaze_vector: np.ndarray
 
     # Target information
     gaze_target_3d: np.ndarray # (3,)
