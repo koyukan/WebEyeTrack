@@ -6,6 +6,8 @@ datasets:
     val_subjects: [13, 14]
   GazeCapture:
     path: "data/GazeCapture"
+  EyeDiap:
+    path: "data/eyediap"
 train:
 
   # Model-Agnostic parameters

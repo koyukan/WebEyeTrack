@@ -1,6 +1,7 @@
 import os
 import pathlib
 from collections import defaultdict
+import argparse
 
 import cv2
 import matplotlib.pyplot as plt
@@ -14,7 +15,7 @@ import matplotlib
 matplotlib.use('TkAgg')
 
 from webeyetrack.constants import GIT_ROOT
-from webeyetrack.datasets import MPIIFaceGazeDataset, GazeCaptureDataset
+from webeyetrack.datasets import MPIIFaceGazeDataset, GazeCaptureDataset, EyeDiapDataset
 from webeyetrack.pipelines import FLGE
 import webeyetrack.vis as vis
 import webeyetrack.core as core
@@ -69,7 +70,7 @@ def visualize_differences(sample, output):
 def euclidean_distance(y, y_hat):
     return np.linalg.norm(y - y_hat)
 
-def eval():
+def eval(args):
 
     # Create pipeline
     algo = FLGE(
@@ -77,19 +78,25 @@ def eval():
     )
     
     # Create a dataset object
-    # dataset = MPIIFaceGazeDataset(
-    #     GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
-    #     participants=config['datasets']['MPIIFaceGaze']['val_subjects'] + config['datasets']['MPIIFaceGaze']['train_subjects'],
-    #     # img_size=[244,244],
-    #     # face_size=[244,244],
-    #     # dataset_size=100
-    #     per_participant_size=10
-    # )
-    
-    # Load gazecapture dataset instead
-    dataset = GazeCapture(
-        GIT_ROOT / pathlib.Path(config['datasets']['GazeCapture']['path']),
-    )
+    if (args.dataset == 'MPIIFaceGaze'):
+        dataset = MPIIFaceGazeDataset(
+            GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
+            participants=config['datasets']['MPIIFaceGaze']['val_subjects'] + config['datasets']['MPIIFaceGaze']['train_subjects'],
+            # img_size=[244,244],
+            # face_size=[244,244],
+            # dataset_size=100
+            per_participant_size=10
+        )
+    elif (args.dataset == 'EyeDiap'):
+        dataset = EyeDiapDataset(
+            GIT_ROOT / pathlib.Path(config['datasets']['EyeDiap']['path']),
+            participants=1,
+            dataset_size=10
+        )
+    else:
+        raise ValueError(f"Dataset {args.dataset} not supported")
+
+    # Load the eyediap dataset
 
     print("FINISHED LOADING DATASET")
 
@@ -201,4 +208,9 @@ def eval():
     # print(df)
 
 if __name__ == '__main__':
-    eval()
+    # Parse arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dataset', type=str, required=True, choices=['MPIIFaceGaze', 'EyeDiap'], help='Dataset to evaluate')
+    args = parser.parse_args()
+
+    eval(args)

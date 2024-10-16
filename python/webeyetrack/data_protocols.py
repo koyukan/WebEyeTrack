@@ -9,6 +9,7 @@ class Annotations:
 
     # Original frame information
     original_img_size: np.ndarray # (3,)
+    intrinsics: np.ndarray # (3, 3)
 
     # Facial Landmarks information
     facial_detection_results: Any

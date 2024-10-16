@@ -43,6 +43,8 @@ https://www.idiap.ch/en/scientific-research/data/eyediap#publications
 SESSION_INDEX = [0,2,6,8,11,12,16,18,22,24,28,30,34,36,40,42,46,48,52,54,58,60,64,66,70,72,76,78,82,84,88,90]
 # SESSION_INDEX = [0,2,4,6,8,10,11,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62,64,66,68,70,72,74,76,78,80,82,84,86,88,90,92]
 
+OVERWRITE_SESSIONS = True
+
 # ------------------------  DEFINE THE LIST OF RECORDING SESSIONS -------------------------------------
 sessions = []
 for P in range(16):
@@ -227,8 +229,8 @@ class EyeDiapDataset(Dataset):
         if video_type == 'hd':
             raise NotImplementedError("HD video is not yet supported.")
 
-        if not self.participants:
-            raise ValueError("No participants were selected.")
+        # if not self.participants:
+        #     raise ValueError("No participants were selected.")
 
         # Setup MediaPipe Face Facial Landmark model
         base_options = python.BaseOptions(model_asset_path=str(GIT_ROOT / 'python' / 'weights' / 'face_landmarker_v2_with_blendshapes.task'))
@@ -350,22 +352,28 @@ class EyeDiapDataset(Dataset):
                                 if ball_track is not None:
                                     while True:
                                         ball_frame_index, ball_vals = extract_next_file_values(ball_track)
-                                        if ball_frame_index == frameIndex - 1:
+                                        if ball_frame_index is None:
+                                            break
+                                        if ball_frame_index >= frameIndex - 1:
                                             break
                                 if screen_track is not None:
                                     while True:
                                         screen_frame_index, screen_vals = extract_next_file_values(screen_track)
-                                        if screen_frame_index == frameIndex - 1:
+                                        if screen_frame_index is None:
+                                            break
+                                        if screen_frame_index >= frameIndex - 1:
                                             break
                                 if gaze_state_track is not None:
                                     while True:
                                         gaze_frame_index, gaze_vals = extract_next_file_values(gaze_state_track, delimiter='\t', typecast=str)
-                                        if gaze_frame_index == frameIndex - 1:
+                                        if gaze_frame_index is None:
+                                            break
+                                        if gaze_frame_index >= frameIndex - 1:
                                             break
 
                     # If the sample already exists, load it
                     sample_fp = session_fp / 'samples' / f'{frameIndex}.pkl'
-                    if sample_fp.exists():
+                    if sample_fp.exists() and not OVERWRITE_SESSIONS:
                         with open(sample_fp, 'rb') as f:
                             sample = pickle.load(f)
                         self.samples.append(sample)
@@ -414,10 +422,13 @@ class EyeDiapDataset(Dataset):
 
                         # Select the frame to use
                         desired_frame = None
+                        desired_calibration = None
                         if self.video_type == 'vga':
                             desired_frame = frame_rgb
+                            desired_calibration = rgb_vga_calibration
                         elif self.video_type == 'hd':
                             desired_frame = frame_hd
+                            desired_calibration = rgb_hd_calibration
                         else:
                             raise ValueError("Invalid video type. Must be 'vga' or 'hd'.")
 
@@ -482,6 +493,7 @@ class EyeDiapDataset(Dataset):
                         # Create an annotation
                         annotation = Annotations(
                             original_img_size=np.array([desired_frame.shape[0], desired_frame.shape[1],desired_frame.shape[2]]),
+                            intrinsics=desired_calibration['intrinsics'],
                             # Facial landmarks
                             facial_detection_results=detection_results,
                             facial_landmarks=face_landmarks_all,
@@ -690,7 +702,7 @@ if __name__ == '__main__':
 
     dataset = EyeDiapDataset(
         GIT_ROOT / pathlib.Path(config['datasets']['EyeDiap']['path']),
-        dataset_size=2,
+        # dataset_size=2,
         participants=[1]
     )
     print(len(dataset))
