@@ -38,7 +38,7 @@ class Annotations:
     pog_px: np.ndarray # (2,)
 
     # Gaze State Information
-    is_closed: bool = False
+    is_closed: np.ndarray # (1,)
 
 @dataclass
 class CalibrationData:

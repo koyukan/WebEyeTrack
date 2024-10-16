@@ -1,9 +1,10 @@
 import pathlib
 from dataclasses import asdict
-from typing import List, Dict, Union, Tuple, Optional, Literal
+from typing import List, Dict, Union, Tuple, Optional, Literal, Any
 import copy
 import os
 import json
+import pickle
 
 from scipy.spatial.transform import Rotation
 from tqdm import tqdm
@@ -223,6 +224,9 @@ class EyeDiapDataset(Dataset):
         self.frame_skip_rate = frame_skip_rate
         self.video_type = video_type
 
+        if video_type == 'hd':
+            raise NotImplementedError("HD video is not yet supported.")
+
         if not self.participants:
             raise ValueError("No participants were selected.")
 
@@ -240,7 +244,7 @@ class EyeDiapDataset(Dataset):
         num_samples = 0
 
         # Tracking the number of loaded samples
-        for session_id in SESSION_INDEX[1:]:
+        for session_id in tqdm(SESSION_INDEX):
 
             if self.dataset_size is not None and num_samples >= self.dataset_size:
                 break
@@ -314,6 +318,9 @@ class EyeDiapDataset(Dataset):
                 requested_frames = safe_requested_frames
                 gaze_state_track.seek(0)
 
+            # Create progress bar
+            pbar = tqdm(total=len(requested_frames))
+
             if rgb_vga.isOpened() and depth.isOpened() and (rgb_hd is None or rgb_hd.isOpened()):
                 all_ok = True
                 key = 0
@@ -323,9 +330,15 @@ class EyeDiapDataset(Dataset):
                 screen_img = None
                 while all_ok and key != ord('q'):
 
+                    # If the dataset size is set, break if the number of samples exceeds the dataset size
+                    if self.dataset_size is not None and num_samples >= self.dataset_size:
+                        break
+
                     if self.frame_skip_rate > 1:
                         if frameIndex not in requested_frames:
                             frameIndex += 1
+                            if frameIndex >= total_frames:
+                                break
                             continue
                         else:
                             # Update the video captures and the track files
@@ -333,21 +346,43 @@ class EyeDiapDataset(Dataset):
                             depth.set(cv2.CAP_PROP_POS_FRAMES, frameIndex)
                             if rgb_hd is not None:
                                 rgb_hd.set(cv2.CAP_PROP_POS_FRAMES, frameIndex)
-                            if ball_track is not None:
-                                while True:
-                                    ball_frame_index, ball_vals = extract_next_file_values(ball_track)
-                                    if ball_frame_index == frameIndex - 1:
-                                        break
-                            if screen_track is not None:
-                                while True:
-                                    screen_frame_index, screen_vals = extract_next_file_values(screen_track)
-                                    if screen_frame_index == frameIndex - 1:
-                                        break
-                            if gaze_state_track is not None:
-                                while True:
-                                    gaze_frame_index, gaze_vals = extract_next_file_values(gaze_state_track, delimiter='\t', typecast=str)
-                                    if gaze_frame_index == frameIndex - 1:
-                                        break
+                            if frameIndex > 0:
+                                if ball_track is not None:
+                                    while True:
+                                        ball_frame_index, ball_vals = extract_next_file_values(ball_track)
+                                        if ball_frame_index == frameIndex - 1:
+                                            break
+                                if screen_track is not None:
+                                    while True:
+                                        screen_frame_index, screen_vals = extract_next_file_values(screen_track)
+                                        if screen_frame_index == frameIndex - 1:
+                                            break
+                                if gaze_state_track is not None:
+                                    while True:
+                                        gaze_frame_index, gaze_vals = extract_next_file_values(gaze_state_track, delimiter='\t', typecast=str)
+                                        if gaze_frame_index == frameIndex - 1:
+                                            break
+
+                    # If the sample already exists, load it
+                    sample_fp = session_fp / 'samples' / f'{frameIndex}.pkl'
+                    if sample_fp.exists():
+                        with open(sample_fp, 'rb') as f:
+                            sample = pickle.load(f)
+                        self.samples.append(sample)
+                        pbar.update(1)
+                        frameIndex += 1
+                        num_samples += 1
+                        rgb_vga.set(cv2.CAP_PROP_POS_FRAMES, frameIndex)
+                        depth.set(cv2.CAP_PROP_POS_FRAMES, frameIndex)
+                        if rgb_hd is not None:
+                            rgb_hd.set(cv2.CAP_PROP_POS_FRAMES, frameIndex)
+                        if ball_track is not None:
+                            ball_track.readline()
+                        if screen_track is not None:
+                            screen_track.readline()
+                        if gaze_state_track is not None:
+                            gaze_state_track.readline()
+                        continue
 
                     # Load the data
                     ok_rgb, frame_rgb     = rgb_vga.read()
@@ -395,6 +430,7 @@ class EyeDiapDataset(Dataset):
                         face_landmarks_all = np.array([[lm.x, lm.y, lm.z, lm.visibility, lm.presence] for lm in face_landmarks_proto])
                         face_landmarks_rt = detection_results.facial_transformation_matrixes[0]
                         face_blendshapes = detection_results.face_blendshapes[0]
+                        face_blendshapes = np.array([x.score for x in face_blendshapes])
                         face_landmarks = np.array([[lm.x * desired_frame.shape[0], lm.y * desired_frame.shape[1]] for lm in face_landmarks_proto])
 
                         # Compute the bounding box
@@ -453,7 +489,7 @@ class EyeDiapDataset(Dataset):
                             facial_rt=face_landmarks_rt,
                             face_blendshapes=face_blendshapes,
                             face_bbox=face_bbox,
-                            head_pose_3d=head_vals[:6],
+                            head_pose_3d=np.array(head_vals[:6]),
                             # Face Gaze
                             face_origin_3d=face_origin_3d,
                             face_origin_2d=face_origin_2d,
@@ -470,16 +506,28 @@ class EyeDiapDataset(Dataset):
                             gaze_target_2d=gaze_target_2d,
                             pog_px=gaze_target_2d,
                             # Gaze State Information
-                            is_closed=is_closed
+                            is_closed=np.array([is_closed])
                         )
+
+                        # Write frame into a folder
+                        os.makedirs(session_fp / 'frames', exist_ok=True)
+                        frame_fp = session_fp / 'frames' / f'{frameIndex}.png'
+                        cv2.imwrite(str(frame_fp), desired_frame)
 
                         # Create a sample
                         sample = Sample(
                             participant_id=P,
-                            image_fp=None,
+                            image_fp=frame_fp,
                             annotations=annotation
                         )
                         self.samples.append(sample)
+                        num_samples += 1
+                        pbar.update(1)
+
+                        # Save the sample within the ``samples`` directory to avoid having to reprocess the data, as a pickle
+                        os.makedirs(session_fp / 'samples', exist_ok=True)
+                        with open(session_fp / 'samples' / f'{frameIndex}.pkl', 'wb') as f:
+                            pickle.dump(sample, f)
 
                         # Draw the landmarks
                         desired_frame = draw_landmarks_on_image(desired_frame, detection_results)
@@ -533,7 +581,9 @@ class EyeDiapDataset(Dataset):
                                     fps = 1
 
                     frameIndex += 1
-            
+
+            pbar.close() 
+
             rgb_vga.release()
             depth.release()
             if rgb_hd is not None:
@@ -543,7 +593,7 @@ class EyeDiapDataset(Dataset):
             if screen_track is not None:
                 screen_track.close()
 
-            break
+            cv2.destroyAllWindows()
 
     def obtain_facial_landmarks(self, frame):
 
@@ -562,8 +612,75 @@ class EyeDiapDataset(Dataset):
     def __len__(self):
         return len(self.samples)
 
-    def __getitem__(self, index: int):
-        return {}
+    def get_sample(self, index: int, pytorch_friendly: bool = True) -> Dict[str, Any]:
+        
+        # Make a copy of the sample
+        sample = copy.deepcopy(self.samples[index])
+
+        # Create torch-compatible data
+        image = Image.open(sample.image_fp)
+        image_np = np.array(image)
+
+        # Convert from uint8 to float32
+        image_np = image_np.astype(np.float32) / 255.0
+
+        # Crop out the face image and resize to have standard size
+        face_bbox = sample.annotations.face_bbox
+        
+        # Clip the face bounding box to the image size and avoid negative indexing
+        face_bbox[0] = np.clip(face_bbox[0], 0, image.size[1] - 1)
+        face_bbox[1] = np.clip(face_bbox[1], 0, image.size[0] - 1)
+        face_bbox[2] = np.clip(face_bbox[2], 0, image.size[1] - 1)
+        face_bbox[3] = np.clip(face_bbox[3], 0, image.size[0] - 1)
+        face_image_np = image_np[face_bbox[0]:face_bbox[2], face_bbox[1]:face_bbox[3]]
+        if self.face_size is not None:
+            face_image_np = cv2.resize(face_image_np, self.face_size, interpolation=cv2.INTER_LINEAR)
+
+        # Resize the raw input image if needed
+        # if self.img_size is not None:
+        #     image_np = cv2.resize(image_np, self.img_size, interpolation=cv2.INTER_LINEAR)
+        #     sample.annotations = resize_annotations(sample.annotations, image.size, self.img_size)
+        #     intrinsics = resize_intrinsics(calibration_data.camera_matrix, image.size, self.img_size)
+        # else:
+        #     intrinsics = calibration_data.camera_matrix
+        
+        # Revert the image to the correct format
+        image_np = np.moveaxis(image_np, -1, 0)
+        face_image_np = np.moveaxis(face_image_np, -1, 0)
+
+        sample_dict = {
+            'image': image_np,
+            'face_image': face_image_np,
+            # 'intrinsics': intrinsics,
+            # 'dist_coeffs': calibration_data.dist_coeffs,
+            # 'screen_R': calibration_data.monitor_rvecs.astype(np.float32),
+            # 'screen_t': calibration_data.monitor_tvecs.astype(np.float32),
+            # 'screen_height_mm': calibration_data.monitor_height_mm.astype(np.float32),
+            # 'screen_height_px': calibration_data.monitor_height_px.astype(np.float32),
+            # 'screen_width_mm': calibration_data.monitor_width_mm.astype(np.float32),
+            # 'screen_width_px': calibration_data.monitor_width_px.astype(np.float32),
+            # 'gaze_origin_depth_mean': self.gaze_origin_depth_mean,
+            # 'gaze_origin_depth_std': self.gaze_origin_depth_std,
+            # 'pog_px_mean': self.pog_px_mean,
+            # 'pog_px_std': self.pog_px_std,
+            # 'pog_mm': pog_mm,
+            # 'mediapipe_head_vector': head_direction_xyz.astype(np.float32),
+            # 'relative_gaze_vector': relative_gaze_vector.astype(np.float32)
+        }
+
+        # Extract the PyTorch friendly data
+        pytorch_friendly_sample = {}
+        if pytorch_friendly:
+            for k, v in asdict(sample.annotations).items():
+                if k not in ['facial_detection_results']:
+                    pytorch_friendly_sample[k] = v
+
+        sample_dict.update(pytorch_friendly_sample)
+        return sample_dict
+
+    def __getitem__(self, index: int) -> Dict[str, np.ndarray]:
+        return self.get_sample(index)
+        
 
 if __name__ == '__main__':
 
