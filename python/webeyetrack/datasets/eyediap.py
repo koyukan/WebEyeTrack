@@ -180,13 +180,14 @@ def read_calibration_file(calibration_file):
     fh.close()
     return cal
 
-def extract_next_file_values(file_obj):
+def extract_next_file_values(file_obj, delimiter=';', typecast=float):
     """
     From a string row in a file creates a list of float values together with the frame index
     """
     line = file_obj.readline().strip()
     if len(line)>0:
-        vals = [float(el) for el in line.split(';')]
+        # vals = [float(el) for el in line.split(delimiter)]
+        vals = [typecast(el) for el in line.split(delimiter)]
         return int(vals[0]), vals[1:]
     else:
         return None, None
@@ -239,7 +240,7 @@ class EyeDiapDataset(Dataset):
         num_samples = 0
 
         # Tracking the number of loaded samples
-        for session_id in SESSION_INDEX[2:]:
+        for session_id in SESSION_INDEX[1:]:
 
             if self.dataset_size is not None and num_samples >= self.dataset_size:
                 break
@@ -264,7 +265,9 @@ class EyeDiapDataset(Dataset):
             rgb_vga_calibration_file = str(session_fp / 'rgb_vga_calibration.txt')
             rgb_hd_calibration_file = str(session_fp / 'rgb_hd_calibration.txt')
             depth_calibration_file = str(session_fp / 'depth_calibration.txt')
+            gaze_state = str(self.dataset_dir / 'EYEDIAP_GazeStateAnnotations' / 'EYEDIAP' / 'Annotations' / 'GazeState' / 'GazeStateExport' / 'Data' / session_str / 'gaze_state.txt')
 
+            gaze_state_track = None
             ball_track = None
             screen_track = None
             eyes_track = open(eyes_track_file, 'r')
@@ -277,6 +280,8 @@ class EyeDiapDataset(Dataset):
             else:
                 screen_track = open(screen_track_file, 'r')
                 header = screen_track.readline()
+            if T != 'DS':
+                gaze_state_track = open(gaze_state, 'r')
 
             # Read the calibration parameter files
             rgb_vga_calibration = read_calibration_file(rgb_vga_calibration_file)
@@ -311,14 +316,21 @@ class EyeDiapDataset(Dataset):
                     else:
                         ok_hd, frame_hd = True, None
                     target_vals = None
+                    gaze_vals = None
                     if ball_track is not None:
                         ball_frame_index, ball_vals = extract_next_file_values(ball_track)
                         target_vals = ball_vals
                     if screen_track is not None:
                         screen_frame_index, screen_vals = extract_next_file_values(screen_track)
                         target_vals = screen_vals
+                    if gaze_state_track is not None:
+                        gaze_frame_index, gaze_vals = extract_next_file_values(gaze_state_track, delimiter='\t', typecast=str)
                     eyes_frame_index, eyes_vals = extract_next_file_values(eyes_track)
                     head_frame_index, head_vals = extract_next_file_values(head_track)
+
+                    if gaze_vals:
+                        if gaze_vals[0] == 'NL':
+                            continue
 
                     all_ok = ok_rgb and ok_depth and ok_hd and eyes_vals is not None and head_vals is not None and target_vals is not None
 
@@ -385,6 +397,11 @@ class EyeDiapDataset(Dataset):
                         face_origin_3d = (left_eye_origin_3d + right_eye_origin_3d) / 2
                         face_origin_2d = (left_eye_origin_2d + right_eye_origin_2d) / 2
 
+                        # if gaze_state is 'BK', eyes are closed
+                        is_closed = False
+                        if gaze_vals:
+                            is_closed = gaze_vals[0] == 'BK'
+
                         # Create an annotation
                         annotation = Annotations(
                             original_img_size=np.array([desired_frame.shape[0], desired_frame.shape[1],desired_frame.shape[2]]),
@@ -410,7 +427,9 @@ class EyeDiapDataset(Dataset):
                             # Target information
                             gaze_target_3d=gaze_target_3d,
                             gaze_target_2d=gaze_target_2d,
-                            pog_px=gaze_target_2d
+                            pog_px=gaze_target_2d,
+                            # Gaze State Information
+                            is_closed=is_closed
                         )
 
                         # Create a sample

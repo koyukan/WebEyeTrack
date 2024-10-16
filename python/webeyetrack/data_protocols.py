@@ -37,6 +37,9 @@ class Annotations:
     gaze_target_2d: np.ndarray # (2,)
     pog_px: np.ndarray # (2,)
 
+    # Gaze State Information
+    is_closed: bool = False
+
 @dataclass
 class CalibrationData:
     camera_matrix: np.ndarray
