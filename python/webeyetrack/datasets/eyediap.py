@@ -299,6 +299,21 @@ class EyeDiapDataset(Dataset):
             else:
                 rgb_hd = None
 
+            # Determine the total number of frames
+            total_frames = int(rgb_vga.get(cv2.CAP_PROP_FRAME_COUNT))
+
+            # Using the frame skip rate and the gaze state information, determine the list of frames needed
+            requested_frames = list(range(0, total_frames, self.frame_skip_rate))
+            if gaze_state_track is not None:
+                lines = gaze_state_track.readlines()
+                safe_requested_frames = []
+                for i in requested_frames:
+                    gaze_state = lines[i].strip().split('\t')[1]
+                    if gaze_state == 'OK':
+                        safe_requested_frames.append(i)
+                requested_frames = safe_requested_frames
+                gaze_state_track.seek(0)
+
             if rgb_vga.isOpened() and depth.isOpened() and (rgb_hd is None or rgb_hd.isOpened()):
                 all_ok = True
                 key = 0
@@ -307,6 +322,32 @@ class EyeDiapDataset(Dataset):
                 ball_vals, screen_vals = None, None
                 screen_img = None
                 while all_ok and key != ord('q'):
+
+                    if self.frame_skip_rate > 1:
+                        if frameIndex not in requested_frames:
+                            frameIndex += 1
+                            continue
+                        else:
+                            # Update the video captures and the track files
+                            rgb_vga.set(cv2.CAP_PROP_POS_FRAMES, frameIndex)
+                            depth.set(cv2.CAP_PROP_POS_FRAMES, frameIndex)
+                            if rgb_hd is not None:
+                                rgb_hd.set(cv2.CAP_PROP_POS_FRAMES, frameIndex)
+                            if ball_track is not None:
+                                while True:
+                                    ball_frame_index, ball_vals = extract_next_file_values(ball_track)
+                                    if ball_frame_index == frameIndex - 1:
+                                        break
+                            if screen_track is not None:
+                                while True:
+                                    screen_frame_index, screen_vals = extract_next_file_values(screen_track)
+                                    if screen_frame_index == frameIndex - 1:
+                                        break
+                            if gaze_state_track is not None:
+                                while True:
+                                    gaze_frame_index, gaze_vals = extract_next_file_values(gaze_state_track, delimiter='\t', typecast=str)
+                                    if gaze_frame_index == frameIndex - 1:
+                                        break
 
                     # Load the data
                     ok_rgb, frame_rgb     = rgb_vga.read()
