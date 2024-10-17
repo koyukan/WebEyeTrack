@@ -39,15 +39,12 @@ def scale(y, y_hat):
 def angle(y, y_hat):
     return np.degrees(np.arccos(np.clip(np.dot(y, y_hat), -1.0, 1.0)))
 
-def visualize_differences(sample, output):
-    
-    # Draw the gaze vectors
-    img = cv2.cvtColor(np.moveaxis(sample['image'], 0, -1) * 255, cv2.COLOR_RGB2BGR)
+def visualize_differences(img, sample, output):
 
     # Draw the facial_landmarks
     height, width = img.shape[:2]
 
-    pitch, yaw = core.vector_to_pitch_yaw(sample['gaze_direction_3d'])
+    pitch, yaw = core.vector_to_pitch_yaw(sample['face_gaze_vector'])
     cv2.circle(img, (int(sample['face_origin_2d'][0]), int(sample['face_origin_2d'][1])), 5, (0, 0, 255), -1)
     img = vis.draw_axis(img, pitch, yaw, 0, tdx=sample['face_origin_2d'][0], tdy=sample['face_origin_2d'][1], size=100)
 
@@ -111,12 +108,19 @@ def eval(args):
         'pog_mm': euclidean_distance
     }
     metrics = defaultdict(list)
-    for i, sample in tqdm(enumerate(dataset), total=len(dataset)):
+
+    df = dataset.to_df()
+    for i in tqdm(range(len(df))):
+
+        # Get sample and load the image
+        sample = df.iloc[i]
+        img = cv2.imread(str(sample['image_fp']))
 
         # Process the sample
         # try:
         # results = algo.process_sample(sample)
-        img = cv2.cvtColor(np.moveaxis(sample['image'], 0, -1) * 255, cv2.COLOR_RGB2BGR)
+        # img = cv2.cvtColor(np.moveaxis(sample['image'], 0, -1) * 255, cv2.COLOR_RGB2BGR)
+        # results = algo.process_frame(sample['image'], sample['intrinsics'])
         results = algo.process_frame(img, sample['intrinsics'])
         # except Exception as e:
         #     print(e)
@@ -139,9 +143,9 @@ def eval(args):
             'face_origin-x': sample['face_origin_3d'][1],
             'face_origin-y': sample['face_origin_3d'][0],
             'face_origin-z': sample['face_origin_3d'][2],
-            'face_gaze_vector': sample['gaze_direction_3d'],
+            'face_gaze_vector': sample['face_gaze_vector'],
             'pog_px': sample['pog_px'],
-            'pog_mm': sample['pog_mm']
+            # 'pog_mm': sample['pog_mm']
         }
         
         for name, function in metric_functions.items():
@@ -151,10 +155,9 @@ def eval(args):
 
         # if i % SKIP_COUNT == 0:
             # Write to the output directory
-        img = visualize_differences(sample, output)
+        img = visualize_differences(img, sample, output)
         cv2.imwrite(str(OUTPUTS_DIR / 'imgs' / f'gaze_diff_{i}.png'), img)
 
-        img = cv2.cvtColor(np.moveaxis(sample['image'], 0, -1) * 255, cv2.COLOR_RGB2BGR)
         img = vis.landmark_gaze_render(img, results)
         cv2.imwrite(str(OUTPUTS_DIR / 'imgs' / f'landmark_{i}.png'), img)
 

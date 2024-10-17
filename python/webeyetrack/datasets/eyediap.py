@@ -1,11 +1,13 @@
 import pathlib
 from dataclasses import asdict
+from collections import defaultdict
 from typing import List, Dict, Union, Tuple, Optional, Literal, Any
 import copy
 import os
 import json
 import pickle
 
+import pandas as pd
 from scipy.spatial.transform import Rotation
 from tqdm import tqdm
 import cv2
@@ -43,7 +45,8 @@ https://www.idiap.ch/en/scientific-research/data/eyediap#publications
 SESSION_INDEX = [0,2,6,8,11,12,16,18,22,24,28,30,34,36,40,42,46,48,52,54,58,60,64,66,70,72,76,78,82,84,88,90]
 # SESSION_INDEX = [0,2,4,6,8,10,11,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62,64,66,68,70,72,74,76,78,80,82,84,86,88,90,92]
 
-OVERWRITE_SESSIONS = True
+# OVERWRITE_SESSIONS = True
+OVERWRITE_SESSIONS = False
 
 # ------------------------  DEFINE THE LIST OF RECORDING SESSIONS -------------------------------------
 sessions = []
@@ -692,6 +695,18 @@ class EyeDiapDataset(Dataset):
 
     def __getitem__(self, index: int) -> Dict[str, np.ndarray]:
         return self.get_sample(index)
+
+    def to_df(self):
+
+        
+        data = defaultdict(list)
+        for sample in self.samples:
+            data['image_fp'].append(sample.image_fp)
+            data['participant_id'].append(sample.participant_id)
+            for k, v in asdict(sample.annotations).items():
+                data[k].append(v)
+
+        return pd.DataFrame(data)
         
 
 if __name__ == '__main__':
