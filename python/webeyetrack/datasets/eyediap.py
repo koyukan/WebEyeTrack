@@ -45,8 +45,8 @@ https://www.idiap.ch/en/scientific-research/data/eyediap#publications
 SESSION_INDEX = [0,2,6,8,11,12,16,18,22,24,28,30,34,36,40,42,46,48,52,54,58,60,64,66,70,72,76,78,82,84,88,90]
 # SESSION_INDEX = [0,2,4,6,8,10,11,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62,64,66,68,70,72,74,76,78,80,82,84,86,88,90,92]
 
-# OVERWRITE_SESSIONS = True
-OVERWRITE_SESSIONS = False
+OVERWRITE_SESSIONS = True
+# OVERWRITE_SESSIONS = False
 
 # ------------------------  DEFINE THE LIST OF RECORDING SESSIONS -------------------------------------
 sessions = []
@@ -209,7 +209,8 @@ class EyeDiapDataset(Dataset):
             dataset_size: Optional[int] = None,
             per_participant_size: Optional[int] = None,
             frame_skip_rate: int = 30,
-            video_type: Literal['vga', 'hd'] = 'vga'
+            video_type: Literal['vga', 'hd'] = 'vga',
+            visualize: bool = False
         ):
 
         # Process input variables
@@ -218,9 +219,6 @@ class EyeDiapDataset(Dataset):
         assert dataset_dir.is_dir(), f"Dataset directory {dataset_dir} does not exist."
         self.dataset_dir = dataset_dir
         
-        # Only dataset size or per participant size can be set
-        assert (dataset_size is None) or (per_participant_size is None), "Only one of dataset_size or per_participant_size can be set."
-
         self.img_size = img_size
         self.face_size = face_size
         self.dataset_size = dataset_size
@@ -228,12 +226,13 @@ class EyeDiapDataset(Dataset):
         self.participants = participants
         self.frame_skip_rate = frame_skip_rate
         self.video_type = video_type
-
-        if video_type == 'hd':
-            raise NotImplementedError("HD video is not yet supported.")
+        self.visualize = visualize
 
         # if not self.participants:
         #     raise ValueError("No participants were selected.")
+
+        # if self.video_type == 'hd':
+        #     raise RuntimeError("HD video is not supported yet. TODO: Gaze direction does not appear to be correct in HD video.")
 
         # Setup MediaPipe Face Facial Landmark model
         base_options = python.BaseOptions(model_asset_path=str(GIT_ROOT / 'python' / 'weights' / 'face_landmarker_v2_with_blendshapes.task'))
@@ -312,7 +311,10 @@ class EyeDiapDataset(Dataset):
             total_frames = int(rgb_vga.get(cv2.CAP_PROP_FRAME_COUNT))
 
             # Using the frame skip rate and the gaze state information, determine the list of frames needed
-            requested_frames = list(range(0, total_frames, self.frame_skip_rate))
+            if self.frame_skip_rate == 0:
+                requested_frames = list(range(0, total_frames))
+            else:
+                requested_frames = list(range(0, total_frames, self.frame_skip_rate))
             if gaze_state_track is not None:
                 lines = gaze_state_track.readlines()
                 safe_requested_frames = []
@@ -323,8 +325,10 @@ class EyeDiapDataset(Dataset):
                 requested_frames = safe_requested_frames
                 gaze_state_track.seek(0)
 
+
             # Create progress bar
             pbar = tqdm(total=len(requested_frames))
+            per_participant_size = 0
 
             if rgb_vga.isOpened() and depth.isOpened() and (rgb_hd is None or rgb_hd.isOpened()):
                 all_ok = True
@@ -337,6 +341,9 @@ class EyeDiapDataset(Dataset):
 
                     # If the dataset size is set, break if the number of samples exceeds the dataset size
                     if self.dataset_size is not None and num_samples >= self.dataset_size:
+                        break
+
+                    if self.per_participant_size is not None and per_participant_size >= self.per_participant_size:
                         break
 
                     if self.frame_skip_rate > 1:
@@ -373,6 +380,20 @@ class EyeDiapDataset(Dataset):
                                             break
                                         if gaze_frame_index >= frameIndex - 1:
                                             break
+                                if eyes_track is not None:
+                                    while True:
+                                        eyes_frame_index, eyes_vals = extract_next_file_values(eyes_track)
+                                        if eyes_frame_index is None:
+                                            break
+                                        if eyes_frame_index >= frameIndex - 1:
+                                            break
+                                if head_track is not None:
+                                    while True:
+                                        head_frame_index, head_vals = extract_next_file_values(head_track)
+                                        if head_frame_index is None:
+                                            break
+                                        if head_frame_index >= frameIndex - 1:
+                                            break
 
                     # If the sample already exists, load it
                     sample_fp = session_fp / 'samples' / f'{frameIndex}.pkl'
@@ -383,6 +404,7 @@ class EyeDiapDataset(Dataset):
                         pbar.update(1)
                         frameIndex += 1
                         num_samples += 1
+                        per_participant_size += 1
                         rgb_vga.set(cv2.CAP_PROP_POS_FRAMES, frameIndex)
                         depth.set(cv2.CAP_PROP_POS_FRAMES, frameIndex)
                         if rgb_hd is not None:
@@ -404,6 +426,9 @@ class EyeDiapDataset(Dataset):
                         ok_hd, frame_hd = True, None
                     target_vals = None
                     gaze_vals = None
+                    ball_frame_index = None
+                    screen_frame_index = None
+                    gaze_frame_index = None
                     if ball_track is not None:
                         ball_frame_index, ball_vals = extract_next_file_values(ball_track)
                         target_vals = ball_vals
@@ -419,7 +444,16 @@ class EyeDiapDataset(Dataset):
                         if gaze_vals[0] == 'NL':
                             continue
 
+                    # Get the current video frame index
+                    if self.video_type == 'vga':
+                        backup_frameIndex = int(rgb_vga.get(cv2.CAP_PROP_POS_FRAMES))
+                    elif self.video_type == 'hd':
+                        backup_frameIndex = int(rgb_hd.get(cv2.CAP_PROP_POS_FRAMES))
+                    else:
+                        raise ValueError("Invalid video type. Must be 'vga' or 'hd'.")
+
                     all_ok = ok_rgb and ok_depth and ok_hd and eyes_vals is not None and head_vals is not None and target_vals is not None
+                    # print(ball_frame_index, screen_frame_index, gaze_frame_index, eyes_frame_index, head_frame_index, frameIndex, backup_frameIndex, all_ok)
 
                     if all_ok:
 
@@ -473,6 +507,23 @@ class EyeDiapDataset(Dataset):
                         elif screen_track:
                             gaze_target_2d = np.array(screen_vals[:2])
                             gaze_target_3d = np.array(screen_vals[2:])
+                        
+                        # If HD camera, shift all 3D points to the HD coordinate system
+                        if self.video_type == 'hd':
+                            hd_r, hd_t = rgb_hd_calibration['R'], rgb_hd_calibration['T']
+                            rt = np.hstack((hd_r, hd_t))
+                            rt = np.vstack((rt, np.array([0, 0, 0, 1])))
+                            # rt = np.linalg.inv(rt)
+
+                            # Apply the transformation to the 3D points
+                            left_eye_origin_3d = np.dot(rt, np.hstack((left_eye_origin_3d, 1)))
+                            right_eye_origin_3d = np.dot(rt, np.hstack((right_eye_origin_3d, 1)))
+                            gaze_target_3d = np.dot(rt, np.hstack((gaze_target_3d, 1)))
+
+                            # Convert homogeneous coordinates to 3D
+                            left_eye_origin_3d = left_eye_origin_3d[:3]
+                            right_eye_origin_3d = right_eye_origin_3d[:3]
+                            gaze_target_3d = gaze_target_3d[:3]
 
                         # Compute the gaze angle from the eye origin to the target for both eyes
                         left_gaze_vector = gaze_target_3d - left_eye_origin_3d
@@ -537,63 +588,66 @@ class EyeDiapDataset(Dataset):
                         )
                         self.samples.append(sample)
                         num_samples += 1
+                        per_participant_size += 1
                         pbar.update(1)
 
                         # Save the sample within the ``samples`` directory to avoid having to reprocess the data, as a pickle
-                        os.makedirs(session_fp / 'samples', exist_ok=True)
-                        with open(session_fp / 'samples' / f'{frameIndex}.pkl', 'wb') as f:
+                        os.makedirs(session_fp / f'samples_{self.video_type}', exist_ok=True)
+                        with open(session_fp / f'samples_{self.video_type}' / f'{frameIndex}.pkl', 'wb') as f:
                             pickle.dump(sample, f)
 
-                        # Draw the landmarks
-                        desired_frame = draw_landmarks_on_image(desired_frame, detection_results)
-                        if self.video_type == 'vga':
-                            frame_rgb = desired_frame
-                        elif self.video_type == 'hd':
-                            frame_hd = desired_frame
-
-                        # Visualize sample
-                        frames = (frame_rgb, frame_depth, frame_hd)
-                        if ball_vals is not None:
-                            draw_ball(frames, ball_vals)
-                        if screen_vals is not None:
-                            screen_img = np.zeros((1000, 1680, 3), dtype=np.uint8)
-                            draw_screen(screen_img, screen_vals)
-
-                        for origin, vector in zip([left_eye_origin_2d, right_eye_origin_2d], [left_gaze_vector, right_gaze_vector]):
-                            pitch, yaw = vector_to_pitch_yaw(vector)
-
+                        if self.visualize:
+                            # Draw the landmarks
+                            # desired_frame = draw_landmarks_on_image(desired_frame, detection_results)
                             if self.video_type == 'vga':
-                                frame_rgb = draw_axis(frame_rgb, pitch, yaw, 0, int(origin[0]), int(origin[1]), 100)
+                                frame_rgb = desired_frame
                             elif self.video_type == 'hd':
-                                frame_hd = draw_axis(frame_hd, pitch, yaw, 0, int(origin[0]), int(origin[1]), 100)
-                        
-                        frames = (frame_rgb, frame_depth, frame_hd)
+                                frame_hd = desired_frame
 
-                        # Draw the gaze
-                        # draw_eyes(frames, eyes_vals)
-                        headHD_2D= draw_head_pose(frames, head_vals, calibrations)
-                        if screen_img is not None:
-                            cv2.imshow('screen', screen_img)
-                        if frame_hd is not None:
-                            cv2.imshow('rgb_hd' , frame_hd)
-                        cv2.imshow('depth'  , frame_depth)
-                        cv2.imshow('rgb_vga', frame_rgb)
-                        if head_frame_index == 0:
-                            key = cv2.waitKey(1000)
-                        else:
-                            key = cv2.waitKey(int(1000/fps))
-                        if key != -1:
-                            key = key & 255
-                            if key == 113:
-                                break
-                            if key == 82:
-                                fps += 5
-                                if fps > 30*5:
-                                    fps = 30*5
-                            if key == 84:
-                                fps -= 5
-                                if fps < 1:
-                                    fps = 1
+                            # Visualize sample
+                            frames = (frame_rgb, frame_depth, frame_hd)
+                            if ball_vals is not None:
+                                draw_ball(frames, ball_vals)
+                            if screen_vals is not None:
+                                screen_img = np.zeros((1000, 1680, 3), dtype=np.uint8)
+                                draw_screen(screen_img, screen_vals)
+
+                            for origin, vector in zip([left_eye_origin_2d, right_eye_origin_2d], [left_gaze_vector, right_gaze_vector]):
+                                pitch, yaw = vector_to_pitch_yaw(vector)
+
+                                if self.video_type == 'vga':
+                                    frame_rgb = draw_axis(frame_rgb, pitch, yaw, 0, int(origin[0]), int(origin[1]), 100)
+                                elif self.video_type == 'hd':
+                                    frame_hd = draw_axis(frame_hd, pitch, yaw, 0, int(origin[0]), int(origin[1]), 100)
+                            
+                            frames = (frame_rgb, frame_depth, frame_hd)
+
+                            # Draw the gaze
+                            # draw_eyes(frames, eyes_vals)
+                            headHD_2D= draw_head_pose(frames, head_vals, calibrations)
+                            if screen_img is not None:
+                                cv2.imshow('screen', screen_img)
+                            if frame_hd is not None:
+                                cv2.imshow('rgb_hd' , frame_hd)
+                            cv2.imshow('depth'  , frame_depth)
+                            cv2.imshow('rgb_vga', frame_rgb)
+                            if head_frame_index == 0:
+                                key = cv2.waitKey(1000)
+                            else:
+                                key = cv2.waitKey(int(1000/fps))
+                            # key = cv2.waitKey(0)
+                            # if key != -1:
+                            #     key = key & 255
+                            #     if key == 113:
+                            #         break
+                            #     if key == 82:
+                            #         fps += 5
+                            #         if fps > 30*5:
+                            #             fps = 30*5
+                            #     if key == 84:
+                            #         fps -= 5
+                            #         if fps < 1:
+                            #             fps = 1
 
                     frameIndex += 1
 
@@ -609,6 +663,7 @@ class EyeDiapDataset(Dataset):
                 screen_track.close()
 
             cv2.destroyAllWindows()
+            # break
 
     def obtain_facial_landmarks(self, frame):
 
@@ -698,7 +753,6 @@ class EyeDiapDataset(Dataset):
 
     def to_df(self):
 
-        
         data = defaultdict(list)
         for sample in self.samples:
             data['image_fp'].append(sample.image_fp)
@@ -717,8 +771,12 @@ if __name__ == '__main__':
 
     dataset = EyeDiapDataset(
         GIT_ROOT / pathlib.Path(config['datasets']['EyeDiap']['path']),
-        # dataset_size=2,
-        participants=[1]
+        # dataset_size=10,
+        participants=[1],
+        # per_participant_size=2,
+        # video_type='vga',
+        visualize=True,
+        frame_skip_rate=2
     )
     print(len(dataset))
     

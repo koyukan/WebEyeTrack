@@ -88,7 +88,9 @@ def eval(args):
         dataset = EyeDiapDataset(
             GIT_ROOT / pathlib.Path(config['datasets']['EyeDiap']['path']),
             participants=1,
-            dataset_size=10
+            dataset_size=10,
+            per_participant_size=2,
+            video_type='hd'
         )
     else:
         raise ValueError(f"Dataset {args.dataset} not supported")
@@ -117,14 +119,7 @@ def eval(args):
         img = cv2.imread(str(sample['image_fp']))
 
         # Process the sample
-        # try:
-        # results = algo.process_sample(sample)
-        # img = cv2.cvtColor(np.moveaxis(sample['image'], 0, -1) * 255, cv2.COLOR_RGB2BGR)
-        # results = algo.process_frame(sample['image'], sample['intrinsics'])
         results = algo.process_frame(img, sample['intrinsics'])
-        # except Exception as e:
-        #     print(e)
-        #     continue
 
         output = {
             'face_origin': results.face_origin,
@@ -155,11 +150,11 @@ def eval(args):
 
         # if i % SKIP_COUNT == 0:
             # Write to the output directory
-        img = visualize_differences(img, sample, output)
-        cv2.imwrite(str(OUTPUTS_DIR / 'imgs' / f'gaze_diff_{i}.png'), img)
+        drawn_img = visualize_differences(img.copy(), sample, output)
+        cv2.imwrite(str(OUTPUTS_DIR / 'imgs' / f'gaze_diff_{i}.png'), drawn_img)
 
-        img = vis.landmark_gaze_render(img, results)
-        cv2.imwrite(str(OUTPUTS_DIR / 'imgs' / f'landmark_{i}.png'), img)
+        drawn_img = vis.landmark_gaze_render(img.copy(), results)
+        cv2.imwrite(str(OUTPUTS_DIR / 'imgs' / f'landmark_{i}.png'), drawn_img)
 
     # Generate box plots for the metrics
     df = pd.DataFrame(metrics)
