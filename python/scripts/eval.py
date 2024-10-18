@@ -88,9 +88,10 @@ def eval(args):
         dataset = EyeDiapDataset(
             GIT_ROOT / pathlib.Path(config['datasets']['EyeDiap']['path']),
             participants=1,
-            dataset_size=10,
-            per_participant_size=2,
+            dataset_size=20,
+            per_participant_size=10,
             video_type='hd'
+            # video_type='vga'
         )
     else:
         raise ValueError(f"Dataset {args.dataset} not supported")
@@ -117,9 +118,11 @@ def eval(args):
         # Get sample and load the image
         sample = df.iloc[i]
         img = cv2.imread(str(sample['image_fp']))
+        sample['image'] = img
 
         # Process the sample
-        results = algo.process_frame(img, sample['intrinsics'])
+        # results = algo.process_frame(img, sample['intrinsics'])
+        results = algo.process_sample(sample)
 
         output = {
             'face_origin': results.face_origin,

@@ -1,3 +1,4 @@
+import time
 import pathlib
 from dataclasses import asdict
 from collections import defaultdict
@@ -7,6 +8,7 @@ import os
 import json
 import pickle
 
+import imutils
 import pandas as pd
 from scipy.spatial.transform import Rotation
 from tqdm import tqdm
@@ -47,6 +49,8 @@ SESSION_INDEX = [0,2,6,8,11,12,16,18,22,24,28,30,34,36,40,42,46,48,52,54,58,60,6
 
 OVERWRITE_SESSIONS = True
 # OVERWRITE_SESSIONS = False
+
+TIMESTAMP = time.strftime("%H%M%S")
 
 # ------------------------  DEFINE THE LIST OF RECORDING SESSIONS -------------------------------------
 sessions = []
@@ -396,7 +400,7 @@ class EyeDiapDataset(Dataset):
                                             break
 
                     # If the sample already exists, load it
-                    sample_fp = session_fp / 'samples' / f'{frameIndex}.pkl'
+                    sample_fp = session_fp / f'samples_{self.video_type}' / f'{frameIndex}.pkl'
                     if sample_fp.exists() and not OVERWRITE_SESSIONS:
                         with open(sample_fp, 'rb') as f:
                             sample = pickle.load(f)
@@ -418,6 +422,7 @@ class EyeDiapDataset(Dataset):
                         continue
 
                     # Load the data
+                    tic = time.time()
                     ok_rgb, frame_rgb     = rgb_vga.read()
                     ok_depth, frame_depth = depth.read()
                     if rgb_hd  is not None:
@@ -439,6 +444,7 @@ class EyeDiapDataset(Dataset):
                         gaze_frame_index, gaze_vals = extract_next_file_values(gaze_state_track, delimiter='\t', typecast=str)
                     eyes_frame_index, eyes_vals = extract_next_file_values(eyes_track)
                     head_frame_index, head_vals = extract_next_file_values(head_track)
+                    toc = time.time()
 
                     if gaze_vals:
                         if gaze_vals[0] == 'NL':
@@ -511,6 +517,19 @@ class EyeDiapDataset(Dataset):
                         # If HD camera, shift all 3D points to the HD coordinate system
                         if self.video_type == 'hd':
                             hd_r, hd_t = rgb_hd_calibration['R'], rgb_hd_calibration['T']
+                            # hd_r = np.eye(3)
+                            hd_r = np.linalg.inv(hd_r)
+
+                            # Convert rotation to pitch yaw
+                            r = Rotation.from_matrix(hd_r)
+                            pitch, yaw, roll = r.as_euler('xyz', degrees=True)
+                            pitch -= 180
+                            # pitch = 180 - pitch
+
+                            # Convert back to rotation matrix
+                            r = Rotation.from_euler('xyz', [pitch, yaw, roll], degrees=True)
+                            hd_r = r.as_matrix()
+
                             rt = np.hstack((hd_r, hd_t))
                             rt = np.vstack((rt, np.array([0, 0, 0, 1])))
                             # rt = np.linalg.inv(rt)
@@ -577,8 +596,9 @@ class EyeDiapDataset(Dataset):
 
                         # Write frame into a folder
                         os.makedirs(session_fp / 'frames', exist_ok=True)
-                        frame_fp = session_fp / 'frames' / f'{frameIndex}.png'
-                        cv2.imwrite(str(frame_fp), desired_frame)
+                        frame_fp = session_fp / 'frames' / f'{frameIndex}_{self.video_type}.png'
+                        if not frame_fp.exists():
+                            cv2.imwrite(str(frame_fp), desired_frame)
 
                         # Create a sample
                         sample = Sample(
@@ -622,6 +642,10 @@ class EyeDiapDataset(Dataset):
                             
                             frames = (frame_rgb, frame_depth, frame_hd)
 
+                            # Write the face_gaze_vector onto the hd image
+                            if self.video_type == 'hd':
+                                cv2.putText(frame_hd, f"Face Gaze Vector: {face_gaze_vector}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0, 255), 2, cv2.LINE_AA)
+
                             # Draw the gaze
                             # draw_eyes(frames, eyes_vals)
                             headHD_2D= draw_head_pose(frames, head_vals, calibrations)
@@ -631,6 +655,11 @@ class EyeDiapDataset(Dataset):
                                 cv2.imshow('rgb_hd' , frame_hd)
                             cv2.imshow('depth'  , frame_depth)
                             cv2.imshow('rgb_vga', frame_rgb)
+
+                            # cv2.imwrite(str(CWD / 'outputs' / f'{TIMESTAMP}_frame_rgb_{frameIndex}.png'), frame_rgb)
+                            # if frame_hd is not None:
+                            #     cv2.imwrite(str(CWD / 'outputs' / f'{TIMESTAMP}_frame_hd_{frameIndex}.png'), imutils.resize(frame_hd, width=800))
+
                             if head_frame_index == 0:
                                 key = cv2.waitKey(1000)
                             else:
@@ -663,7 +692,6 @@ class EyeDiapDataset(Dataset):
                 screen_track.close()
 
             cv2.destroyAllWindows()
-            # break
 
     def obtain_facial_landmarks(self, frame):
 
@@ -774,9 +802,9 @@ if __name__ == '__main__':
         # dataset_size=10,
         participants=[1],
         # per_participant_size=2,
-        # video_type='vga',
+        video_type='hd',
         visualize=True,
-        frame_skip_rate=2
+        frame_skip_rate=4
     )
     print(len(dataset))
     

@@ -540,12 +540,12 @@ class FLGE():
             original_img_size[0],
             original_img_size[1],
             sample['intrinsics'],
-            sample['screen_R'],
-            sample['screen_t'],
-            sample['screen_width_mm'],
-            sample['screen_height_mm'],
-            sample['screen_width_px'],
-            sample['screen_height_px']
+            # sample['screen_R'],
+            # sample['screen_t'],
+            # sample['screen_width_mm'],
+            # sample['screen_height_mm'],
+            # sample['screen_width_px'],
+            # sample['screen_height_px']
         )
  
     def process_frame(self, frame: np.ndarray, intrinsics: np.ndarray) -> Optional[FLGEResult]:
