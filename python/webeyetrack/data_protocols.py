@@ -1,5 +1,5 @@
-from typing import Any
-from dataclasses import dataclass
+from typing import Any, Dict
+from dataclasses import dataclass, field
 import numpy as np
 import pathlib
 import mediapipe.python as mp
@@ -70,6 +70,7 @@ class EyeResult:
     direction: np.ndarray # X, Y, Z
     pog_px: np.ndarray
     pog_mm: np.ndarray
+    meta_data: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class FLGEResult:

@@ -155,6 +155,7 @@ class FLGE():
         eye_images = {}
         gaze_vectors = {}
         gaze_origins_2d = {}
+        headpose_corrected_eye_center = {}
         for i, (eye, eyelid) in {'left': left_landmarks, 'right': right_landmarks}.items():
             centroid = np.mean(eye, axis=0)
             actual_width = np.abs(eye[1,0] - eye[0, 0])
@@ -203,13 +204,15 @@ class FLGE():
             # frame = draw_axis(frame, -pitch, yaw, 0, int(face_origin[0]), int(face_origin[1]), 100)
 
             old_iris_center = iris_px[0]
-            cv2.circle(frame, (int(old_iris_center[0]), int(old_iris_center[1])), 2, (0, 0, 255), -1)
+            # cv2.circle(frame, (int(old_iris_center[0]), int(old_iris_center[1])), 2, (0, 0, 255), -1)
             shifted_iris_center = old_iris_center + np.array([int(x3), int(y3)])
-            cv2.circle(frame, (int(shifted_iris_center[0]), int(shifted_iris_center[1])), 2, (0, 255, 0), -1)
-            cv2.line(frame, (int(old_iris_center[0]), int(old_iris_center[1])), (int(shifted_iris_center[0]), int(shifted_iris_center[1])), (0, 255, 0), 1)
+            # cv2.circle(frame, (int(shifted_iris_center[0]), int(shifted_iris_center[1])), 2, (0, 255, 0), -1)
+            # cv2.line(frame, (int(old_iris_center[0]), int(old_iris_center[1])), (int(shifted_iris_center[0]), int(shifted_iris_center[1])), (0, 255, 0), 1)
 
             # Shifting the eye_center by the headpose
-            eye_center = eye_center + np.array([int(x3), int(y3)])
+            # print(f"Eye center: {eye_center}, shift: {np.array([x3, y3])}, new: {eye_center + np.array([x3, y3])}")
+            eye_center = eye_center + np.array([x3, y3])
+            headpose_corrected_eye_center[i] = eye_center
 
             # Based on the direction and magnitude of the line, compute the gaze direction
             # Compute 2D vector from eyeball center to iris center
@@ -260,19 +263,24 @@ class FLGE():
         elif 'left' in gaze_vectors:
             face_gaze_vector = gaze_vectors['left']
             gaze_vectors['right'] = np.array([0,0,1])
+            headpose_corrected_eye_center['right'] = None
         elif 'right' in gaze_vectors:
             face_gaze_vector = gaze_vectors['right']
             gaze_vectors['left'] = np.array([0,0,1])
+            headpose_corrected_eye_center['left'] = None
         else:
             face_gaze_vector = np.array([0,0,1])
             gaze_vectors['left'] = np.array([0,0,1])
             gaze_vectors['right'] = np.array([0,0,1])
+            headpose_corrected_eye_center['left'] = None
+            headpose_corrected_eye_center['right'] = None
 
         return {
             'face': face_gaze_vector,
             'eyes': {
                 'is_closed': eye_closed,
-                'vector': gaze_vectors
+                'vector': gaze_vectors,
+                'headpose_corrected_eye_center': headpose_corrected_eye_center,
             }
         }
 
@@ -325,6 +333,7 @@ class FLGE():
             'eyes': {
                 'is_closed': {'left': False, 'right': False},
                 'vector': gaze_vectors,
+                'headpose_corrected_eye_center': {'left': None, 'right': None}
             }            
         }
 
@@ -509,7 +518,10 @@ class FLGE():
                 origin_2d=gaze_origins['eye_origins_2d']['left'],
                 direction=gaze_vectors['eyes']['vector']['left'],
                 pog_px=pog['eye']['left_pog_px'],
-                pog_mm=pog['eye']['left_pog_mm']
+                pog_mm=pog['eye']['left_pog_mm'],
+                meta_data={
+                    'headpose_corrected_eye_center': gaze_vectors['eyes']['headpose_corrected_eye_center']['left']
+                }
             ),
             right=EyeResult(
                 is_closed=gaze_vectors['eyes']['is_closed']['right'],
@@ -517,17 +529,20 @@ class FLGE():
                 origin_2d=gaze_origins['eye_origins_2d']['right'],
                 direction=gaze_vectors['eyes']['vector']['right'],
                 pog_px=pog['eye']['right_pog_px'],
-                pog_mm=pog['eye']['right_pog_mm']
+                pog_mm=pog['eye']['right_pog_mm'],
+                meta_data={
+                    'headpose_corrected_eye_center': gaze_vectors['eyes']['headpose_corrected_eye_center']['right']
+                }
             ),
             pog_px=pog['face_pog_px'],
             pog_mm=pog['face_pog_mm'],
             duration=toc - tic
         )
     
-    def process_sample(self, sample: Dict[str, Any]) -> FLGEResult:
+    def process_sample(self, frame: np.ndarray, sample: Dict[str, Any]) -> FLGEResult:
 
         # Get the depth and scale
-        frame = cv2.cvtColor(np.moveaxis(sample['image'], 0, -1) * 255, cv2.COLOR_RGB2BGR)
+        # frame = cv2.cvtColor(np.moveaxis(sample['image'], 0, -1) * 255, cv2.COLOR_RGB2BGR)
         facial_landmarks = sample['facial_landmarks']
         original_img_size = sample['original_img_size']
         face_rt = sample['facial_rt']

@@ -47,8 +47,8 @@ https://www.idiap.ch/en/scientific-research/data/eyediap#publications
 SESSION_INDEX = [0,2,6,8,11,12,16,18,22,24,28,30,34,36,40,42,46,48,52,54,58,60,64,66,70,72,76,78,82,84,88,90]
 # SESSION_INDEX = [0,2,4,6,8,10,11,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62,64,66,68,70,72,74,76,78,80,82,84,86,88,90,92]
 
-OVERWRITE_SESSIONS = True
-# OVERWRITE_SESSIONS = False
+# OVERWRITE_SESSIONS = True
+OVERWRITE_SESSIONS = False
 
 TIMESTAMP = time.strftime("%H%M%S")
 
@@ -311,6 +311,9 @@ class EyeDiapDataset(Dataset):
             else:
                 rgb_hd = None
 
+            if rgb_hd is None and self.video_type == 'hd':
+                continue
+
             # Determine the total number of frames
             total_frames = int(rgb_vga.get(cv2.CAP_PROP_FRAME_COUNT))
 
@@ -400,6 +403,7 @@ class EyeDiapDataset(Dataset):
                                             break
 
                     # If the sample already exists, load it
+                    # import pdb; pdb.set_trace()
                     sample_fp = session_fp / f'samples_{self.video_type}' / f'{frameIndex}.pkl'
                     if sample_fp.exists() and not OVERWRITE_SESSIONS:
                         with open(sample_fp, 'rb') as f:
@@ -478,6 +482,8 @@ class EyeDiapDataset(Dataset):
                         # Obtain facial landmarks
                         detection_results, face_landmarks_proto = self.obtain_facial_landmarks(desired_frame)
                         if detection_results is None:
+                            # print("No face detected.")
+                            frameIndex += 1
                             continue
 
                         # Face landmakrs
@@ -696,7 +702,7 @@ class EyeDiapDataset(Dataset):
     def obtain_facial_landmarks(self, frame):
 
         # Detect the facial landmarks via MediaPipe
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame.astype(np.uint8))
         detection_results = self.face_landmarker.detect(mp_image)
         
         # Compute the face bounding box based on the MediaPipe landmarks

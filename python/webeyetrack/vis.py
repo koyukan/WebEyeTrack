@@ -142,6 +142,16 @@ def landmark_gaze_render(frame: np.ndarray, result: FLGEResult):
         # Compute the line between the iris center and the centroid
         new_shifted_iris_px_center = shifted_iris_px[0] * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
         cv2.line(eye_image, (int(new_width/2), int(new_height/2)), tuple(new_shifted_iris_px_center.astype(int)), (0, 255, 0), 2)
+
+        # If available, visualize the headpose-corrected iris center
+        if 'headpose_corrected_eye_center' in eye_result.meta_data:
+            headpose_corrected_eye_center = eye_result.meta_data['headpose_corrected_eye_center']
+            if headpose_corrected_eye_center is not None:
+                new_headpose_corrected_eye_center = headpose_corrected_eye_center * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+                cv2.circle(eye_image, tuple(new_headpose_corrected_eye_center.astype(int)), 3, (0, 255, 255), -1)
+
+                # Draw a line between the headpose corrected iris center and the iris center
+                cv2.line(eye_image, tuple(new_headpose_corrected_eye_center.astype(int)), tuple(new_shifted_iris_px_center.astype(int)), (0, 255, 255), 2)
   
         if is_closed:
             cv2.putText(eye_image, 'Closed', (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)

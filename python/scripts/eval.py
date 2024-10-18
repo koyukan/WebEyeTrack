@@ -23,9 +23,7 @@ import webeyetrack.core as core
 CWD = pathlib.Path(__file__).parent
 FILE_DIR = pathlib.Path(__file__).parent
 OUTPUTS_DIR = CWD / 'outputs'
-SKIP_COUNT = 1
-
-os.makedirs(str(OUTPUTS_DIR / 'imgs'), exist_ok=True)
+SKIP_COUNT = 100
 
 with open(FILE_DIR / 'config.yaml', 'r') as f:
     config = yaml.safe_load(f)
@@ -88,16 +86,20 @@ def eval(args):
         dataset = EyeDiapDataset(
             GIT_ROOT / pathlib.Path(config['datasets']['EyeDiap']['path']),
             participants=1,
-            dataset_size=20,
-            per_participant_size=10,
+            # dataset_size=20,
+            # per_participant_size=10,
             video_type='hd'
             # video_type='vga'
         )
     else:
         raise ValueError(f"Dataset {args.dataset} not supported")
 
-    # Load the eyediap dataset
+    RUN_TIMESTAMP = pd.Timestamp.now().strftime('%Y%m%d%H%M%S')
+    RUN_DIR = OUTPUTS_DIR / f"{RUN_TIMESTAMP}_{args.dataset}"
+    os.makedirs(str(RUN_DIR), exist_ok=True)
+    os.makedirs(str(RUN_DIR / 'imgs'), exist_ok=True)
 
+    # Load the eyediap dataset
     print("FINISHED LOADING DATASET")
 
     metric_functions = {
@@ -118,11 +120,11 @@ def eval(args):
         # Get sample and load the image
         sample = df.iloc[i]
         img = cv2.imread(str(sample['image_fp']))
-        sample['image'] = img
+        # sample['image'] = img
 
         # Process the sample
         # results = algo.process_frame(img, sample['intrinsics'])
-        results = algo.process_sample(sample)
+        results = algo.process_sample(img, sample)
 
         output = {
             'face_origin': results.face_origin,
@@ -151,13 +153,13 @@ def eval(args):
                 continue
             metrics[name].append(function(actual[name], output[name]))
 
-        # if i % SKIP_COUNT == 0:
+        if i % SKIP_COUNT == 0:
             # Write to the output directory
-        drawn_img = visualize_differences(img.copy(), sample, output)
-        cv2.imwrite(str(OUTPUTS_DIR / 'imgs' / f'gaze_diff_{i}.png'), drawn_img)
+            drawn_img = visualize_differences(img.copy(), sample, output)
+            cv2.imwrite(str(RUN_DIR/ 'imgs' / f'gaze_diff_{i}.png'), drawn_img)
 
-        drawn_img = vis.landmark_gaze_render(img.copy(), results)
-        cv2.imwrite(str(OUTPUTS_DIR / 'imgs' / f'landmark_{i}.png'), drawn_img)
+            drawn_img = vis.landmark_gaze_render(img.copy(), results)
+            cv2.imwrite(str(RUN_DIR/ 'imgs' / f'landmark_{i}.png'), drawn_img)
 
     # Generate box plots for the metrics
     df = pd.DataFrame(metrics)
@@ -203,7 +205,7 @@ def eval(args):
         
     # plt.tight_layout()
     # plt.show()
-    plt.savefig(str(OUTPUTS_DIR / 'metrics.png'))
+    plt.savefig(str(RUN_DIR / 'metrics.png'))
 
     print(df.describe())
     # print(df)
