@@ -14,6 +14,19 @@ CWD = pathlib.Path(__file__).parent
 PYTHON_DIR = CWD.parent
 
 LEFT_EYEAREA_LANDMARKS = [463, 359, 257, 253]
+# vertical_fov_degrees = 1
+# near = 2
+# far = 3
+
+# According to https://github.com/google-ai-edge/mediapipe/blob/master/mediapipe/graphs/face_effect/face_effect_gpu.pbtxt#L61-L65
+# vertical_fov_degrees = 50
+# vertical_fov_degrees = 60
+vertical_fov_degrees = 63.0 
+# vertical_fov_degrees = 90.0
+near = 1.0 # 1cm
+far = 10000 # 100m 
+
+origin_point_location = 'BOTTOM_LEFT_CORNER'
 
 def reproject_2d_to_3d(u, v, z, intrinsics):
     """
@@ -39,6 +52,29 @@ def reproject_2d_to_3d(u, v, z, intrinsics):
 
     return X
 
+def create_perspective_matrix(aspect_ratio):
+    k_degrees_to_radians = np.pi / 180.0
+
+    # Initialize a 4x4 matrix filled with zeros
+    perspective_matrix = np.zeros((4, 4), dtype=np.float32)
+
+    # Standard perspective projection matrix calculations
+    f = 1.0 / np.tan(k_degrees_to_radians * vertical_fov_degrees / 2.0)
+    denom = 1.0 / (near - far)
+
+    # Populate the matrix values
+    perspective_matrix[0, 0] = f / aspect_ratio
+    perspective_matrix[1, 1] = f
+    perspective_matrix[2, 2] = (near + far) * denom
+    perspective_matrix[2, 3] = -1.0
+    perspective_matrix[3, 2] = 2.0 * far * near * denom
+
+    # Flip Y-axis if origin point location is top-left corner
+    if origin_point_location == 'TOP_LEFT_CORNER':
+        perspective_matrix[1, 1] *= -1.0
+
+    return perspective_matrix
+
 if __name__ == '__main__':
     
     # Load the webcam 
@@ -61,9 +97,11 @@ if __name__ == '__main__':
         # Define intrinsics based on the frame dimensions
         height, width = frame.shape[:2]
         focal_length = width  # Assuming fx = fy = width for simplicity, adjust based on real camera
-        intrinsics = np.array([[focal_length, 0, width // 2], 
-                               [0, focal_length, height // 2], 
-                               [0, 0, 1]])
+        # perspective_matrix = np.array([[focal_length, 0, width // 2], 
+        #                        [0, focal_length, height // 2], 
+        #                        [0, 0, 1]])
+        perspective_matrix = create_perspective_matrix(aspect_ratio=width / height)
+        # import pdb; pdb.set_trace()
 
         # Detect the landmarks
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame.astype(np.uint8))
@@ -82,59 +120,72 @@ if __name__ == '__main__':
         # Draw the landmarks
         frame = draw_landmarks_on_image(frame, detection_results)
 
+        # metric_landmark_homogenous = np.array([detection_results.face_landmarks[0][1].x, detection_results.face_landmarks[0][1].y, detection_results.face_landmarks[0][1].z, 1])
+        # metric_landmark_homogenous = np.array([0,0,0,1])
+        metric_landmark_homogenous = np.array([3.0278,2.7,2.5,1])
+        # metric_landmark_homogenous = np.array([3.0278,2.3,2.5,1])
+        camera_landmark_homogenous = face_rt @ metric_landmark_homogenous
+        screen_landmark_homogenous = perspective_matrix @ camera_landmark_homogenous
+        screen_x = screen_landmark_homogenous[0] / screen_landmark_homogenous[2]
+        screen_y = screen_landmark_homogenous[1] / screen_landmark_homogenous[2]
+        screen_x = (screen_x + 1) * width / 2
+        screen_y = (screen_y * -1 + 1) * height / 2
+        print(screen_x, screen_y, camera_landmark_homogenous, detection_results.face_landmarks[0][1].z)
+        cv2.circle(frame, (int(screen_x), int(screen_y)), 5, (0, 0, 255), -1)
+
         # use the nose as the face origin
-        face_landmarks = np.array([[lm.x, lm.y, lm.z, lm.visibility, lm.presence] for lm in detection_results.face_landmarks[0]])
+        # face_landmarks = np.array([[lm.x, lm.y, lm.z, lm.visibility, lm.presence] for lm in detection_results.face_landmarks[0]])
         # x, y, z = detection_results.face_landmarks[0][1].x * width, detection_results.face_landmarks[0][1].y * height, detection_results.face_landmarks[0][1].z
-        x, y, z = face_landmarks[1, :3] * np.array([width, height, 1])
+        # x, y, z = face_landmarks[1, :3] * np.array([width, height, 1])
 
         # Draw the rotation matrix
-        rotation_matrix = face_rt[:3, :3].copy()
+        # rotation_matrix = face_rt[:3, :3].copy()
 
-        # Convert to pitch, yaw, roll
-        pitch, yaw, roll = vis.rotation_matrix_to_euler_angles(rotation_matrix)
-        pitch, yaw, roll = yaw, pitch, -roll
-        # pitch, yaw, roll = yaw, pitch, roll
-        # pitch, yaw, roll = 0, 0, 0
-        frame = vis.draw_axis(frame, pitch, yaw, roll, int(x), int(y), 100)
-        # frame = vis.draw_axis_from_rotation_matrix(frame, rotation_matrix, x, y)
+        # # Convert to pitch, yaw, roll
+        # pitch, yaw, roll = vis.rotation_matrix_to_euler_angles(rotation_matrix)
+        # pitch, yaw, roll = yaw, pitch, -roll
+        # # pitch, yaw, roll = yaw, pitch, roll
+        # # pitch, yaw, roll = 0, 0, 0
+        # frame = vis.draw_axis(frame, pitch, yaw, roll, int(x), int(y), 100)
+        # # frame = vis.draw_axis_from_rotation_matrix(frame, rotation_matrix, x, y)
 
-        # Create a new rotatiom matrix
-        new_rotation_matrix = core.euler_angles_to_rotation_matrix(pitch, yaw, roll)
-        new_face_rt = np.eye(4)
-        new_face_rt[:3, :3] = new_rotation_matrix
-        # translation = face_rt[:3, 3]
-        # translation *= np.array([-1, 1, 1])
-        # translation = np.array([0, 0, -5])
+        # # Create a new rotatiom matrix
+        # new_rotation_matrix = core.euler_angles_to_rotation_matrix(pitch, yaw, roll)
+        # new_face_rt = np.eye(4)
+        # new_face_rt[:3, :3] = new_rotation_matrix
+        # # translation = face_rt[:3, 3]
+        # # translation *= np.array([-1, 1, 1])
+        # # translation = np.array([0, 0, -5])
 
-        # Compute the translation via reprojecting the nose as the origin
-        # translation = reproject_2d_to_3d(x, y, face_rt[2, 3], intrinsics)
-        translation = reproject_2d_to_3d(x, y, z, intrinsics)
+        # # Compute the translation via reprojecting the nose as the origin
+        # # translation = reproject_2d_to_3d(x, y, face_rt[2, 3], intrinsics)
+        # translation = reproject_2d_to_3d(x, y, z, intrinsics)
 
-        # Compute the average left eye area
-        left_eye_landmarks = face_landmarks[LEFT_EYEAREA_LANDMARKS]
-        left_eye_landmarks = left_eye_landmarks[:, :3]
-        left_eye_center = np.mean(left_eye_landmarks, axis=0) / 75
+        # # Compute the average left eye area
+        # left_eye_landmarks = face_landmarks[LEFT_EYEAREA_LANDMARKS]
+        # left_eye_landmarks = left_eye_landmarks[:, :3]
+        # left_eye_center = np.mean(left_eye_landmarks, axis=0) / 75
 
-        new_face_rt[:3, 3] = translation
-        # face_origin = np.array([2.2, 2.5, 3, 1])  # 3D origin point in canonical face space
-        # face_origin = np.array([1e-3, 0, 0, 1])  # 3D origin point in canonical face space
-        # print(left_eye_center)
-        face_origin = np.array([left_eye_center[0], left_eye_center[1], left_eye_center[2], 1])  # 3D origin point in canonical face space
+        # new_face_rt[:3, 3] = translation
+        # # face_origin = np.array([2.2, 2.5, 3, 1])  # 3D origin point in canonical face space
+        # # face_origin = np.array([1e-3, 0, 0, 1])  # 3D origin point in canonical face space
+        # # print(left_eye_center)
+        # face_origin = np.array([left_eye_center[0], left_eye_center[1], left_eye_center[2], 1])  # 3D origin point in canonical face space
         
-        # Transform the face origin from canonical to world space
-        face_origin_3d = np.dot(new_face_rt, face_origin)
-        face_origin_3d = face_origin_3d[:3] / face_origin_3d[3]  # Homogeneous to Cartesian coordinates
+        # # Transform the face origin from canonical to world space
+        # face_origin_3d = np.dot(new_face_rt, face_origin)
+        # face_origin_3d = face_origin_3d[:3] / face_origin_3d[3]  # Homogeneous to Cartesian coordinates
 
-        # Project the point from 3D world coordinates to 2D image plane
-        face_origin = np.dot(intrinsics, face_origin_3d)
-        face_origin = face_origin[:2] / face_origin[2]  # Perspective divide to get 2D coordinates
+        # # Project the point from 3D world coordinates to 2D image plane
+        # face_origin = np.dot(intrinsics, face_origin_3d)
+        # face_origin = face_origin[:2] / face_origin[2]  # Perspective divide to get 2D coordinates
 
-        # Draw the projected point on the frame
-        cv2.circle(frame, (int(face_origin[0]), int(face_origin[1])), 5, (0, 0, 255), -1)
-        # print(face_origin_3d[2], detection_results.face_landmarks[0][1].z)
+        # # Draw the projected point on the frame
+        # cv2.circle(frame, (int(face_origin[0]), int(face_origin[1])), 5, (0, 0, 255), -1)
+        # # print(face_origin_3d[2], detection_results.face_landmarks[0][1].z)
 
 
-        cv2.imshow('frame', frame)
+        cv2.imshow('frame', imutils.resize(frame, width=1000))
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
