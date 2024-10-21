@@ -16,6 +16,30 @@ def rotation_matrix_to_euler_angles(R):
 
     return pitch, yaw, roll
 
+def euler_angles_to_rotation_matrix(pitch, yaw, roll):
+
+    # Convert degrees to radians
+    pitch = np.radians(pitch)
+    yaw = np.radians(yaw)
+    roll = np.radians(roll)
+
+    # Compute rotation matrix from Euler angles
+    R_x = np.array([[1, 0, 0],
+                    [0, np.cos(pitch), -np.sin(pitch)],
+                    [0, np.sin(pitch), np.cos(pitch)]])
+    
+    R_y = np.array([[np.cos(yaw), 0, np.sin(yaw)],
+                    [0, 1, 0],
+                    [-np.sin(yaw), 0, np.cos(yaw)]])
+    
+    R_z = np.array([[np.cos(roll), -np.sin(roll), 0],
+                    [np.sin(roll), np.cos(roll), 0],
+                    [0, 0, 1]])
+    
+    R = np.dot(R_z, np.dot(R_y, R_x))
+    
+    return R
+
 # def pitch_yaw_to_gaze_vector(pitch, yaw):
 #     """
 #     Converts pitch and yaw angles into a 3D gaze direction vector (unit vector),

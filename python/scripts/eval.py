@@ -88,8 +88,9 @@ def eval(args):
             participants=1,
             # dataset_size=20,
             # per_participant_size=10,
-            video_type='hd'
-            # video_type='vga'
+            # video_type='hd'
+            video_type='vga',
+            frame_skip_rate=5
         )
     else:
         raise ValueError(f"Dataset {args.dataset} not supported")
@@ -121,6 +122,9 @@ def eval(args):
         sample = df.iloc[i]
         img = cv2.imread(str(sample['image_fp']))
         # sample['image'] = img
+
+        if type(img) == type(None):
+            import pdb; pdb.set_trace()
 
         # Process the sample
         # results = algo.process_frame(img, sample['intrinsics'])
