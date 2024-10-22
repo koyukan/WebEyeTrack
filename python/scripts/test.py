@@ -101,6 +101,7 @@ if __name__ == '__main__':
         #                        [0, focal_length, height // 2], 
         #                        [0, 0, 1]])
         perspective_matrix = create_perspective_matrix(aspect_ratio=width / height)
+        inv_perspective_matrix = np.linalg.inv(perspective_matrix)
         # import pdb; pdb.set_trace()
 
         # Detect the landmarks
@@ -118,11 +119,15 @@ if __name__ == '__main__':
         face_rt = detection_results.facial_transformation_matrixes[0]
      
         # Draw the landmarks
-        frame = draw_landmarks_on_image(frame, detection_results)
+        # frame = draw_landmarks_on_image(frame, detection_results)
+
+        pupil_landmark = detection_results.face_landmarks[0][473]
+        pupil = np.array([pupil_landmark.x, pupil_landmark.y, pupil_landmark.z, 1])
 
         # metric_landmark_homogenous = np.array([detection_results.face_landmarks[0][1].x, detection_results.face_landmarks[0][1].y, detection_results.face_landmarks[0][1].z, 1])
         # metric_landmark_homogenous = np.array([0,0,0,1])
-        metric_landmark_homogenous = np.array([3.0278,2.7,2.5,1])
+        # metric_landmark_homogenous = np.array([3.0278,2.7,2.5,1])
+        metric_landmark_homogenous = np.array([3.2,2.6,2.5,1])
         # metric_landmark_homogenous = np.array([3.0278,2.3,2.5,1])
         camera_landmark_homogenous = face_rt @ metric_landmark_homogenous
         screen_landmark_homogenous = perspective_matrix @ camera_landmark_homogenous
@@ -130,8 +135,43 @@ if __name__ == '__main__':
         screen_y = screen_landmark_homogenous[1] / screen_landmark_homogenous[2]
         screen_x = (screen_x + 1) * width / 2
         screen_y = (screen_y * -1 + 1) * height / 2
-        print(screen_x, screen_y, camera_landmark_homogenous, detection_results.face_landmarks[0][1].z)
-        cv2.circle(frame, (int(screen_x), int(screen_y)), 5, (0, 0, 255), -1)
+        # print(screen_x, screen_y, camera_landmark_homogenous, detection_results.face_landmarks[0][1].z)
+        # print(camera_landmark_homogenous)
+        eyeball_radius = 0.5
+
+        # Scale the eyeball radius based on the depth
+        draw_eyeball_radius = eyeball_radius * (-1000/camera_landmark_homogenous[2])
+        cv2.circle(frame, (int(screen_x), int(screen_y)), int(draw_eyeball_radius), (0, 0, 255), 1)
+        
+        pupil2d = np.array([pupil[0] * width, pupil[1] * height])
+        cv2.circle(frame, (int(pupil2d[0]), int(pupil2d[1])), 2, (0, 0, 255), -1)
+
+        # Compute the 3D pupil by using a line-sphere intersection problem
+        # Convert from 0-1 to -1 to 1
+        pupil = np.array([2 * pupil[0] - 1, 2 * pupil[1] - 1, pupil[2], 1])
+        pupil[0] = pupil[0] * screen_landmark_homogenous[2]
+        pupil[1] = -pupil[1] * screen_landmark_homogenous[2]
+
+        x = inv_perspective_matrix @ pupil
+        # x[1] = x[1] * -1
+        # x[2] = -screen_landmark_homogenous[2]
+        x[2] = face_rt[2, 3] + 2.25
+        x[3] = 1
+        print(x, camera_landmark_homogenous, pupil2d)
+        screen_landmark_homogenous = perspective_matrix @ x
+        screen_x = screen_landmark_homogenous[0] / screen_landmark_homogenous[2]
+        screen_y = screen_landmark_homogenous[1] / screen_landmark_homogenous[2]
+        screen_x = (screen_x + 1) * width / 2
+        screen_y = (screen_y * -1 + 1) * height / 2
+        cv2.circle(frame, (int(screen_x), int(screen_y)), 1, (0, 255, 0), -1)
+        # z = (x.T @ camera_landmark_homogenous) / np.linalg.norm(x)
+        # if np.linalg.norm(z * x - camera_landmark_homogenous) > eyeball_radius:
+        #     p = (z * x)
+        # else:
+        #     p = (x.T @ camera_landmark_homogenous - np.sqrt((x.T @ camera_landmark_homogenous)**2 - camera_landmark_homogenous.T @ camera_landmark_homogenous + eyeball_radius**2)) / (x.T @ x)
+        #     p = p * x
+
+        # print(p)
 
         # use the nose as the face origin
         # face_landmarks = np.array([[lm.x, lm.y, lm.z, lm.visibility, lm.presence] for lm in detection_results.face_landmarks[0]])
