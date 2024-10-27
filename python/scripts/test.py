@@ -110,7 +110,7 @@ if __name__ == '__main__':
 
         # Ensure there is at least one face detected
         if len(detection_results.face_landmarks) == 0:
-            cv2.imshow('frame', frame)
+            cv2.imshow('frame', imutils.resize(frame, width=1000))
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
             continue
@@ -137,33 +137,106 @@ if __name__ == '__main__':
         screen_y = (screen_y * -1 + 1) * height / 2
         # print(screen_x, screen_y, camera_landmark_homogenous, detection_results.face_landmarks[0][1].z)
         # print(camera_landmark_homogenous)
-        eyeball_radius = 0.5
+        eyeball_radius = 10
 
         # Scale the eyeball radius based on the depth
-        draw_eyeball_radius = eyeball_radius * (-1000/camera_landmark_homogenous[2])
+        draw_eyeball_radius = eyeball_radius * (-50/camera_landmark_homogenous[2])
         cv2.circle(frame, (int(screen_x), int(screen_y)), int(draw_eyeball_radius), (0, 0, 255), 1)
         
         pupil2d = np.array([pupil[0] * width, pupil[1] * height])
         cv2.circle(frame, (int(pupil2d[0]), int(pupil2d[1])), 2, (0, 0, 255), -1)
 
         # Compute the 3D pupil by using a line-sphere intersection problem
+        # Reference: https://en.wikipedia.org/wiki/Line%E2%80%93sphere_intersection
         # Convert from 0-1 to -1 to 1
-        pupil = np.array([2 * pupil[0] - 1, 2 * pupil[1] - 1, pupil[2], 1])
-        pupil[0] = pupil[0] * screen_landmark_homogenous[2]
-        pupil[1] = -pupil[1] * screen_landmark_homogenous[2]
+        ndc_x = (2 * pupil2d[0] / width) - 1
+        ndc_y = 1 - (2 * pupil2d[1] / height)
+        sphere_center = camera_landmark_homogenous[:3]
 
-        x = inv_perspective_matrix @ pupil
-        # x[1] = x[1] * -1
-        # x[2] = -screen_landmark_homogenous[2]
-        x[2] = face_rt[2, 3] + 2.25
-        x[3] = 1
-        print(x, camera_landmark_homogenous, pupil2d)
-        screen_landmark_homogenous = perspective_matrix @ x
+        # Homogeneous 4D point in NDC
+        ndc_point = np.array([ndc_x, ndc_y, -1.0, 1.0])
+
+        # Invert the perspective matrix to go from NDC to world space
+        inv_perspective_matrix = np.linalg.inv(perspective_matrix)
+
+        # Compute the ray in 3D space
+        world_point_homogeneous = np.dot(inv_perspective_matrix, ndc_point)
+
+        # Dehomogenize (convert from homogeneous to Cartesian coordinates)
+        world_point = world_point_homogeneous[:3] / world_point_homogeneous[3]
+
+        # Ray direction from the camera origin to the dehomogenized world point
+        ray_direction = world_point - np.array([0, 0, 0])
+        ray_direction /= np.linalg.norm(ray_direction)  # Normalize the direction
+
+        # Camera origin
+        camera_origin = np.array([0.0, 0.0, 0.0])
+
+        # Calculate intersection with the sphere
+        oc = camera_origin - sphere_center
+        oc_norm = oc / np.linalg.norm(oc)
+
+        # For testing, make the ray direction the same as the oc
+        # ray_direction = oc_norm
+
+        sphere_radius = 5
+        # a = np.dot(ray_direction, ray_direction)
+        # b = 2.0 * np.dot(oc, ray_direction)
+        # c = np.dot(oc, oc) - sphere_radius ** 2
+
+        # Solve the quadratic equation ax^2 + bx + c = 0
+        # discriminant = b ** 2 - 4 * a * c
+        discriminant = np.dot(ray_direction, oc) ** 2 - (np.dot(oc, oc) - sphere_radius ** 2)
+
+        if discriminant < 0:
+            # No real intersections
+            print('No real intersections')
+            cv2.imshow('frame', imutils.resize(frame, width=1000))
+
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+            continue
+            # return None
+
+        # Calculate the two possible intersection points
+        # t1 = (-b - np.sqrt(discriminant)) / (2 * a)
+        # t2 = (-b + np.sqrt(discriminant)) / (2 * a)
+        t1 = np.dot(-ray_direction, oc) - np.sqrt(discriminant)
+        t2 = np.dot(-ray_direction, oc) + np.sqrt(discriminant)
+
+        # We are interested in the first intersection that is in front of the camera
+        pupil_3d = None
+        # if t1 >= 0:
+        #     pupil_3d = camera_origin + t1 * ray_direction
+        # elif t2 >= 0:
+        #     pupil_3d = camera_origin + t2 * ray_direction
+        if t1 < t2:
+            pupil_3d = camera_origin + t1 * ray_direction
+        else:
+            pupil_3d = camera_origin + t2 * ray_direction
+        print(pupil_3d)
+
+        # Project back the 3D point to ensure
+        pupil_3d_homo = np.array([pupil_3d[0], pupil_3d[1], pupil_3d[2], 1])
+        screen_landmark_homogenous = perspective_matrix @ pupil_3d_homo
         screen_x = screen_landmark_homogenous[0] / screen_landmark_homogenous[2]
         screen_y = screen_landmark_homogenous[1] / screen_landmark_homogenous[2]
         screen_x = (screen_x + 1) * width / 2
         screen_y = (screen_y * -1 + 1) * height / 2
-        cv2.circle(frame, (int(screen_x), int(screen_y)), 1, (0, 255, 0), -1)
+        cv2.circle(frame, (int(screen_x), int(screen_y)), 5, (0, 255, 0), -1)
+
+        # x = inv_perspective_matrix @ pupil
+        # x[1] = x[1] * -1
+        # x[2] = -screen_landmark_homogenous[2]
+        # x[2] = face_rt[2, 3] + 2.25
+        # x[3] = 1
+        # print(x, camera_landmark_homogenous, pupil2d)
+        # screen_landmark_homogenous = perspective_matrix @ x
+        # screen_x = screen_landmark_homogenous[0] / screen_landmark_homogenous[2]
+        # screen_y = screen_landmark_homogenous[1] / screen_landmark_homogenous[2]
+        # screen_x = (screen_x + 1) * width / 2
+        # screen_y = (screen_y * -1 + 1) * height / 2
+        # cv2.circle(frame, (int(screen_x), int(screen_y)), 1, (0, 255, 0), -1)
         # z = (x.T @ camera_landmark_homogenous) / np.linalg.norm(x)
         # if np.linalg.norm(z * x - camera_landmark_homogenous) > eyeball_radius:
         #     p = (z * x)
