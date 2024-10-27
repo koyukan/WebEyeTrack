@@ -76,6 +76,8 @@ def create_perspective_matrix(aspect_ratio):
     return perspective_matrix
 
 if __name__ == '__main__':
+
+    PRIOR_GAZE = np.array([0, 0, -1])
     
     # Load the webcam 
     cap = cv2.VideoCapture(0)
@@ -126,9 +128,8 @@ if __name__ == '__main__':
 
         # metric_landmark_homogenous = np.array([detection_results.face_landmarks[0][1].x, detection_results.face_landmarks[0][1].y, detection_results.face_landmarks[0][1].z, 1])
         # metric_landmark_homogenous = np.array([0,0,0,1])
-        # metric_landmark_homogenous = np.array([3.0278,2.7,2.5,1])
-        metric_landmark_homogenous = np.array([3.2,2.6,2.5,1])
-        # metric_landmark_homogenous = np.array([3.0278,2.3,2.5,1])
+        # metric_landmark_homogenous = np.array([3.2,2.6,2.5,1])
+        metric_landmark_homogenous = np.array([3.2,3,2.5,1])
         camera_landmark_homogenous = face_rt @ metric_landmark_homogenous
         screen_landmark_homogenous = perspective_matrix @ camera_landmark_homogenous
         screen_x = screen_landmark_homogenous[0] / screen_landmark_homogenous[2]
@@ -138,6 +139,7 @@ if __name__ == '__main__':
         # print(screen_x, screen_y, camera_landmark_homogenous, detection_results.face_landmarks[0][1].z)
         # print(camera_landmark_homogenous)
         eyeball_radius = 10
+        eyeball_center_2d = np.array([screen_x, screen_y])
 
         # Scale the eyeball radius based on the depth
         draw_eyeball_radius = eyeball_radius * (-50/camera_landmark_homogenous[2])
@@ -185,7 +187,7 @@ if __name__ == '__main__':
         ray_end_2d = (int(width / 2 + ray_end_point[0] * width / 2), int(height / 2 - ray_end_point[1] * height / 2))
 
         # Draw the ray direction on the frame (from the camera origin to the end point of the ray)
-        cv2.line(frame, (int(width / 2), int(height / 2)), ray_end_2d, (0, 255, 0), 2)
+        # cv2.line(frame, (int(width / 2), int(height / 2)), ray_end_2d, (0, 255, 0), 2)
 
         # Calculate intersection with the sphere
         oc = camera_origin - sphere_center
@@ -225,11 +227,11 @@ if __name__ == '__main__':
         #     pupil_3d = camera_origin + t1 * ray_direction
         # elif t2 >= 0:
         #     pupil_3d = camera_origin + t2 * ray_direction
-        if t1 > t2:
+        if t1 < t2:
             pupil_3d = camera_origin + t1 * ray_direction
         else:
             pupil_3d = camera_origin + t2 * ray_direction
-        print(pupil_3d)
+        # print(pupil_3d)
 
         # Project back the 3D point to ensure
         pupil_3d_homo = np.array([pupil_3d[0], pupil_3d[1], pupil_3d[2], 1])
@@ -241,6 +243,20 @@ if __name__ == '__main__':
         cv2.circle(frame, (int(screen_x), int(screen_y)), 2, (0, 255, 0), -1)
 
         # Compute the gaze direction based on the eyeball center and 3D pupil
+        gaze_direction = pupil_3d - sphere_center
+        gaze_direction /= np.linalg.norm(gaze_direction)
+        # print(gaze_direction)
+
+        # Runnign average with PRIOR_GAZE
+        gaze_direction = gaze_direction + PRIOR_GAZE
+        gaze_direction /= np.linalg.norm(gaze_direction)
+        PRIOR_GAZE = gaze_direction
+
+        # Convert to pitch, yaw, roll
+        pitch, yaw = core.vector_to_pitch_yaw(gaze_direction)
+        pitch, yaw = -pitch, (yaw+180) * -1
+        print(pitch, yaw)
+        frame = vis.draw_axis(frame, pitch, yaw, tdx=eyeball_center_2d[0], tdy=eyeball_center_2d[1])
 
         # Draw the rotation matrix
         # rotation_matrix = face_rt[:3, :3].copy()

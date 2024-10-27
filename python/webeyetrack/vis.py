@@ -305,8 +305,8 @@ def draw_axis(img, pitch, yaw, roll=0, tdx=None, tdy=None, size=100):
     y3 = size * (math.cos(yaw) * math.sin(pitch)) + tdy  # Note the change here for negative Z
 
     # Draw the axes with appropriate colors
-    cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x1), int(y1)), (0, 0, 0), 3, tipLength=0.2)  # X-axis (Black)
-    cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x2), int(y2)), (100, 100, 100), 3, tipLength=0.2)  # Y-axis (Gray)
+    # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x1), int(y1)), (0, 0, 0), 3, tipLength=0.2)  # X-axis (Black)
+    # cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x2), int(y2)), (100, 100, 100), 3, tipLength=0.2)  # Y-axis (Gray)
     cv2.arrowedLine(img, (int(tdx), int(tdy)), (int(x3), int(y3)), (255, 255, 255), 3, tipLength=0.2)  # Z-axis (White)
 
     return img
