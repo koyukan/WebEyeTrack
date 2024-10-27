@@ -20,8 +20,8 @@ LEFT_EYEAREA_LANDMARKS = [463, 359, 257, 253]
 
 # According to https://github.com/google-ai-edge/mediapipe/blob/master/mediapipe/graphs/face_effect/face_effect_gpu.pbtxt#L61-L65
 # vertical_fov_degrees = 50
-# vertical_fov_degrees = 60
-vertical_fov_degrees = 63.0 
+vertical_fov_degrees = 60
+# vertical_fov_degrees = 63.0 
 # vertical_fov_degrees = 90.0
 near = 1.0 # 1cm
 far = 10000 # 100m 
@@ -124,7 +124,7 @@ if __name__ == '__main__':
         face_rt[:3, 3] *= np.array([-1, -1, -1])
      
         # Draw the landmarks
-        frame = draw_landmarks_on_image(frame, detection_results)
+        # frame = draw_landmarks_on_image(frame, detection_results)
 
         pupil_landmark = detection_results.face_landmarks[0][473]
         pupil = np.array([pupil_landmark.x, pupil_landmark.y, pupil_landmark.z, 1])
@@ -141,16 +141,16 @@ if __name__ == '__main__':
         screen_y = (screen_y * -1 + 1) * height / 2
         # print(screen_x, screen_y, camera_landmark_homogenous, detection_results.face_landmarks[0][1].z)
         # print(camera_landmark_homogenous)
-        eyeball_radius = 10
+        eyeball_radius = 0.85
         eyeball_center_2d = np.array([screen_x, screen_y])
         # import pdb; pdb.set_trace()
 
         # Scale the eyeball radius based on the depth
-        draw_eyeball_radius = eyeball_radius * (50/camera_landmark_homogenous[2])
+        draw_eyeball_radius = eyeball_radius * (500/camera_landmark_homogenous[2])
         cv2.circle(frame, (int(screen_x), int(screen_y)), int(draw_eyeball_radius), (0, 0, 255), 1)
         
         pupil2d = np.array([pupil[0] * width, pupil[1] * height])
-        cv2.circle(frame, (int(pupil2d[0]), int(pupil2d[1])), 2, (0, 0, 255), -1)
+        cv2.circle(frame, (int(pupil2d[0]), int(pupil2d[1])), 3, (0, 0, 255), -1)
 
         # Compute the 3D pupil by using a line-sphere intersection problem
         # Reference: https://en.wikipedia.org/wiki/Line%E2%80%93sphere_intersection
@@ -162,8 +162,8 @@ if __name__ == '__main__':
         sphere_center = camera_landmark_homogenous[:3]
 
         # Homogeneous 4D point in NDC
-        # ndc_point = np.array([ndc_x, ndc_y, -1.0, 1.0])
-        ndc_point = np.array([ndc_x, ndc_y, -1.0, 2.1])
+        ndc_point = np.array([ndc_x, ndc_y, -1.0, 1.9])
+        # ndc_point = np.array([ndc_x, ndc_y, -1.0, 2.1])
 
         # Invert the perspective matrix to go from NDC to world space
         inv_perspective_matrix = np.linalg.inv(perspective_matrix)
@@ -200,7 +200,7 @@ if __name__ == '__main__':
         # For testing, make the ray direction the same as the oc
         # ray_direction = oc_norm
 
-        sphere_radius = 1
+        sphere_radius = eyeball_radius
         # a = np.dot(ray_direction, ray_direction)
         # b = 2.0 * np.dot(oc, ray_direction)
         # c = np.dot(oc, oc) - sphere_radius ** 2
@@ -211,7 +211,6 @@ if __name__ == '__main__':
 
         if discriminant < 0:
             # No real intersections
-            print('No real intersections')
             cv2.imshow('frame', imutils.resize(frame, width=1000))
 
             if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -258,7 +257,7 @@ if __name__ == '__main__':
         # Convert to pitch, yaw, roll
         pitch, yaw = core.vector_to_pitch_yaw(gaze_direction)
         pitch, yaw = pitch, yaw * -1
-        # print(pitch, yaw)
+        print(pitch, yaw)
         frame = vis.draw_axis(frame, pitch, yaw, tdx=pupil2d[0], tdy=pupil2d[1])
 
         # Draw the rotation matrix
