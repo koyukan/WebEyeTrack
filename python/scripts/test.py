@@ -149,12 +149,15 @@ if __name__ == '__main__':
         # Compute the 3D pupil by using a line-sphere intersection problem
         # Reference: https://en.wikipedia.org/wiki/Line%E2%80%93sphere_intersection
         # Convert from 0-1 to -1 to 1
-        ndc_x = (2 * pupil2d[0] / width) - 1
+        # ndc_x = (2 * pupil2d[0] / width) - 1
         ndc_y = 1 - (2 * pupil2d[1] / height)
+        ndc_x = (2 * pupil2d[0] / width) - 1
+        # ndc_y = 0
         sphere_center = camera_landmark_homogenous[:3]
 
         # Homogeneous 4D point in NDC
-        ndc_point = np.array([ndc_x, ndc_y, -1.0, 1.0])
+        # ndc_point = np.array([ndc_x, ndc_y, -1.0, 1.0])
+        ndc_point = np.array([ndc_x, ndc_y, -1.0, 2.1])
 
         # Invert the perspective matrix to go from NDC to world space
         inv_perspective_matrix = np.linalg.inv(perspective_matrix)
@@ -168,9 +171,21 @@ if __name__ == '__main__':
         # Ray direction from the camera origin to the dehomogenized world point
         ray_direction = world_point - np.array([0, 0, 0])
         ray_direction /= np.linalg.norm(ray_direction)  # Normalize the direction
-
+        
         # Camera origin
         camera_origin = np.array([0.0, 0.0, 0.0])
+
+        # Define a scale to draw the ray visually (use an appropriate scaling factor)
+        scale = 1
+
+        # Compute a point along the ray for visualization
+        ray_end_point = camera_origin + scale * ray_direction
+
+        # Convert 3D points to 2D image space (assuming the ray end point is projected onto the image plane)
+        ray_end_2d = (int(width / 2 + ray_end_point[0] * width / 2), int(height / 2 - ray_end_point[1] * height / 2))
+
+        # Draw the ray direction on the frame (from the camera origin to the end point of the ray)
+        cv2.line(frame, (int(width / 2), int(height / 2)), ray_end_2d, (0, 255, 0), 2)
 
         # Calculate intersection with the sphere
         oc = camera_origin - sphere_center
@@ -179,7 +194,7 @@ if __name__ == '__main__':
         # For testing, make the ray direction the same as the oc
         # ray_direction = oc_norm
 
-        sphere_radius = 5
+        sphere_radius = 1
         # a = np.dot(ray_direction, ray_direction)
         # b = 2.0 * np.dot(oc, ray_direction)
         # c = np.dot(oc, oc) - sphere_radius ** 2
@@ -210,7 +225,7 @@ if __name__ == '__main__':
         #     pupil_3d = camera_origin + t1 * ray_direction
         # elif t2 >= 0:
         #     pupil_3d = camera_origin + t2 * ray_direction
-        if t1 < t2:
+        if t1 > t2:
             pupil_3d = camera_origin + t1 * ray_direction
         else:
             pupil_3d = camera_origin + t2 * ray_direction
@@ -223,33 +238,9 @@ if __name__ == '__main__':
         screen_y = screen_landmark_homogenous[1] / screen_landmark_homogenous[2]
         screen_x = (screen_x + 1) * width / 2
         screen_y = (screen_y * -1 + 1) * height / 2
-        cv2.circle(frame, (int(screen_x), int(screen_y)), 5, (0, 255, 0), -1)
+        cv2.circle(frame, (int(screen_x), int(screen_y)), 2, (0, 255, 0), -1)
 
-        # x = inv_perspective_matrix @ pupil
-        # x[1] = x[1] * -1
-        # x[2] = -screen_landmark_homogenous[2]
-        # x[2] = face_rt[2, 3] + 2.25
-        # x[3] = 1
-        # print(x, camera_landmark_homogenous, pupil2d)
-        # screen_landmark_homogenous = perspective_matrix @ x
-        # screen_x = screen_landmark_homogenous[0] / screen_landmark_homogenous[2]
-        # screen_y = screen_landmark_homogenous[1] / screen_landmark_homogenous[2]
-        # screen_x = (screen_x + 1) * width / 2
-        # screen_y = (screen_y * -1 + 1) * height / 2
-        # cv2.circle(frame, (int(screen_x), int(screen_y)), 1, (0, 255, 0), -1)
-        # z = (x.T @ camera_landmark_homogenous) / np.linalg.norm(x)
-        # if np.linalg.norm(z * x - camera_landmark_homogenous) > eyeball_radius:
-        #     p = (z * x)
-        # else:
-        #     p = (x.T @ camera_landmark_homogenous - np.sqrt((x.T @ camera_landmark_homogenous)**2 - camera_landmark_homogenous.T @ camera_landmark_homogenous + eyeball_radius**2)) / (x.T @ x)
-        #     p = p * x
-
-        # print(p)
-
-        # use the nose as the face origin
-        # face_landmarks = np.array([[lm.x, lm.y, lm.z, lm.visibility, lm.presence] for lm in detection_results.face_landmarks[0]])
-        # x, y, z = detection_results.face_landmarks[0][1].x * width, detection_results.face_landmarks[0][1].y * height, detection_results.face_landmarks[0][1].z
-        # x, y, z = face_landmarks[1, :3] * np.array([width, height, 1])
+        # Compute the gaze direction based on the eyeball center and 3D pupil
 
         # Draw the rotation matrix
         # rotation_matrix = face_rt[:3, :3].copy()
