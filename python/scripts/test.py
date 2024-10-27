@@ -119,9 +119,12 @@ if __name__ == '__main__':
 
         # Draw the canonical face origin xyz=[0,0,0] via the facial transformation matrix
         face_rt = detection_results.facial_transformation_matrixes[0]
+
+        # Flip the translation
+        face_rt[:3, 3] *= np.array([-1, -1, -1])
      
         # Draw the landmarks
-        # frame = draw_landmarks_on_image(frame, detection_results)
+        frame = draw_landmarks_on_image(frame, detection_results)
 
         pupil_landmark = detection_results.face_landmarks[0][473]
         pupil = np.array([pupil_landmark.x, pupil_landmark.y, pupil_landmark.z, 1])
@@ -129,7 +132,7 @@ if __name__ == '__main__':
         # metric_landmark_homogenous = np.array([detection_results.face_landmarks[0][1].x, detection_results.face_landmarks[0][1].y, detection_results.face_landmarks[0][1].z, 1])
         # metric_landmark_homogenous = np.array([0,0,0,1])
         # metric_landmark_homogenous = np.array([3.2,2.6,2.5,1])
-        metric_landmark_homogenous = np.array([3.2,3,2.5,1])
+        metric_landmark_homogenous = np.array([-3.2,-3,-2.5,1])
         camera_landmark_homogenous = face_rt @ metric_landmark_homogenous
         screen_landmark_homogenous = perspective_matrix @ camera_landmark_homogenous
         screen_x = screen_landmark_homogenous[0] / screen_landmark_homogenous[2]
@@ -140,9 +143,10 @@ if __name__ == '__main__':
         # print(camera_landmark_homogenous)
         eyeball_radius = 10
         eyeball_center_2d = np.array([screen_x, screen_y])
+        # import pdb; pdb.set_trace()
 
         # Scale the eyeball radius based on the depth
-        draw_eyeball_radius = eyeball_radius * (-50/camera_landmark_homogenous[2])
+        draw_eyeball_radius = eyeball_radius * (50/camera_landmark_homogenous[2])
         cv2.circle(frame, (int(screen_x), int(screen_y)), int(draw_eyeball_radius), (0, 0, 255), 1)
         
         pupil2d = np.array([pupil[0] * width, pupil[1] * height])
@@ -227,7 +231,7 @@ if __name__ == '__main__':
         #     pupil_3d = camera_origin + t1 * ray_direction
         # elif t2 >= 0:
         #     pupil_3d = camera_origin + t2 * ray_direction
-        if t1 < t2:
+        if t1 > t2:
             pupil_3d = camera_origin + t1 * ray_direction
         else:
             pupil_3d = camera_origin + t2 * ray_direction
@@ -245,7 +249,6 @@ if __name__ == '__main__':
         # Compute the gaze direction based on the eyeball center and 3D pupil
         gaze_direction = pupil_3d - sphere_center
         gaze_direction /= np.linalg.norm(gaze_direction)
-        # print(gaze_direction)
 
         # Runnign average with PRIOR_GAZE
         gaze_direction = gaze_direction + PRIOR_GAZE
@@ -254,9 +257,9 @@ if __name__ == '__main__':
 
         # Convert to pitch, yaw, roll
         pitch, yaw = core.vector_to_pitch_yaw(gaze_direction)
-        pitch, yaw = -pitch, (yaw+180) * -1
-        print(pitch, yaw)
-        frame = vis.draw_axis(frame, pitch, yaw, tdx=eyeball_center_2d[0], tdy=eyeball_center_2d[1])
+        pitch, yaw = pitch, yaw * -1
+        # print(pitch, yaw)
+        frame = vis.draw_axis(frame, pitch, yaw, tdx=pupil2d[0], tdy=pupil2d[1])
 
         # Draw the rotation matrix
         # rotation_matrix = face_rt[:3, :3].copy()
