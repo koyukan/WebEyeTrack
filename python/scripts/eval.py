@@ -69,7 +69,8 @@ def eval(args):
 
     # Create pipeline
     algo = FLGE(
-        str(GIT_ROOT / 'python' / 'weights' / 'face_landmarker_v2_with_blendshapes.task')
+        str(GIT_ROOT / 'python' / 'weights' / 'face_landmarker_v2_with_blendshapes.task'),
+        args.method
     )
     
     # Create a dataset object
@@ -79,7 +80,7 @@ def eval(args):
             participants=config['datasets']['MPIIFaceGaze']['val_subjects'] + config['datasets']['MPIIFaceGaze']['train_subjects'],
             # img_size=[244,244],
             # face_size=[244,244],
-            # dataset_size=100
+            # dataset_size=100,
             per_participant_size=10
         )
     elif (args.dataset == 'EyeDiap'):
@@ -218,6 +219,7 @@ if __name__ == '__main__':
     # Parse arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, required=True, choices=['MPIIFaceGaze', 'EyeDiap'], help='Dataset to evaluate')
+    parser.add_argument('--method', type=str, required=True, choices=['blendshape', 'landmark2d', 'model-based'], help='Method to evaluate')
     args = parser.parse_args()
 
     eval(args)

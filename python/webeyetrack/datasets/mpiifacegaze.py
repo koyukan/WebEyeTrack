@@ -4,7 +4,10 @@ from typing import List, Dict, Union, Tuple, Optional
 import copy
 import os
 import json
+import pickle
+from collections import defaultdict
 
+import pandas as pd
 from scipy.spatial.transform import Rotation
 from tqdm import tqdm
 import cv2
@@ -42,9 +45,6 @@ class MPIIFaceGazeDataset(Dataset):
         assert dataset_dir.is_dir(), f"Dataset directory {dataset_dir} does not exist."
         self.dataset_dir = dataset_dir
         
-        # Only dataset size or per participant size can be set
-        assert (dataset_size is None) or (per_participant_size is None), "Only one of dataset_size or per_participant_size can be set."
-
         self.img_size = img_size
         self.face_size = face_size
         self.dataset_size = dataset_size
@@ -172,15 +172,18 @@ class MPIIFaceGazeDataset(Dataset):
                     # If the face landmark already exists, load it instead of computing it
                     face_landmarks_dir = participant_dir / 'face_landmarks'
                     os.makedirs(face_landmarks_dir, exist_ok=True)
+                    detection_fp = face_landmarks_dir / f"{data_id}_detection.pkl"
                     face_landmarks_rt_fp = face_landmarks_dir / f"{data_id}_rt.npy"
                     face_landmarks_fp = face_landmarks_dir / f"{data_id}.npy"
                     face_blendshapes_fp = face_landmarks_dir / f"{data_id}_blendshapes.npy"
 
-                    if face_landmarks_rt_fp.is_file() and face_landmarks_fp.is_file() and face_blendshapes_fp.is_file():
+                    if face_landmarks_rt_fp.is_file() and face_landmarks_fp.is_file() and face_blendshapes_fp.is_file() and detection_fp.is_file():
                         face_landmarks_rt = np.load(face_landmarks_rt_fp)
-                        face_landmarks_proto = np.load(face_landmarks_fp)
-                        face_landmarks = np.array([[lm[0] * image.size[0], lm[1] * image.size[1]] for lm in face_landmarks_proto])
+                        face_landmarks_all = np.load(face_landmarks_fp)
+                        face_landmarks = np.array([[lm[0] * image.size[0], lm[1] * image.size[1]] for lm in face_landmarks_all])
                         face_blendshapes = np.load(face_blendshapes_fp, allow_pickle=True)
+                        with open(detection_fp, 'rb') as f:
+                            detection_results = pickle.load(f)
                     else:
                         
                         # Detect the facial landmarks via MediaPipe
@@ -204,6 +207,8 @@ class MPIIFaceGazeDataset(Dataset):
                             np.save(f, face_landmarks_all)
                         with open(face_blendshapes_fp, 'wb') as f:
                             np.save(f, face_blendshapes)
+                        with open(detection_fp, 'wb') as f:
+                            pickle.dump(detection_results, f)
 
                         face_landmarks = np.array([[lm.x * image.size[0], lm.y * image.size[1]] for lm in face_landmarks_proto])
 
@@ -228,18 +233,32 @@ class MPIIFaceGazeDataset(Dataset):
 
                     annotation = Annotations(
                         original_img_size=np.array(image_np.shape),
-                        pog_px=np.array(items[1:3], dtype=np.float32),
-                        face_bbox=face_bbox,
-                        facial_landmarks=face_landmarks_proto,
+                        intrinsics=calibration_data.camera_matrix,
+                        # Facial landmarks
+                        facial_detection_results=detection_results,
+                        facial_landmarks=face_landmarks_all,
                         facial_landmarks_2d=face_landmarks,
                         facial_rt=face_landmarks_rt,
                         face_blendshapes=np_face_blendshapes,
+                        face_bbox=face_bbox,
                         head_pose_3d=np.array(items[15:21], dtype=np.float32).reshape(3, 2),
+                        # Face Gaze
                         face_origin_3d=face_origin_3d,
                         face_origin_2d=face_origin_2d.flatten(),
+                        face_gaze_vector=gaze_direction_3d,
+                        # Eye Gaze
+                        left_eye_origin_3d=np.empty((3, 0), dtype=np.float32),
+                        left_eye_origin_2d=np.empty((2, 0), dtype=np.float32),
+                        left_gaze_vector=np.empty((3, 0), dtype=np.float32),
+                        right_eye_origin_3d=np.empty((3, 0), dtype=np.float32),
+                        right_eye_origin_2d=np.empty((2, 0), dtype=np.float32),
+                        right_gaze_vector=np.empty((3, 0), dtype=np.float32),
+                        # Target information
                         gaze_target_3d=gaze_target_3d,
                         gaze_target_2d=gaze_target_2d.flatten(),
-                        gaze_direction_3d=gaze_direction_3d,
+                        pog_px=np.array(items[1:3], dtype=np.float32),
+                        # Gaze State Information
+                        is_closed=np.array([False])
                     )
             
                     annotations[items[0]] = annotation
@@ -374,6 +393,17 @@ class MPIIFaceGazeDataset(Dataset):
 
     def __len__(self):
         return len(self.samples)
+
+    def to_df(self):
+
+        data = defaultdict(list)
+        for sample in self.samples:
+            data['image_fp'].append(sample.image_fp)
+            data['participant_id'].append(sample.participant_id)
+            for k, v in asdict(sample.annotations).items():
+                data[k].append(v)
+
+        return pd.DataFrame(data)
 
 if __name__ == '__main__':
 
