@@ -32,7 +32,7 @@ LEFT_IRIS_LANDMARKS = [473, 475, 474, 477, 476] # center, top, right, botton, le
 
 # EYE_PADDING_HEIGHT = 0.1
 EYE_PADDING_WIDTH = 0.3
-EYE_HEIGHT_RATIO = 0.7
+EYE_HEIGHT_RATIO = 1
 
 
 def model_based_gaze_render(frame: np.ndarray, result: FLGEResult):
@@ -86,10 +86,6 @@ def model_based_gaze_render(frame: np.ndarray, result: FLGEResult):
         eye_result = result.left if i == 'left' else result.right
         is_closed = eye_result.is_closed
 
-        # Determine if the eye is closed by the ratio of the height based on the width
-        # if eyelid_height / eyelid_width < 0.05:
-        #     is_closed = True
-
         if width == 0 or height == 0:
             continue
 
@@ -121,16 +117,33 @@ def model_based_gaze_render(frame: np.ndarray, result: FLGEResult):
         # Shift the IRIS landmarks to the cropped eye
         iris_px = left_2d_iris_px if i == 'left' else right_2d_iris_px
         shifted_iris_px = iris_px - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
-        for iris_px_pt in shifted_iris_px:
-            resized_iris_px = iris_px_pt * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
-            cv2.circle(eye_image, tuple(resized_iris_px.astype(int)), 3, (0, 0, 255), -1)
+        scaled_shifted_iris_px = shifted_iris_px * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+        cv2.circle(eye_image, tuple(scaled_shifted_iris_px[0].astype(int)), 3, (0, 0, 255), -1)
+        # for iris_px_pt in shifted_iris_px:
+        #     resized_iris_px = iris_px_pt * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+        #     cv2.circle(eye_image, tuple(resized_iris_px.astype(int)), 3, (0, 0, 255), -1)
+
+        # Draw the eyeball
+        if 'eyeball_center_2d' in eye_result.meta_data:
+            # Offset the eyeball center to the cropped eye
+            eyeball_center_2d = eye_result.meta_data['eyeball_center_2d']
+            eyeball_radius_2d = eye_result.meta_data['eyeball_radius_2d']
+            shifted_eyeball_center_2d = eyeball_center_2d - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
+
+            # Apply the scaling factor
+            resized_eyeball_center_2d = shifted_eyeball_center_2d * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+            resized_eyeball_radius_2d = eyeball_radius_2d * 400/original_width
+
+            # Draw the eyeball
+            # import pdb; pdb.set_trace()
+            cv2.circle(eye_image, tuple(resized_eyeball_center_2d.astype(int)), int(resized_eyeball_radius_2d), (0, 0, 255), 1)
 
         # Draw the centroid of the eyeball
-        cv2.circle(eye_image, (int(new_width/2), int(new_height/2)), 3, (255, 0, 0), -1)
+        # cv2.circle(eye_image, (int(new_width/2), int(new_height/2)), 3, (255, 0, 0), -1)
         
         # Compute the line between the iris center and the centroid
-        new_shifted_iris_px_center = shifted_iris_px[0] * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
-        cv2.line(eye_image, (int(new_width/2), int(new_height/2)), tuple(new_shifted_iris_px_center.astype(int)), (0, 255, 0), 2)
+        # new_shifted_iris_px_center = shifted_iris_px[0] * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+        # cv2.line(eye_image, (int(new_width/2), int(new_height/2)), tuple(new_shifted_iris_px_center.astype(int)), (0, 255, 0), 2)
 
         if is_closed:
             cv2.putText(eye_image, 'Closed', (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
@@ -140,6 +153,13 @@ def model_based_gaze_render(frame: np.ndarray, result: FLGEResult):
         iris_center = iris_px[0]
         pitch, yaw = vector_to_pitch_yaw(eye_result.direction)
         frame = draw_axis(frame, pitch, yaw, 0, int(iris_center[0]), int(iris_center[1]), 100)
+
+    # Draw the eyeballs on the frame itself
+    for eye_result in [result.left, result.right]:
+        if 'eyeball_center_2d' in eye_result.meta_data:
+            eyeball_center_2d = eye_result.meta_data['eyeball_center_2d']
+            eyeball_radius_2d = eye_result.meta_data['eyeball_radius_2d']
+            cv2.circle(frame, tuple(eyeball_center_2d.astype(int)), int(eyeball_radius_2d), (0, 0, 255), 1)
 
     # Draw the FPS on the topright
     fps = 1/result.duration

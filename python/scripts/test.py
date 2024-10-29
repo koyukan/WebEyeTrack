@@ -134,6 +134,7 @@ if __name__ == '__main__':
         # metric_landmark_homogenous = np.array([3.2,2.6,2.5,1])
         metric_landmark_homogenous = np.array([-3.2,-3,-2.5,1])
         camera_landmark_homogenous = face_rt @ metric_landmark_homogenous
+        print(camera_landmark_homogenous)
         screen_landmark_homogenous = perspective_matrix @ camera_landmark_homogenous
         screen_x = screen_landmark_homogenous[0] / screen_landmark_homogenous[2]
         screen_y = screen_landmark_homogenous[1] / screen_landmark_homogenous[2]

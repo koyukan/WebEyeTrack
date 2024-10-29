@@ -13,8 +13,8 @@ from webeyetrack.datasets.utils import draw_landmarks_on_image
 from webeyetrack import vis
 from webeyetrack.pipelines.flge import FLGE
 
-# EYE_TRACKING_APPROACH = "model-based"
-EYE_TRACKING_APPROACH = "landmark2d"
+EYE_TRACKING_APPROACH = "model-based"
+# EYE_TRACKING_APPROACH = "landmark2d"
 # EYE_TRACKING_APPROACH = "blendshape"
 
 if __name__ == '__main__':

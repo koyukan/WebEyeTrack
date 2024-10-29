@@ -10,7 +10,7 @@ from mediapipe.tasks.python import vision
 
 from webeyetrack.datasets.utils import screen_plane_intersection
 from ..vis import draw_axis
-from ..core import pitch_yaw_to_gaze_vector, rotation_matrix_to_euler_angles
+from ..core import pitch_yaw_to_gaze_vector, rotation_matrix_to_euler_angles, vector_to_pitch_yaw
 from ..data_protocols import FLGEResult, EyeResult
 
 LEFT_EYE_LANDMARKS = [263, 362, 386, 374, 380]
@@ -49,8 +49,9 @@ EYE_HEIGHT_RATIO = 0.7
 # RIGHT_EYEBALL_CENTER = np.array([-3.0278, -2.7526, 2.7234]) * 10 # X, Y, Z
 
 # Average radius of an eyeball in cm
-EYEBALL_RADIUS = 1.15
-EYEBALL_DEFAULT = (np.array([-3.2, -3, -2.5]), np.array([3.2, -3, -2.5])) # left, right
+EYEBALL_RADIUS = 1
+EYEBALL_X, EYEBALL_Y, EYEBALL_Z = 3, 2.7, 2.5
+EYEBALL_DEFAULT = (np.array([-EYEBALL_X, -EYEBALL_Y, -EYEBALL_Z]), np.array([EYEBALL_X, -EYEBALL_Y, -EYEBALL_Z])) # left, right
 
 # According to https://github.com/google-ai-edge/mediapipe/blob/master/mediapipe/graphs/face_effect/face_effect_gpu.pbtxt#L61-L65
 VERTICAL_FOV_DEGREES = 60
@@ -172,58 +173,73 @@ class FLGE():
         face_rt_copy = face_rt.copy()
         face_rt_copy[:3, 3] *= np.array([-1, -1, -1])
 
+        # Must for gaze estimation
         gaze_vectors = {}
         eye_closed = {}
-        for i, canonical_eyeball in zip(['left', 'right'], self.eyeball_centers):
 
-            # First, determine if the eye is closed, by computing the EAR
-            # EAR = ||p_2 - p_6|| + ||p_3 - p_5|| / (2 * ||p_1 - p_4||)
-            p1 = facial_landmarks[LEFT_EYE_EAR_LANDMARKS[0], :2]
-            p2 = facial_landmarks[LEFT_EYE_EAR_LANDMARKS[1], :2]
-            p3 = facial_landmarks[LEFT_EYE_EAR_LANDMARKS[2], :2]
-            p4 = facial_landmarks[LEFT_EYE_EAR_LANDMARKS[3], :2]
-            p5 = facial_landmarks[LEFT_EYE_EAR_LANDMARKS[4], :2]
-            p6 = facial_landmarks[LEFT_EYE_EAR_LANDMARKS[5], :2]
-            ear = (np.linalg.norm(p2 - p6) + np.linalg.norm(p3 - p5)) / (2 * np.linalg.norm(p1 - p4))
-            eye_closed[i] = False
-            if ear < self.ear_threshold:
-                eye_closed[i] = True
-                continue
+        # Visualization for debug
+        eyeball_center_2d = {'left': None, 'right': None}
+        eyeball_radius_2d = {'left': None, 'right': None}
+
+        for i, canonical_eyeball in zip(['left', 'right'], self.eyeball_centers):
+            # if i == 'left':
+            #     eye_closed[i] = True
+            #     continue
 
             # Convert to homogenous
             eyeball_homogeneous = np.append(canonical_eyeball, 1)
 
             # Convert from canonical to camera space
             camera_eyeball = face_rt_copy @ eyeball_homogeneous
-            pupil = facial_landmarks[LEFT_IRIS_LANDMARKS[0], :3] if i == 'left' else facial_landmarks[RIGHT_IRIS_LANDMARKS[0], :3]
+            sphere_center = camera_eyeball[:3]
 
-            pupil2d = np.array([pupil[0] * width, pupil[1] * height])
-            # cv2.circle(frame, (int(pupil2d[0]), int(pupil2d[1])), 3, (0, 0, 255), -1)
+            # Obtain the 2D eyeball center and radius
+            screen_landmark_homogenous = self.perspective_matrix @ camera_eyeball
+            eyeball_x_2d_n = screen_landmark_homogenous[0] / screen_landmark_homogenous[2]
+            eyeball_y_2d_n = screen_landmark_homogenous[1] / screen_landmark_homogenous[2]
+            eyeball_x_2d = (eyeball_x_2d_n + 1) * width / 2
+            eyeball_y_2d = (eyeball_y_2d_n * -1 + 1) * height / 2
+            eyeball_center_2d[i] = np.array([eyeball_x_2d, eyeball_y_2d])
+            eyeball_radius_2d[i] = 0.85 * (500/camera_eyeball[2])
+
+            # Draw the eyeball center and radius
+            # cv2.circle(frame, (int(eyeball_x_2d), int(eyeball_y_2d)), 2, (0, 0, 255), -1)
+            
+            # First, determine if the eye is closed, by computing the EAR
+            # EAR = ||p_2 - p_6|| + ||p_3 - p_5|| / (2 * ||p_1 - p_4||)
+            EYE_EAR_LANDMARKS = LEFT_EYE_EAR_LANDMARKS if i == 'left' else RIGHT_EYE_EAR_LANDMARKS
+            p1 = facial_landmarks[EYE_EAR_LANDMARKS[0], :2]
+            p2 = facial_landmarks[EYE_EAR_LANDMARKS[1], :2]
+            p3 = facial_landmarks[EYE_EAR_LANDMARKS[2], :2]
+            p4 = facial_landmarks[EYE_EAR_LANDMARKS[3], :2]
+            p5 = facial_landmarks[EYE_EAR_LANDMARKS[4], :2]
+            p6 = facial_landmarks[EYE_EAR_LANDMARKS[5], :2]
+            ear = (np.linalg.norm(p2 - p6) + np.linalg.norm(p3 - p5)) / (2 * np.linalg.norm(p1 - p4))
+            eye_closed[i] = False
+            if ear < self.ear_threshold:
+                eye_closed[i] = True
+                continue
 
             # Compute the 3D pupil by using a line-sphere intersection problem
             # Reference: https://en.wikipedia.org/wiki/Line%E2%80%93sphere_intersection
             # Convert from 0-1 to -1 to 1
+            pupil = facial_landmarks[LEFT_IRIS_LANDMARKS[0], :3] if i == 'left' else facial_landmarks[RIGHT_IRIS_LANDMARKS[0], :3]
+            pupil2d = np.array([pupil[0] * width, pupil[1] * height])
             ndc_y = 1 - (2 * pupil2d[1] / height)
             ndc_x = (2 * pupil2d[0] / width) - 1
-            sphere_center = camera_eyeball[:3]
-
-            # Homogeneous 4D point in NDC
             ndc_point = np.array([ndc_x, ndc_y, -1.0, 1.9])
+            
+            # Draw the pupil
+            cv2.circle(frame, (int(pupil2d[0]), int(pupil2d[1])), 2, (0, 255, 0), -1)
 
             # Compute the ray in 3D space
             world_point_homogeneous = np.dot(self.inv_perspective_matrix, ndc_point)
-
-            # Dehomogenize (convert from homogeneous to Cartesian coordinates)
             world_point = world_point_homogeneous[:3] / world_point_homogeneous[3]
-
-            # Ray direction from the camera origin to the dehomogenized world point
             ray_direction = world_point - np.array([0, 0, 0])
             ray_direction /= np.linalg.norm(ray_direction)  # Normalize the direction
             
-            # Camera origin
+            # Camera origin and Calculate intersection with the sphere
             camera_origin = np.array([0.0, 0.0, 0.0])
-
-            # Calculate intersection with the sphere
             oc = camera_origin - sphere_center
 
             # Solve the quadratic equation ax^2 + bx + c = 0
@@ -253,6 +269,11 @@ class FLGE():
             gaze_vector = pupil_3d - sphere_center
             gaze_vector /= np.linalg.norm(gaze_vector)
 
+            # Convert gaze vector to pitch and yaw to correct
+            pitch, yaw = vector_to_pitch_yaw(gaze_vector)
+            pitch, yaw = pitch, -yaw
+            gaze_vector = pitch_yaw_to_gaze_vector(pitch, yaw)
+
             # Store
             gaze_vectors[i] = gaze_vector
 
@@ -271,14 +292,23 @@ class FLGE():
             gaze_vectors['left'] = np.array([0,0,1])
             gaze_vectors['right'] = np.array([0,0,1])
 
+        # Debugging purposes
+        cv2.imshow('debug_frame', frame)
+
         return {
             'face': face_gaze_vector,
             'eyes': {
                 'is_closed': eye_closed,
                 'vector': gaze_vectors,
                 'meta_data': {
-                    'left': {},
-                    'right': {}
+                    'left': {
+                        'eyeball_center_2d': eyeball_center_2d['left'],
+                        'eyeball_radius_2d': eyeball_radius_2d['left']
+                    },
+                    'right': {
+                        'eyeball_center_2d': eyeball_center_2d['right'],
+                        'eyeball_radius_2d': eyeball_radius_2d['right']
+                    }
                 }
             }
         }
@@ -655,16 +685,16 @@ class FLGE():
                 frame,
                 facial_landmarks,
                 face_rt,
-                width,
-                height
+                width=width,
+                height=height
             )
         elif self.gaze_direction_estimation == 'landmark2d':
             gaze_vectors = self.estimate_gaze_vector_based_on_eye_landmarks(
                 frame,
                 facial_landmarks,
                 face_rt,
-                width,
-                height
+                width=width,
+                height=height
             )
         elif self.gaze_direction_estimation == 'blendshape':
             gaze_vectors = self.estimate_gaze_vector_based_on_eye_blendshapes(
