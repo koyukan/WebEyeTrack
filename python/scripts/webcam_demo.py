@@ -13,7 +13,8 @@ from webeyetrack.datasets.utils import draw_landmarks_on_image
 from webeyetrack import vis
 from webeyetrack.pipelines.flge import FLGE
 
-EYE_TRACKING_APPROACH = "landmark"
+EYE_TRACKING_APPROACH = "model-based"
+# EYE_TRACKING_APPROACH = "landmark"
 # EYE_TRACKING_APPROACH = "blendshape"
 
 if __name__ == '__main__':
@@ -37,7 +38,11 @@ if __name__ == '__main__':
         result = pipeline.process_frame(frame, intrinsics)
 
         if result:
-            if EYE_TRACKING_APPROACH == "landmark":
+            if EYE_TRACKING_APPROACH == "model-based":
+                img = vis.model_based_gaze_render(frame, result)
+                if type(img) == np.ndarray:
+                    cv2.imshow('frame', img) 
+            elif EYE_TRACKING_APPROACH == "landmark":
                 img = vis.landmark_gaze_render(frame, result)
                 if type(img) == np.ndarray:
                     cv2.imshow('frame', img)

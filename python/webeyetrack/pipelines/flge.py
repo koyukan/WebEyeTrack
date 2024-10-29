@@ -1,5 +1,5 @@
 import time
-from typing import Dict, Any, Literal, Optional
+from typing import Dict, Any, Literal, Optional, Tuple
 import math
 
 import numpy as np
@@ -33,6 +33,10 @@ RIGHT_EYELID_LANDMARKS = [33, 133, 159, 145]
 LEFT_EYELID_TOTAL_LANDMARKS = [ 362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398]
 RIGHT_EYELID_TOTAL_LANDMARKS = [33,  7,   163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246]
 
+# EAR landmarks (for detecting eye blinking) # p1, p2, p3, p4, p5, p6
+LEFT_EYE_EAR_LANDMARKS = [362, 285, 387, 263, 373, 380]
+RIGHT_EYE_EAR_LANDMARKS = [133, 158, 160, 33, 144, 153]
+
 RIGHT_IRIS_LANDMARKS = [468, 470, 469, 472, 471] # center, top, right, botton, left
 LEFT_IRIS_LANDMARKS = [473, 475, 474, 477, 476] # center, top, right, botton, left
 
@@ -41,21 +45,58 @@ EYE_PADDING_WIDTH = 0.3
 EYE_HEIGHT_RATIO = 0.7
 
 # Position of eyeball center based on canonical coordinate system
-LEFT_EYEBALL_CENTER = np.array([3.0278, -2.7526, 2.7234]) * 10 # X, Y, Z
-RIGHT_EYEBALL_CENTER = np.array([-3.0278, -2.7526, 2.7234]) * 10 # X, Y, Z
+# LEFT_EYEBALL_CENTER = np.array([3.0278, -2.7526, 2.7234]) * 10 # X, Y, Z
+# RIGHT_EYEBALL_CENTER = np.array([-3.0278, -2.7526, 2.7234]) * 10 # X, Y, Z
 
 # Average radius of an eyeball in cm
 EYEBALL_RADIUS = 1.15
+EYEBALL_DEFAULT = (np.array([-3.2, -3, -2.5]), np.array([3.2, -3, -2.5])) # left, right
+
+# According to https://github.com/google-ai-edge/mediapipe/blob/master/mediapipe/graphs/face_effect/face_effect_gpu.pbtxt#L61-L65
+VERTICAL_FOV_DEGREES = 60
+NEAR = 1.0 # 1cm
+FAR = 10000 # 100m 
+ORIGIN_POINT_LOCATION = 'BOTTOM_LEFT_CORNER'
 
 def compute_2d_origin(points):
     (cx, cy), radius = cv2.minEnclosingCircle(points.astype(np.float32))
     center = np.array([cx, cy], dtype=np.int32)
     return center
 
+def create_perspective_matrix(aspect_ratio):
+    k_degrees_to_radians = np.pi / 180.0
+
+    # Initialize a 4x4 matrix filled with zeros
+    perspective_matrix = np.zeros((4, 4), dtype=np.float32)
+
+    # Standard perspective projection matrix calculations
+    f = 1.0 / np.tan(k_degrees_to_radians * VERTICAL_FOV_DEGREES / 2.0)
+    denom = 1.0 / (NEAR - FAR)
+
+    # Populate the matrix values
+    perspective_matrix[0, 0] = f / aspect_ratio
+    perspective_matrix[1, 1] = f
+    perspective_matrix[2, 2] = (NEAR + FAR) * denom
+    perspective_matrix[2, 3] = -1.0
+    perspective_matrix[3, 2] = 2.0 * FAR * NEAR * denom
+
+    # Flip Y-axis if origin point location is top-left corner
+    if ORIGIN_POINT_LOCATION == 'TOP_LEFT_CORNER':
+        perspective_matrix[1, 1] *= -1.0
+
+    return perspective_matrix
+
 # Facial Landmark Gaze Estimation
 class FLGE():
 
-    def __init__(self, model_asset_path: str, gaze_direction_estimation: Literal['landmark', 'blendshape'] = 'landmark'):
+    def __init__(
+            self, 
+            model_asset_path: str, 
+            gaze_direction_estimation: Literal['model-based', 'landmark2d', 'blendshape'] = 'model-based', 
+            eyeball_centers: Tuple[np.ndarray, np.ndarray] = EYEBALL_DEFAULT,
+            eyeball_radius: float = EYEBALL_RADIUS,
+            ear_threshold: float = 0.2
+        ):
 
         # Saving options
         self.gaze_direction_estimation = gaze_direction_estimation
@@ -67,6 +108,15 @@ class FLGE():
                                             output_facial_transformation_matrixes=True,
                                             num_faces=1)
         self.face_landmarker = vision.FaceLandmarker.create_from_options(options)
+
+        # Create perspecive matrix variable
+        self.perspective_matrix: Optional[np.ndarray] = None
+        self.inv_perspective_matrix: Optional[np.ndarray] = None
+
+        # Store default parameters
+        self.eyeball_centers = eyeball_centers
+        self.eyeball_radius = eyeball_radius
+        self.ear_threshold = ear_threshold
 
     def estimate_inter_pupillary_distance_2d(self, facial_landmarks, height, width):
         data_2d_pairs = {
@@ -112,6 +162,120 @@ class FLGE():
         }
 
         return (positions, distances)
+
+    def estimate_gaze_vector_based_on_model_based(self, frame, facial_landmarks, face_rt, height, width):
+        
+        # Estimate the eyeball centers
+        face_rt_copy = face_rt.copy()
+        face_rt_copy[:3, 3] *= np.array([-1, -1, -1])
+
+        gaze_vectors = {}
+        eye_closed = {}
+        for i, canonical_eyeball in zip(['left', 'right'], self.eyeball_centers):
+
+            # First, determine if the eye is closed, by computing the EAR
+            # EAR = ||p_2 - p_6|| + ||p_3 - p_5|| / (2 * ||p_1 - p_4||)
+            p1 = facial_landmarks[LEFT_EYE_EAR_LANDMARKS[0], :2]
+            p2 = facial_landmarks[LEFT_EYE_EAR_LANDMARKS[1], :2]
+            p3 = facial_landmarks[LEFT_EYE_EAR_LANDMARKS[2], :2]
+            p4 = facial_landmarks[LEFT_EYE_EAR_LANDMARKS[3], :2]
+            p5 = facial_landmarks[LEFT_EYE_EAR_LANDMARKS[4], :2]
+            p6 = facial_landmarks[LEFT_EYE_EAR_LANDMARKS[5], :2]
+            ear = (np.linalg.norm(p2 - p6) + np.linalg.norm(p3 - p5)) / (2 * np.linalg.norm(p1 - p4))
+            eye_closed[i] = False
+            if ear < self.ear_threshold:
+                eye_closed[i] = True
+                continue
+
+            # Convert to homogenous
+            eyeball_homogeneous = np.append(canonical_eyeball, 1)
+
+            # Convert from canonical to camera space
+            camera_eyeball = face_rt_copy @ eyeball_homogeneous
+            pupil = facial_landmarks[LEFT_IRIS_LANDMARKS[0], :3] if i == 'left' else facial_landmarks[RIGHT_IRIS_LANDMARKS[0], :3]
+
+            pupil2d = np.array([pupil[0] * width, pupil[1] * height])
+            # cv2.circle(frame, (int(pupil2d[0]), int(pupil2d[1])), 3, (0, 0, 255), -1)
+
+            # Compute the 3D pupil by using a line-sphere intersection problem
+            # Reference: https://en.wikipedia.org/wiki/Line%E2%80%93sphere_intersection
+            # Convert from 0-1 to -1 to 1
+            ndc_y = 1 - (2 * pupil2d[1] / height)
+            ndc_x = (2 * pupil2d[0] / width) - 1
+            sphere_center = camera_eyeball[:3]
+
+            # Homogeneous 4D point in NDC
+            ndc_point = np.array([ndc_x, ndc_y, -1.0, 1.9])
+
+            # Compute the ray in 3D space
+            world_point_homogeneous = np.dot(self.inv_perspective_matrix, ndc_point)
+
+            # Dehomogenize (convert from homogeneous to Cartesian coordinates)
+            world_point = world_point_homogeneous[:3] / world_point_homogeneous[3]
+
+            # Ray direction from the camera origin to the dehomogenized world point
+            ray_direction = world_point - np.array([0, 0, 0])
+            ray_direction /= np.linalg.norm(ray_direction)  # Normalize the direction
+            
+            # Camera origin
+            camera_origin = np.array([0.0, 0.0, 0.0])
+
+            # Calculate intersection with the sphere
+            oc = camera_origin - sphere_center
+
+            # Solve the quadratic equation ax^2 + bx + c = 0
+            discriminant = np.dot(ray_direction, oc) ** 2 - (np.dot(oc, oc) - self.eyeball_radius ** 2)
+
+            if discriminant < 0:
+                # No real intersections
+                # cv2.imshow('frame', imutils.resize(frame, width=1000))
+
+                # if cv2.waitKey(1) & 0xFF == ord('q'):
+                #     break
+                continue
+                # return None
+
+            # Calculate the two possible intersection points
+            t1 = np.dot(-ray_direction, oc) - np.sqrt(discriminant)
+            t2 = np.dot(-ray_direction, oc) + np.sqrt(discriminant)
+
+            # We are interested in the first intersection that is in front of the camera
+            pupil_3d = None
+            if t1 > t2:
+                pupil_3d = camera_origin + t1 * ray_direction
+            else:
+                pupil_3d = camera_origin + t2 * ray_direction
+
+            # Compute the gaze direction based on the eyeball center and 3D pupil
+            gaze_vector = pupil_3d - sphere_center
+            gaze_vector /= np.linalg.norm(gaze_vector)
+
+            # Store
+            gaze_vectors[i] = gaze_vector
+
+        # Compute the average gaze vector
+        if 'left' in gaze_vectors and 'right' in gaze_vectors:
+            face_gaze_vector = (gaze_vectors['left'] + gaze_vectors['right'])
+            face_gaze_vector /= np.linalg.norm(face_gaze_vector)
+        elif 'left' in gaze_vectors:
+            face_gaze_vector = gaze_vectors['left']
+            gaze_vectors['right'] = np.array([0,0,1])
+        elif 'right' in gaze_vectors:
+            face_gaze_vector = gaze_vectors['right']
+            gaze_vectors['left'] = np.array([0,0,1])
+        else:
+            face_gaze_vector = np.array([0,0,1])
+            gaze_vectors['left'] = np.array([0,0,1])
+            gaze_vectors['right'] = np.array([0,0,1])
+
+        return {
+            'face': face_gaze_vector,
+            'eyes': {
+                'is_closed': eye_closed,
+                'vector': gaze_vectors,
+                'headpose_corrected_eye_center': {'left': None, 'right': None}
+            }
+        }
 
     def estimate_gaze_vector_based_on_eye_landmarks(self, frame, facial_landmarks, face_rt, height, width):
 
@@ -453,6 +617,11 @@ class FLGE():
 
         if not tic:
             tic = time.perf_counter()
+
+        # If we don't have a perspective matrix, create it
+        if type(self.perspective_matrix) == type(None):
+            self.perspective_matrix = create_perspective_matrix(aspect_ratio=width/height)
+            self.inv_perspective_matrix = np.linalg.inv(self.perspective_matrix)
         
         # Estimate the 2D and 3D position of the eye-center and the face-center
         gaze_origins = self.estimate_2d_3d_eye_face_origins(
@@ -464,7 +633,15 @@ class FLGE():
         )
 
         # Compute the gaze vectors
-        if self.gaze_direction_estimation == 'landmark':
+        if self.gaze_direction_estimation == 'model-based':
+            gaze_vectors = self.estimate_gaze_vector_based_on_model_based(
+                frame,
+                facial_landmarks,
+                face_rt,
+                width,
+                height
+            )
+        elif self.gaze_direction_estimation == 'landmark2d':
             gaze_vectors = self.estimate_gaze_vector_based_on_eye_landmarks(
                 frame,
                 facial_landmarks,
