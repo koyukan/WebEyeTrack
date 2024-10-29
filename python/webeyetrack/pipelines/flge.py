@@ -21,6 +21,9 @@ REAL_WORLD_IPD = 6.3 # Inter-pupilary distance (cm)
 HFOV = 100
 VFOV = 90
 
+# Landmark reference:
+# https://storage.googleapis.com/mediapipe-assets/documentation/mediapipe_face_landmark_fullsize.png
+
 # Format [leftmost, rightmost, topmost, bottommost]
 LEFT_EYEAREA_LANDMARKS = [463, 359, 257, 253]
 RIGHT_EYEAREA_LANDMARKS = [130, 243, 27, 23]
@@ -34,7 +37,7 @@ LEFT_EYELID_TOTAL_LANDMARKS = [ 362, 382, 381, 380, 374, 373, 390, 249, 263, 466
 RIGHT_EYELID_TOTAL_LANDMARKS = [33,  7,   163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246]
 
 # EAR landmarks (for detecting eye blinking) # p1, p2, p3, p4, p5, p6
-LEFT_EYE_EAR_LANDMARKS = [362, 285, 387, 263, 373, 380]
+LEFT_EYE_EAR_LANDMARKS = [362, 385, 387, 263, 373, 380]
 RIGHT_EYE_EAR_LANDMARKS = [133, 158, 160, 33, 144, 153]
 
 RIGHT_IRIS_LANDMARKS = [468, 470, 469, 472, 471] # center, top, right, botton, left
@@ -50,7 +53,7 @@ EYE_HEIGHT_RATIO = 0.7
 
 # Average radius of an eyeball in cm
 EYEBALL_RADIUS = 1
-EYEBALL_X, EYEBALL_Y, EYEBALL_Z = 3, 2.7, 2.5
+EYEBALL_X, EYEBALL_Y, EYEBALL_Z = 3, 2.7, 3
 EYEBALL_DEFAULT = (np.array([-EYEBALL_X, -EYEBALL_Y, -EYEBALL_Z]), np.array([EYEBALL_X, -EYEBALL_Y, -EYEBALL_Z])) # left, right
 
 # According to https://github.com/google-ai-edge/mediapipe/blob/master/mediapipe/graphs/face_effect/face_effect_gpu.pbtxt#L61-L65
@@ -96,7 +99,7 @@ class FLGE():
             gaze_direction_estimation: Literal['model-based', 'landmark2d', 'blendshape'] = 'model-based', 
             eyeball_centers: Tuple[np.ndarray, np.ndarray] = EYEBALL_DEFAULT,
             eyeball_radius: float = EYEBALL_RADIUS,
-            ear_threshold: float = 0.2
+            ear_threshold: float = 0.1
         ):
 
         # Saving options
@@ -182,7 +185,7 @@ class FLGE():
         eyeball_radius_2d = {'left': None, 'right': None}
 
         for i, canonical_eyeball in zip(['left', 'right'], self.eyeball_centers):
-            # if i == 'left':
+            # if i == 'right':
             #     eye_closed[i] = True
             #     continue
 
@@ -214,6 +217,13 @@ class FLGE():
             p4 = facial_landmarks[EYE_EAR_LANDMARKS[3], :2]
             p5 = facial_landmarks[EYE_EAR_LANDMARKS[4], :2]
             p6 = facial_landmarks[EYE_EAR_LANDMARKS[5], :2]
+
+            # Draw all the EAR landmarks
+            # for j, landmark in enumerate(EYE_EAR_LANDMARKS):
+            #     x, y = facial_landmarks[landmark, :2]
+            #     cv2.circle(frame, (int(x * width), int(y * height)), 2, (0, 255, 0), -1)
+            #     cv2.putText(frame, f"p{j+1}", (int(x * width), int(y * height)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+
             ear = (np.linalg.norm(p2 - p6) + np.linalg.norm(p3 - p5)) / (2 * np.linalg.norm(p1 - p4))
             eye_closed[i] = False
             if ear < self.ear_threshold:
@@ -230,7 +240,7 @@ class FLGE():
             ndc_point = np.array([ndc_x, ndc_y, -1.0, 1.9])
             
             # Draw the pupil
-            cv2.circle(frame, (int(pupil2d[0]), int(pupil2d[1])), 2, (0, 255, 0), -1)
+            # cv2.circle(frame, (int(pupil2d[0]), int(pupil2d[1])), 2, (0, 255, 0), -1)
 
             # Compute the ray in 3D space
             world_point_homogeneous = np.dot(self.inv_perspective_matrix, ndc_point)
@@ -293,7 +303,7 @@ class FLGE():
             gaze_vectors['right'] = np.array([0,0,1])
 
         # Debugging purposes
-        cv2.imshow('debug_frame', frame)
+        # cv2.imshow('debug_frame', frame)
 
         return {
             'face': face_gaze_vector,

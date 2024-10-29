@@ -95,6 +95,10 @@ def model_based_gaze_render(frame: np.ndarray, result: FLGEResult):
             int(centroid[0] - width/2):int(centroid[0] + width/2)
         ]
 
+        eye_image_shape = eye_image.shape[:2]
+        if eye_image_shape[0] == 0 or eye_image_shape[1] == 0:
+            continue
+
         # Create eye image
         original_height, original_width = eye_image.shape[:2]
         new_width, new_height = 400, int(400*EYE_HEIGHT_RATIO)
@@ -124,7 +128,7 @@ def model_based_gaze_render(frame: np.ndarray, result: FLGEResult):
         #     cv2.circle(eye_image, tuple(resized_iris_px.astype(int)), 3, (0, 0, 255), -1)
 
         # Draw the eyeball
-        if 'eyeball_center_2d' in eye_result.meta_data:
+        if 'eyeball_center_2d' in eye_result.meta_data and eye_result.meta_data['eyeball_center_2d'] is not None:
             # Offset the eyeball center to the cropped eye
             eyeball_center_2d = eye_result.meta_data['eyeball_center_2d']
             eyeball_radius_2d = eye_result.meta_data['eyeball_radius_2d']
@@ -156,7 +160,7 @@ def model_based_gaze_render(frame: np.ndarray, result: FLGEResult):
 
     # Draw the eyeballs on the frame itself
     for eye_result in [result.left, result.right]:
-        if 'eyeball_center_2d' in eye_result.meta_data:
+        if 'eyeball_center_2d' in eye_result.meta_data and eye_result.meta_data['eyeball_center_2d'] is not None:
             eyeball_center_2d = eye_result.meta_data['eyeball_center_2d']
             eyeball_radius_2d = eye_result.meta_data['eyeball_radius_2d']
             cv2.circle(frame, tuple(eyeball_center_2d.astype(int)), int(eyeball_radius_2d), (0, 0, 255), 1)
