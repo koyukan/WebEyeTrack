@@ -118,6 +118,9 @@ class FLGE():
         self.eyeball_radius = eyeball_radius
         self.ear_threshold = ear_threshold
 
+        # Gaze filter
+        self.prior_gaze = None
+
     def estimate_inter_pupillary_distance_2d(self, facial_landmarks, height, width):
         data_2d_pairs = {
             'left': facial_landmarks[LEFT_EYE_LANDMARKS][:, :2] * np.array([width, height]),
@@ -273,7 +276,10 @@ class FLGE():
             'eyes': {
                 'is_closed': eye_closed,
                 'vector': gaze_vectors,
-                'headpose_corrected_eye_center': {'left': None, 'right': None}
+                'meta_data': {
+                    'left': {},
+                    'right': {}
+                }
             }
         }
 
@@ -444,7 +450,14 @@ class FLGE():
             'eyes': {
                 'is_closed': eye_closed,
                 'vector': gaze_vectors,
-                'headpose_corrected_eye_center': headpose_corrected_eye_center,
+                'meta_data': {
+                    'left': {
+                        'headpose_corrected_eye_center': headpose_corrected_eye_center['left']
+                    },
+                    'right': {
+                        'headpose_corrected_eye_center': headpose_corrected_eye_center['right']
+                    }
+                }
             }
         }
 
@@ -497,7 +510,10 @@ class FLGE():
             'eyes': {
                 'is_closed': {'left': False, 'right': False},
                 'vector': gaze_vectors,
-                'headpose_corrected_eye_center': {'left': None, 'right': None}
+                'meta_data': {
+                    'left': {},
+                    'right': {}
+                }
             }            
         }
 
@@ -612,7 +628,8 @@ class FLGE():
             screen_height_mm=None,
             screen_width_px=None,
             screen_height_px=None,
-            tic=None
+            tic=None,
+            smooth: bool = False
         ):
 
         if not tic:
@@ -654,6 +671,21 @@ class FLGE():
                 face_blendshapes,
                 face_rt
             )
+
+        # If smooth, apply a moving average filter
+        if smooth:
+            if self.prior_gaze:
+                for k in ['left', 'right']:
+                    if not gaze_vectors['eyes']['is_closed'][k]:
+                        new_vector = (gaze_vectors['eyes']['vector'][k] + self.prior_gaze['eyes']['vector'][k])
+                        gaze_vectors['eyes']['vector'][k] = new_vector / np.linalg.norm(new_vector)
+                
+                # Update the face gaze vector
+                if not gaze_vectors['eyes']['is_closed']['left'] and not gaze_vectors['eyes']['is_closed']['right']:
+                    new_vector = (gaze_vectors['eyes']['vector']['left'] + gaze_vectors['eyes']['vector']['right'])
+                    gaze_vectors['face'] = new_vector / np.linalg.norm(new_vector)
+
+            self.prior_gaze = gaze_vectors
 
         # Compute the PoG
         if screen_R is None or screen_t is None or screen_width_mm is None or screen_height_mm is None or screen_width_px is None or screen_height_px is None:
@@ -697,7 +729,7 @@ class FLGE():
                 pog_px=pog['eye']['left_pog_px'],
                 pog_mm=pog['eye']['left_pog_mm'],
                 meta_data={
-                    'headpose_corrected_eye_center': gaze_vectors['eyes']['headpose_corrected_eye_center']['left']
+                    **gaze_vectors['eyes']['meta_data']['left']
                 }
             ),
             right=EyeResult(
@@ -708,7 +740,7 @@ class FLGE():
                 pog_px=pog['eye']['right_pog_px'],
                 pog_mm=pog['eye']['right_pog_mm'],
                 meta_data={
-                    'headpose_corrected_eye_center': gaze_vectors['eyes']['headpose_corrected_eye_center']['right']
+                    **gaze_vectors['eyes']['meta_data']['right']
                 }
             ),
             pog_px=pog['face_pog_px'],
@@ -716,7 +748,7 @@ class FLGE():
             duration=toc - tic
         )
     
-    def process_sample(self, frame: np.ndarray, sample: Dict[str, Any]) -> FLGEResult:
+    def process_sample(self, frame: np.ndarray, sample: Dict[str, Any], smooth: bool = False) -> FLGEResult:
 
         # Get the depth and scale
         # frame = cv2.cvtColor(np.moveaxis(sample['image'], 0, -1) * 255, cv2.COLOR_RGB2BGR)
@@ -738,9 +770,10 @@ class FLGE():
             # sample['screen_height_mm'],
             # sample['screen_width_px'],
             # sample['screen_height_px']
+            smooth=smooth
         )
  
-    def process_frame(self, frame: np.ndarray, intrinsics: np.ndarray) -> Optional[FLGEResult]:
+    def process_frame(self, frame: np.ndarray, intrinsics: np.ndarray, smooth: bool = False) -> Optional[FLGEResult]:
 
         # Start a timer
         tic = time.perf_counter()
@@ -769,5 +802,6 @@ class FLGE():
             frame.shape[0],
             frame.shape[1],
             intrinsics,
-            tic=tic
+            tic=tic,
+            smooth=smooth
         ) 

@@ -105,18 +105,6 @@ def model_based_gaze_render(frame: np.ndarray, result: FLGEResult):
         eye_image = cv2.resize(eye_image, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
         eye_images[i] = eye_image
 
-        # Draw the outline of the eyearea
-        shifted_eyearea_px = eyearea - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
-        prior_px = None
-        for px in shifted_eyearea_px:
-            resized_px = px * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
-            if prior_px is not None:
-                cv2.line(eye_image, tuple(prior_px.astype(int)), tuple(resized_px.astype(int)), (0, 255, 0), 1)
-            prior_px = resized_px
-        # Draw the last line to close the loop
-        resized_first_px = shifted_eyearea_px[0] * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
-        cv2.line(eye_image, tuple(prior_px.astype(int)), tuple(resized_first_px.astype(int)), (0, 255, 0), 1)
-
         # Draw the outline of the eyelid
         shifted_eyelid_px = eyelid_total - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
         prior_px = None
