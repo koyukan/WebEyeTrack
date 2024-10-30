@@ -621,6 +621,7 @@ class FLGE():
     def compute_pog(self, gaze_origins, gaze_vectors, screen_R, screen_t, screen_width_mm, screen_height_mm, screen_width_px, screen_height_px):
         
         # Perform intersection with plane using gaze origin and vector
+        print(gaze_origins['eye_origins_3d']['left'])
         left_pog_mm = screen_plane_intersection(
             gaze_origins['eye_origins_3d']['left'],
             gaze_vectors['eyes']['vector']['left'],
@@ -813,7 +814,18 @@ class FLGE():
             smooth=smooth
         )
  
-    def process_frame(self, frame: np.ndarray, intrinsics: np.ndarray, smooth: bool = False) -> Optional[FLGEResult]:
+    def process_frame(
+            self, 
+            frame: np.ndarray, 
+            intrinsics: np.ndarray, 
+            screen_R=None,
+            screen_t=None,
+            screen_width_mm=None,
+            screen_height_mm=None,
+            screen_width_px=None,
+            screen_height_px=None,
+            smooth: bool = False
+        ) -> Optional[FLGEResult]:
 
         # Start a timer
         tic = time.perf_counter()
@@ -842,6 +854,12 @@ class FLGE():
             frame.shape[0],
             frame.shape[1],
             intrinsics,
+            screen_R=screen_R,
+            screen_t=screen_t,
+            screen_width_mm=screen_width_mm,
+            screen_height_mm=screen_height_mm,
+            screen_width_px=screen_width_px,
+            screen_height_px=screen_height_px,
             tic=tic,
             smooth=smooth
         ) 

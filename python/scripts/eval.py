@@ -81,7 +81,7 @@ def eval(args):
             # img_size=[244,244],
             # face_size=[244,244],
             # dataset_size=100,
-            per_participant_size=10
+            # per_participant_size=10
         )
     elif (args.dataset == 'EyeDiap'):
         dataset = EyeDiapDataset(

@@ -341,7 +341,7 @@ class MPIIFaceGazeDataset(Dataset):
         head_direction_rotation = facelandmark_rt[0:3, 0:3]
         head_direction_xyz = Rotation.from_matrix(head_direction_rotation).as_rotvec()
         head_direction_xyz = head_direction_xyz / np.linalg.norm(head_direction_xyz)
-        relative_gaze_vector = sample.annotations.gaze_direction_3d - head_direction_xyz
+        relative_gaze_vector = sample.annotations.face_gaze_vector - head_direction_xyz
         relative_gaze_vector = relative_gaze_vector / np.linalg.norm(relative_gaze_vector)
 
         # Visualize the face image
@@ -368,6 +368,7 @@ class MPIIFaceGazeDataset(Dataset):
             sample.annotations.pog_px[1] / calibration_data.monitor_height_px * calibration_data.monitor_height_mm
         ])
 
+        import pdb; pdb.set_trace()
         sample_dict = {
             'image': image_np,
             'face_image': face_image_np,

@@ -177,11 +177,18 @@ def model_based_gaze_render(frame: np.ndarray, result: FLGEResult):
     # frame = draw_axis(frame, pitch, yaw, -roll, int(face_origin[0]), int(face_origin[1]), 100)
 
     # Concatenate the images
-    right_eye_image = eye_images['right']
-    left_eye_image = eye_images['left']
-    eyes_combined = cv2.hconcat([right_eye_image, left_eye_image])
+    if 'right' not in eye_images:
+        right_eye_image = np.zeros((400, 400, 3), dtype=np.uint8)
+    else:
+        right_eye_image = eye_images['right']
+
+    if 'left' not in eye_images:
+        left_eye_image = np.zeros((400, 400, 3), dtype=np.uint8)
+    else:
+        left_eye_image = eye_images['left']
 
     # Resize the combined eyes horizontally to match the width of the frame (640 pixels wide)
+    eyes_combined = cv2.hconcat([right_eye_image, left_eye_image])
     eyes_combined_resized = cv2.resize(eyes_combined, (frame.shape[1], eyes_combined.shape[0]))
 
     # Concatenate the combined eyes image vertically with the frame
@@ -594,8 +601,8 @@ def draw_gaze_direction(image, gaze_origin, gaze_dst, color=(255, 0, 0)):
 
     return draw_image
 
-def draw_pog(img, pog, color=(255,0,0)):
+def draw_pog(img, pog, color=(0,0,255), size=10):
     # Draw point of gaze (POG)
     x, y = pog
-    cv2.circle(img, (int(x), int(y)), 10, color, -1)
+    cv2.circle(img, (int(x), int(y)), size, color, -1)
     return img
