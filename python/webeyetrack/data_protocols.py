@@ -75,6 +75,7 @@ class EyeResult:
 @dataclass
 class FLGEResult:
     facial_landmarks: np.ndarray
+    tf_facial_landmarks: np.ndarray
     face_rt: np.ndarray
     face_blendshapes: np.ndarray
     face_origin: np.ndarray # X, Y, Z

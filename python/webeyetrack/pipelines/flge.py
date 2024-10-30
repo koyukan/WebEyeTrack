@@ -577,8 +577,8 @@ class FLGE():
 
         # Get the transformation matrix
         # Invert the y and z axis
-        transform = face_rt.copy()
-        transform = np.diag([-1, 1, 1, 1]) @ transform
+        # transform = face_rt.copy()
+        # transform = np.diag([-1, 1, 1, 1]) @ transform
 
         # Apply the metric scaling of the face points
         tf_face_points = np.copy(facial_landmarks[:, :3])
@@ -612,6 +612,7 @@ class FLGE():
         face_g_o = (eye_g_o['left'] + eye_g_o['right']) / 2
 
         return {
+            'tf_face_points': tf_face_points,
             'face_origin_3d': face_g_o,
             'face_origin_2d': face_origin,
             'eye_origins_3d': eye_g_o,
@@ -621,7 +622,6 @@ class FLGE():
     def compute_pog(self, gaze_origins, gaze_vectors, screen_R, screen_t, screen_width_mm, screen_height_mm, screen_width_px, screen_height_px):
         
         # Perform intersection with plane using gaze origin and vector
-        print(gaze_origins['eye_origins_3d']['left'])
         left_pog_mm = screen_plane_intersection(
             gaze_origins['eye_origins_3d']['left'],
             gaze_vectors['eyes']['vector']['left'],
@@ -757,6 +757,7 @@ class FLGE():
         # Return the result
         return FLGEResult(
             facial_landmarks=facial_landmarks,
+            tf_facial_landmarks=gaze_origins['tf_face_points'],
             face_rt=face_rt,
             face_blendshapes=face_blendshapes,
             face_origin=gaze_origins['face_origin_3d'],
