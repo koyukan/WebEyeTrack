@@ -120,15 +120,15 @@ if __name__ == '__main__':
     pipeline = FLGE(str(GIT_ROOT / 'python'/ 'weights' / 'face_landmarker_v2_with_blendshapes.task'), EYE_TRACKING_APPROACH)
 
     # Update the visualizer to patch the camera position
-    parameters = o3d.io.read_pinhole_camera_parameters("ScreenCamera_DEFAULT.json")
-    K = np.eye(4) 
-    K[:3, :3] = np.array([[0,1,0],
-                         [1,0,0],
-                         [0,0,-1]])
-    K[:3, -1] = np.array([10,10,10])
-    parameters.extrinsic = K
-    ctr = visual.get_view_control()
-    ctr.convert_from_pinhole_camera_parameters(parameters)
+    # parameters = o3d.io.read_pinhole_camera_parameters("ScreenCamera_DEFAULT.json")
+    # K = np.eye(4) 
+    # K[:3, :3] = np.array([[0,1,0],
+    #                      [1,0,0],
+    #                      [0,0,-1]])
+    # K[:3, -1] = np.array([10,10,10])
+    # parameters.extrinsic = K
+    # ctr = visual.get_view_control()
+    # ctr.convert_from_pinhole_camera_parameters(parameters)
 
     # Load the frames and draw the landmarks
     while True:
@@ -154,21 +154,30 @@ if __name__ == '__main__':
 
         if result:
 
+            # Draw the transform points onto the frame by projection from 3D to 2D
+            # raw_points_3d = result.tf_face_points[:, :3]
+            
             # Get 3D landmark positions
             # landmarks = results.multi_face_landmarks[0]
             # points = np.array([[lm.x, lm.y, lm.z] for lm in landmarks.landmark])
-            points = result.tf_facial_landmarks[:, :3]
+            points = result.tf_facial_landmarks[:, :3] * SCALE
+            # import pdb; pdb.set_trace()
+            print(points.max())
             # Center points at 0,0,0
             # points -= np.mean(points, axis=0)
             colors = np.array([[1, 0, 0] for _ in range(points.shape[0])])
             # points = np.array([[0,0,0], [1, 1, 1]])
             # colors = np.array([[1, 0, 0], [0, 1, 0]])
 
+            # Create random points and colors (len=100)
+            # points = np.random.rand(100, 3)
+            # colors = np.random.rand(100, 3)
+
             # Update Point Cloud in Open3D
             point_cloud.points = o3d.utility.Vector3dVector(points.reshape(-1, 3))
             point_cloud.colors = o3d.utility.Vector3dVector(colors.reshape(-1, 3))
             visual.update_geometry(point_cloud)
-            ctr.convert_from_pinhole_camera_parameters(parameters)
+            # ctr.convert_from_pinhole_camera_parameters(parameters)
             visual.poll_events()
             visual.update_renderer()
             

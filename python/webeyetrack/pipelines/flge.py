@@ -90,6 +90,50 @@ def create_perspective_matrix(aspect_ratio):
 
     return perspective_matrix
 
+def convert_uv_to_xyz(perspective_matrix, u, v, z_relative):
+    # Step 1: Convert normalized (u, v) to Normalized Device Coordinates (NDC)
+    ndc_x = 2 * u - 1
+    ndc_y = 1 - 2 * v
+
+    # Step 2: Create the NDC point in homogeneous coordinates
+    ndc_point = np.array([ndc_x, ndc_y, -1.0, 1.0])
+
+    # Step 3: Invert the perspective matrix to go from NDC to world space
+    inv_perspective_matrix = np.linalg.inv(perspective_matrix)
+
+    # Step 4: Compute the point in world space (in homogeneous coordinates)
+    world_point_homogeneous = np.dot(inv_perspective_matrix, ndc_point)
+
+    # Step 5: Dehomogenize (convert from homogeneous to Cartesian coordinates)
+    x = world_point_homogeneous[0] / world_point_homogeneous[3]
+    y = world_point_homogeneous[1] / world_point_homogeneous[3]
+    z = world_point_homogeneous[2] / world_point_homogeneous[3]
+
+    # Step 6: Scale using the relative depth
+    x_relative = x * z_relative
+    y_relative = y * z_relative
+    z_relative = z * z_relative
+
+    return np.array([x_relative, y_relative, z_relative])
+
+def convert_xyz_to_uv(perspective_matrix, x, y, z):
+    # Step 1: Convert (x, y, z) to homogeneous coordinates (x, y, z, 1)
+    world_point = np.array([x, y, z, 1.0])
+
+    # Step 2: Apply the perspective projection matrix
+    ndc_point_homogeneous = np.dot(perspective_matrix, world_point)
+
+    # Step 3: Dehomogenize to convert from homogeneous to Cartesian coordinates
+    u_ndc = ndc_point_homogeneous[0] / ndc_point_homogeneous[3]
+    v_ndc = ndc_point_homogeneous[1] / ndc_point_homogeneous[3]
+    z_ndc = ndc_point_homogeneous[2] / ndc_point_homogeneous[3]
+
+    # Step 4: Convert from NDC to normalized coordinates (u, v) in the range [0, 1]
+    u = (u_ndc + 1) / 2
+    v = (1 - v_ndc) / 2
+
+    return u, v
+
 # Facial Landmark Gaze Estimation
 class FLGE():
 
@@ -557,8 +601,8 @@ class FLGE():
             }            
         }
 
-    def estimate_2d_3d_eye_face_origins(self, facial_landmarks, face_rt, height, width, intrinsics):
-        
+    def estimate_2d_3d_eye_face_origins(self, frame, facial_landmarks, face_rt, height, width, intrinsics):
+
         # First, compute the inter-pupillary distance
         positions, distances = self.estimate_inter_pupillary_distance_2d(
             facial_landmarks, 
@@ -573,30 +617,47 @@ class FLGE():
         focal_length_pixels = width / 2
         # depth_cm = (focal_length_pixels * REAL_WORLD_IPD * np.cos(theta)) / distances['image_ipd']
         depth_cm = (focal_length_pixels * REAL_WORLD_IPD) / distances['image_ipd']
-        depth_mm = depth_cm * 10 * 1.718
+        depth_mm = depth_cm * 10 * 1.4 # 1.718
+        print(f"Depth: {depth_mm}")
+
+        # Convert uvz to xyz
+        relative_face_mesh = np.array([convert_uv_to_xyz(self.perspective_matrix, x[0], x[1], x[2]) for x in facial_landmarks[:, :3]])
+        # Convert xyz back to uvz
+        re_facial_landmarks = np.array([convert_xyz_to_uv(self.perspective_matrix, x[0], x[1], x[2]) for x in relative_face_mesh])
+
+        # Draw the original facial
+        draw_frame = frame.copy()
+        for (u,v), (nu, nv) in zip(facial_landmarks[:, :2], re_facial_landmarks[:, :2]):
+            cv2.circle(draw_frame, (int(u * width), int(v * height)), 2, (0, 255, 0), -1)
+            cv2.circle(draw_frame, (int(nu * width), int(nv * height)), 2, (0, 0, 255), -1)
+
+        # import pdb; pdb.set_trace()
+        cv2.imshow('draw', draw_frame)
+
+        # For testing, convert back 
 
         # Get the transformation matrix
         # Invert the y and z axis
         # transform = face_rt.copy()
         # transform = np.diag([-1, 1, 1, 1]) @ transform
 
-        # Apply the metric scaling of the face points
-        tf_face_points = np.copy(facial_landmarks[:, :3])
-        tf_face_points *= metric_scale
-
         # Compute the average of the 2D eye origins
         face_origin = (positions['eye_origins_2d']['left'] + positions['eye_origins_2d']['right']) / 2
+        
+        # Apply the metric scaling of the face points
+        tf_face_points = np.copy(facial_landmarks[:, :3])
+        # tf_face_points *= metric_scale
 
         # Compute the position based on the 2D xy and the depth
-        pixel_coords = np.array([face_origin[0], face_origin[1], 1])
-        K = intrinsics
-        K_inv = np.linalg.inv(K)
+        # pixel_coords = np.array([face_origin[0], face_origin[1], 1])
+        # K = intrinsics
+        # K_inv = np.linalg.inv(K)
 
         # Back project the pixel coordinates to the 3D coordinates
-        translation = depth_mm * K_inv @ pixel_coords
+        # translation = depth_mm * K_inv @ pixel_coords
 
         # Apply the translation to the face points
-        tf_face_points += translation
+        # tf_face_points += translation
 
         # Compute the eye gaze origin in metric space
         eye_g_o = {
@@ -683,6 +744,7 @@ class FLGE():
         
         # Estimate the 2D and 3D position of the eye-center and the face-center
         gaze_origins = self.estimate_2d_3d_eye_face_origins(
+            frame,
             facial_landmarks,
             face_rt,
             height,
