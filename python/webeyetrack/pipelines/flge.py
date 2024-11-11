@@ -622,6 +622,9 @@ class FLGE():
 
         # Convert uvz to xyz
         relative_face_mesh = np.array([convert_uv_to_xyz(self.perspective_matrix, x[0], x[1], x[2]) for x in facial_landmarks[:, :3]])
+
+        # Apply scaling and translation (based on depth) # TODO
+
         # Convert xyz back to uvz
         re_facial_landmarks = np.array([convert_xyz_to_uv(self.perspective_matrix, x[0], x[1], x[2]) for x in relative_face_mesh])
 
@@ -633,8 +636,6 @@ class FLGE():
 
         # import pdb; pdb.set_trace()
         cv2.imshow('draw', draw_frame)
-
-        # For testing, convert back 
 
         # Get the transformation matrix
         # Invert the y and z axis
