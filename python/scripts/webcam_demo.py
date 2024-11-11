@@ -25,6 +25,7 @@ m = get_monitors()[0]
 SCREEN_HEIGHT_MM = m.height_mm
 SCREEN_WIDTH_MM = m.width_mm
 SCALE = 2e-3
+print(f"Screen Height: {SCREEN_HEIGHT_MM} mm, Screen Width: {SCREEN_WIDTH_MM} mm")
 
 if __name__ == '__main__':
     
@@ -40,6 +41,7 @@ if __name__ == '__main__':
     # Initialize Open3D Visualizer
     visual = o3d.visualization.Visualizer()
     visual.create_window()
+    visual.get_render_option().background_color = [0.1, 0.1, 0.1]
 
     # Add a camera frustrum of the webcam
     # Frustum parameters
@@ -162,7 +164,6 @@ if __name__ == '__main__':
             # points = np.array([[lm.x, lm.y, lm.z] for lm in landmarks.landmark])
             points = result.tf_facial_landmarks[:, :3] * SCALE
             # import pdb; pdb.set_trace()
-            print(points.max())
             # Center points at 0,0,0
             # points -= np.mean(points, axis=0)
             colors = np.array([[1, 0, 0] for _ in range(points.shape[0])])

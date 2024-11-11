@@ -17,7 +17,7 @@ LEFT_EYE_LANDMARKS = [263, 362, 386, 374, 380]
 RIGHT_EYE_LANDMARKS = [33, 133, 159, 145, 153]
 LEFT_BLENDSHAPES = [14, 16, 18, 12]
 RIGHT_BLENDSHAPES = [13, 15, 17, 11]
-REAL_WORLD_IPD = 6.3 # Inter-pupilary distance (cm)
+REAL_WORLD_IPD_CM = 6.3 # Inter-pupilary distance (cm)
 HFOV = 100
 VFOV = 90
 
@@ -110,15 +110,17 @@ def convert_uv_to_xyz(perspective_matrix, u, v, z_relative):
     z = world_point_homogeneous[2] / world_point_homogeneous[3]
 
     # Step 6: Scale using the relative depth
-    x_relative = x * z_relative
-    y_relative = y * z_relative
-    z_relative = z * z_relative
+    x_relative = -x #* z_relative
+    y_relative = y #* z_relative
+    # x_relative = ndc_x
+    # y_relative = ndc_y
+    # z_relative = z * z_relative
 
     return np.array([x_relative, y_relative, z_relative])
 
 def convert_xyz_to_uv(perspective_matrix, x, y, z):
     # Step 1: Convert (x, y, z) to homogeneous coordinates (x, y, z, 1)
-    world_point = np.array([x, y, z, 1.0])
+    world_point = np.array([x, -y, z, 1.0])
 
     # Step 2: Apply the perspective projection matrix
     ndc_point_homogeneous = np.dot(perspective_matrix, world_point)
@@ -611,22 +613,67 @@ class FLGE():
         )
 
         # Estimate the scale
-        metric_scale = REAL_WORLD_IPD / distances['canonical_ipd_3d']
+        metric_scale = REAL_WORLD_IPD_CM * 10 / distances['canonical_ipd_3d']
 
         # Estimate the depth
-        focal_length_pixels = width / 2
+        # focal_length_pixels = width / 2
+
+        # Obtain the yaw theta from the face_rt
+        theta = np.arctan(face_rt[0, 2] / face_rt[2, 2])
+        # print(f"Theta: {np.rad2deg(theta)}")
+
         # depth_cm = (focal_length_pixels * REAL_WORLD_IPD * np.cos(theta)) / distances['image_ipd']
-        depth_cm = (focal_length_pixels * REAL_WORLD_IPD) / distances['image_ipd']
-        depth_mm = depth_cm * 10 * 1.4 # 1.718
+        focal_length_pixels = 1 / np.tan(np.deg2rad(VERTICAL_FOV_DEGREES) / 2) * height / 2
+        depth_mm = (focal_length_pixels * REAL_WORLD_IPD_CM * 10 * np.cos(theta)) / distances['image_ipd'] / 2
         print(f"Depth: {depth_mm}")
 
         # Convert uvz to xyz
         relative_face_mesh = np.array([convert_uv_to_xyz(self.perspective_matrix, x[0], x[1], x[2]) for x in facial_landmarks[:, :3]])
 
+        # import pdb; pdb.set_trace()
+        # centroid = relative_face_mesh.mean(axis=0)
+        centroid = np.array([0,0,0])
+        demeaned_relative_face_mesh = relative_face_mesh - centroid
+        
+        data_3d_pairs = {
+            'left': demeaned_relative_face_mesh[LEFT_EYE_LANDMARKS][:, :3],
+            'right': demeaned_relative_face_mesh[RIGHT_EYE_LANDMARKS][:, :3]
+        }
+
+        # Compute the 3D eye origin
+        origins_3d = {}
+        for k, v in data_3d_pairs.items():
+            origins_3d[k] = np.mean(v, axis=0)
+
+        # Compute the scaling factor between mediapipe per-world & world mm coordinate
+        l, r = origins_3d['left'], origins_3d['right']
+        per_frame_ipd = np.sqrt(np.power(l[0] - r[0], 2) + np.power(l[1] - r[1],2) + np.power(l[2] - r[2], 2))
+        scale = (10 * REAL_WORLD_IPD_CM) / per_frame_ipd
+        # print(f"Scale: {scale}")
+
+        # Apply the scale
+        scaled_demeaned_relative_face_mesh = demeaned_relative_face_mesh * scale
+
+        # Returned to the position
+        shifted_s_d_relative_face_mesh = scaled_demeaned_relative_face_mesh # + centroid
+        translation = np.array([0, 0, depth_mm])
+        shifted_s_d_relative_face_mesh += translation
+        # import pdb; pdb.set_trace()
+
+        # Compute the 3D bounding box dimensions of the shifted_s_d_relative_face_mesh
+        min_xyz = np.min(shifted_s_d_relative_face_mesh, axis=0)
+        max_xyz = np.max(shifted_s_d_relative_face_mesh, axis=0)
+        distances = max_xyz - min_xyz
+        # print(f"Distances: {distances}")
+
         # Apply scaling and translation (based on depth) # TODO
+        # Make the 164 point have the depth
+        # import pdb; pdb.set_trace()
+        # scale = depth_mm / relative_face_mesh[164][2]
+        # relative_face_mesh *= metric_scale
 
         # Convert xyz back to uvz
-        re_facial_landmarks = np.array([convert_xyz_to_uv(self.perspective_matrix, x[0], x[1], x[2]) for x in relative_face_mesh])
+        re_facial_landmarks = np.array([convert_xyz_to_uv(self.perspective_matrix, x[0], x[1], x[2]) for x in shifted_s_d_relative_face_mesh])
 
         # Draw the original facial
         draw_frame = frame.copy()
@@ -646,7 +693,16 @@ class FLGE():
         face_origin = (positions['eye_origins_2d']['left'] + positions['eye_origins_2d']['right']) / 2
         
         # Apply the metric scaling of the face points
-        tf_face_points = np.copy(facial_landmarks[:, :3])
+        # xyz = facial_landmarks[:, :3].copy()
+        # xyz[:, 0] = 2 * xyz[:, 0] - 1
+        # xyz[:, 1] = 1 - 2 * xyz[:, 1]
+        # xyz *= metric_scale
+        # tf_face_points = xyz
+
+        # tf_face_points = np.copy(facial_landmarks[:, :3]) * 1000
+
+        tf_face_points = shifted_s_d_relative_face_mesh
+        # tf_face_points = relative_face_mesh * metric_scale
         # tf_face_points *= metric_scale
 
         # Compute the position based on the 2D xy and the depth
