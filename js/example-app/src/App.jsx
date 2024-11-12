@@ -1,43 +1,53 @@
 import React, { useEffect, useRef } from 'react';
 // import WebcamClient from './WebcamClient'; // Import your WebcamClient class
-import {WebcamClient} from "webeyetrack";
+// import FaceLandmarkerClient from './FaceLandmarkerClient'; // Import the FaceLandmarkerClient class
+import { WebcamClient, FaceLandmarkerClient } from 'webeyetrack';
+// import { WebcamClient } from 'webeyetrack';
 
 export default function App() {
-  // Reference to the video element
   const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const faceLandmarkerRef = useRef(null);
 
   useEffect(() => {
-    // Instantiate the WebcamClient once the component mounts
-    if (videoRef.current) {
-      const webcamClient = new WebcamClient(videoRef.current.id);
+    async function startWebcamAndLandmarker() {
+      if (videoRef.current && canvasRef.current) {
+        const webcamClient = new WebcamClient(videoRef.current.id);
+        const faceLandmarker = new FaceLandmarkerClient(videoRef.current, canvasRef.current);
 
-      // Start the webcam with a frame callback for custom processing
-      const frameCallback = (frame) => {
-        console.log('Frame captured:', frame);
-        // Additional frame processing logic can be added here
-      };
+        // faceLandmarkerRef.current = faceLandmarker;
+        await faceLandmarker.initialize();
 
-      // Start the webcam
-      webcamClient.startWebcam(frameCallback);
+        // Start the webcam
+        webcamClient.startWebcam(async () => {
+          if (faceLandmarkerRef.current) {
+            await faceLandmarkerRef.current.processFrame();
+          }
+        });
 
-      // Clean up: stop the webcam when the component unmounts
-      return () => {
-        webcamClient.stopWebcam();
-      };
+        // Cleanup: stop the webcam and clear references when the component unmounts
+        return () => {
+          webcamClient.stopWebcam();
+          faceLandmarkerRef.current = null;
+        };
+      }
     }
+
+    startWebcamAndLandmarker();
   }, []); // Empty dependency array to run only on mount/unmount
 
   return (
-    <div className="flex flex-col items-center justify-center h-screen bg-gray-100">
-      <h1 className="text-3xl font-bold text-gray-800">
-        Webcam Video Stream
-      </h1>
+    <div className="flex items-center justify-center h-screen bg-gray-100 relative">
       <video
-        id="webcam"
+        id='webcam'
         ref={videoRef}
         autoPlay
         playsInline
-        className="border-4 border-gray-800 rounded-md max-w-full max-h-full"
+        className="absolute z-10 w-full h-auto max-w-full max-h-full"
+      />
+      <canvas
+        ref={canvasRef}
+        className="absolute z-20 w-full h-auto max-w-full max-h-full"
       />
     </div>
   );
