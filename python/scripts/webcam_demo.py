@@ -117,6 +117,14 @@ if __name__ == '__main__':
     point_cloud.points = o3d.utility.Vector3dVector(np.array([[0,0,0], [1, 1, 1]]).reshape(-1, 3))
     point_cloud.colors = o3d.utility.Vector3dVector(np.array([[1, 0, 0], [0, 1, 0]]).reshape(-1, 3))
     visual.add_geometry(point_cloud)
+
+    # Eyeballs
+    left_eyeball = o3d.geometry.TriangleMesh.create_sphere(radius=12 * SCALE)
+    right_eyeball = o3d.geometry.TriangleMesh.create_sphere(radius=12 * SCALE)
+    left_eyeball.paint_uniform_color([1, 1, 1])
+    right_eyeball.paint_uniform_color([1, 1, 1])
+    visual.add_geometry(left_eyeball)
+    visual.add_geometry(right_eyeball)
     
     # Pipeline
     pipeline = FLGE(str(GIT_ROOT / 'python'/ 'weights' / 'face_landmarker_v2_with_blendshapes.task'), EYE_TRACKING_APPROACH)
@@ -156,29 +164,22 @@ if __name__ == '__main__':
 
         if result:
 
-            # Draw the transform points onto the frame by projection from 3D to 2D
-            # raw_points_3d = result.tf_face_points[:, :3]
-            
-            # Get 3D landmark positions
-            # landmarks = results.multi_face_landmarks[0]
-            # points = np.array([[lm.x, lm.y, lm.z] for lm in landmarks.landmark])
+            # Get 3D landmark positions for the Face Mesh
             points = result.tf_facial_landmarks[:, :3] * SCALE
-            # import pdb; pdb.set_trace()
-            # Center points at 0,0,0
-            # points -= np.mean(points, axis=0)
             colors = np.array([[1, 0, 0] for _ in range(points.shape[0])])
-            # points = np.array([[0,0,0], [1, 1, 1]])
-            # colors = np.array([[1, 0, 0], [0, 1, 0]])
-
-            # Create random points and colors (len=100)
-            # points = np.random.rand(100, 3)
-            # colors = np.random.rand(100, 3)
-
-            # Update Point Cloud in Open3D
             point_cloud.points = o3d.utility.Vector3dVector(points.reshape(-1, 3))
             point_cloud.colors = o3d.utility.Vector3dVector(colors.reshape(-1, 3))
             visual.update_geometry(point_cloud)
-            # ctr.convert_from_pinhole_camera_parameters(parameters)
+
+            # Draw the 3D eyeball
+            # for e in [result.left, result.right]:
+            for side in ['left', 'right']:
+                e = result.left if side == 'left' else result.right
+                ball = left_eyeball if side == 'left' else right_eyeball
+                ball.translate(e.origin * SCALE, relative=False)
+                visual.update_geometry(ball)
+
+            # Update visualizer
             visual.poll_events()
             visual.update_renderer()
             

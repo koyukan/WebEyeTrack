@@ -665,15 +665,13 @@ class FLGE():
         if self.prior_depth is not None:
             depth_mm = (depth_mm + self.prior_depth) / 2
         self.prior_depth = depth_mm
-        print(f"Depth: {depth_mm}")
+        # print(f"Depth: {depth_mm}")
 
         # Apply the scale
         scaled_demeaned_relative_face_mesh = demeaned_relative_face_mesh * scale
 
         # Returned to the position
-        # z_ratio = depth_mm / centroid[2]
         translation = np.array([0, 0, depth_mm])
-        # translation = z_ratio * centroid
         shifted_s_d_relative_face_mesh = scaled_demeaned_relative_face_mesh + translation
         
         # Compute the 3D bounding box dimensions of the shifted_s_d_relative_face_mesh
@@ -681,12 +679,6 @@ class FLGE():
         max_xyz = np.max(shifted_s_d_relative_face_mesh, axis=0)
         distances = max_xyz - min_xyz
         # print(f"Distances: {distances}")
-
-        # Apply scaling and translation (based on depth) # TODO
-        # Make the 164 point have the depth
-        # import pdb; pdb.set_trace()
-        # scale = depth_mm / relative_face_mesh[164][2]
-        # relative_face_mesh *= metric_scale
 
         # Estimate intrinsics based on width
         intrinsics = np.array([
@@ -700,47 +692,16 @@ class FLGE():
         # re_facial_landmarks = np.array([convert_xyz_to_uv(self.perspective_matrix, x[0], x[1], x[2]) for x in shifted_s_d_relative_face_mesh])
         # re_facial_landmarks = np.array([convert_xyz_to_uv(self.perspective_matrix, x[0], x[1], x[2]) for x in relative_face_mesh])
 
-        # Draw the original facial
-        draw_frame = frame.copy()
-        for (u,v), (nu, nv) in zip(facial_landmarks[:, :2], re_facial_landmarks[:, :2]):
-            cv2.circle(draw_frame, (int(u * width), int(v * height)), 2, (0, 255, 0), -1)
-            # cv2.circle(draw_frame, (int(nu * width), int(nv * height)), 2, (0, 0, 255), -1)
-            cv2.circle(draw_frame, (int(nu), int(nv)), 2, (0, 0, 255), -1)
-
-        # import pdb; pdb.set_trace()
-        cv2.imshow('draw', draw_frame)
-
-        # Get the transformation matrix
-        # Invert the y and z axis
-        # transform = face_rt.copy()
-        # transform = np.diag([-1, 1, 1, 1]) @ transform
+        # Draw the original facial (DEBUGGING)
+        # draw_frame = frame.copy()
+        # for (u,v), (nu, nv) in zip(facial_landmarks[:, :2], re_facial_landmarks[:, :2]):
+        #     cv2.circle(draw_frame, (int(u * width), int(v * height)), 2, (0, 255, 0), -1)
+        #     cv2.circle(draw_frame, (int(nu), int(nv)), 2, (0, 0, 255), -1)
+        # cv2.imshow('draw', draw_frame)
 
         # Compute the average of the 2D eye origins
         face_origin = (positions['eye_origins_2d']['left'] + positions['eye_origins_2d']['right']) / 2
-        
-        # Apply the metric scaling of the face points
-        # xyz = facial_landmarks[:, :3].copy()
-        # xyz[:, 0] = 2 * xyz[:, 0] - 1
-        # xyz[:, 1] = 1 - 2 * xyz[:, 1]
-        # xyz *= metric_scale
-        # tf_face_points = xyz
-
-        # tf_face_points = np.copy(facial_landmarks[:, :3]) * 1000
-
         tf_face_points = shifted_s_d_relative_face_mesh
-        # tf_face_points = demeaned_relative_face_mesh * 500
-        # tf_face_points *= metric_scale
-
-        # Compute the position based on the 2D xy and the depth
-        # pixel_coords = np.array([face_origin[0], face_origin[1], 1])
-        # K = intrinsics
-        # K_inv = np.linalg.inv(K)
-
-        # Back project the pixel coordinates to the 3D coordinates
-        # translation = depth_mm * K_inv @ pixel_coords
-
-        # Apply the translation to the face points
-        # tf_face_points += translation
 
         # Compute the eye gaze origin in metric space
         eye_g_o = {
