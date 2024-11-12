@@ -1,18 +1,17 @@
-// import vision from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
-// const { FaceLandmarker, FilesetResolver, DrawingUtils } = vision;
-// import vision from "@mediapipe/tasks-vision";
 import { FaceLandmarker, FilesetResolver, DrawingUtils } from "@mediapipe/tasks-vision";
-// const { FaceLandmarker, FilesetResolver, DrawingUtils } = vision;
 
 export default class FaceLandmarkerClient {
   private faceLandmarker: any;
   private drawingUtils: any;
   private canvasCtx: CanvasRenderingContext2D | null = null;
   private videoElement: HTMLVideoElement;
+  private canvasElement: HTMLCanvasElement | null = null;
 
   constructor(videoElement: HTMLVideoElement, canvasElement: HTMLCanvasElement) {
     this.videoElement = videoElement;
+    this.canvasElement = canvasElement;
     this.canvasCtx = canvasElement.getContext("2d");
+    globalThis.console.log("YAYA")
   }
 
   async initialize() {
@@ -40,7 +39,6 @@ export default class FaceLandmarkerClient {
       console.error("FaceLandmarker is not loaded yet.");
       return;
     }
-    console.log("FaceLandmarker: Processing frame...");
 
     const startTimeMs = performance.now();
     let result: any;
@@ -69,7 +67,7 @@ export default class FaceLandmarkerClient {
       this.drawingUtils.drawConnectors(
         landmarks,
         FaceLandmarker.FACE_LANDMARKS_TESSELATION,
-        { color: "#C0C0C070", lineWidth: 1 }
+        { color: "#C0C0C070", lineWidth: 0.5 }
       );
       this.drawingUtils.drawConnectors(
         landmarks,

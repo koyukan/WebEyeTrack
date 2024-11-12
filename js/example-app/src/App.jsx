@@ -1,13 +1,11 @@
 import React, { useEffect, useRef } from 'react';
-// import WebcamClient from './WebcamClient'; // Import your WebcamClient class
-// import FaceLandmarkerClient from './FaceLandmarkerClient'; // Import the FaceLandmarkerClient class
 import { WebcamClient, FaceLandmarkerClient } from 'webeyetrack';
-// import { WebcamClient } from 'webeyetrack';
 
 export default function App() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const faceLandmarkerRef = useRef(null);
+  let canvasDimensionFlag = false;
 
   useEffect(() => {
     async function startWebcamAndLandmarker() {
@@ -20,6 +18,14 @@ export default function App() {
 
         // Start the webcam
         webcamClient.startWebcam(async (frame) => {
+
+          // Update the canvas dimensions to match the video dimensions
+          if (!canvasDimensionFlag) {
+            canvasRef.current.width = videoRef.current.videoWidth;
+            canvasRef.current.height = videoRef.current.videoHeight;
+            canvasDimensionFlag = true;
+          }
+
           await faceLandmarker.processFrame(frame);
         });
 
@@ -41,11 +47,13 @@ export default function App() {
         ref={videoRef}
         autoPlay
         playsInline
-        className="absolute z-10 w-full h-auto max-w-full max-h-full"
+        className="absolute z-10 w-full h-auto w-1/2 max-h-full"
       />
       <canvas
         ref={canvasRef}
-        className="absolute z-20 w-full h-auto max-w-full max-h-full"
+        // height={600}
+        // width={600}
+        className="absolute z-20 w-full h-auto w-1/2 max-h-full"
       />
     </div>
   );
