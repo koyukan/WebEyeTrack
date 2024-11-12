@@ -110,10 +110,14 @@ def convert_uv_to_xyz(perspective_matrix, u, v, z_relative):
     z = world_point_homogeneous[2] / world_point_homogeneous[3]
 
     # Step 6: Scale using the relative depth
+    # Option A
     x_relative = -x #* z_relative
     y_relative = y #* z_relative
-    # x_relative = ndc_x
-    # y_relative = ndc_y
+    # z_relative = z * z_relative
+
+    # Option B
+    # x_relative = x * z_relative
+    # y_relative = y * z_relative
     # z_relative = z * z_relative
 
     return np.array([x_relative, y_relative, z_relative])
@@ -121,6 +125,7 @@ def convert_uv_to_xyz(perspective_matrix, u, v, z_relative):
 def convert_xyz_to_uv(perspective_matrix, x, y, z):
     # Step 1: Convert (x, y, z) to homogeneous coordinates (x, y, z, 1)
     world_point = np.array([x, -y, z, 1.0])
+    # world_point = np.array([x, y, z, 1.0])
 
     # Step 2: Apply the perspective projection matrix
     ndc_point_homogeneous = np.dot(perspective_matrix, world_point)
@@ -135,6 +140,23 @@ def convert_xyz_to_uv(perspective_matrix, x, y, z):
     v = (1 - v_ndc) / 2
 
     return u, v
+
+def convert_xyz_to_uv_with_intrinsic(intrinsic_matrix, x, y, z):
+    # Step 1: Create the 3D point in homogeneous coordinates
+    point_3d = np.array([-x, -y, z, 1.0])
+
+    # Step 2: Project the 3D point to the image plane using the intrinsic matrix
+    # Remove the homogeneous component before applying K
+    point_3d_camera = point_3d[:3]  # Only use x, y, z
+
+    # Apply the intrinsic matrix to project to 2D
+    projected_point_homogeneous = np.dot(intrinsic_matrix, point_3d_camera)
+
+    # Step 3: Dehomogenize to convert to Cartesian coordinates (u, v)
+    u = projected_point_homogeneous[0] / projected_point_homogeneous[2]
+    v = projected_point_homogeneous[1] / projected_point_homogeneous[2]
+
+    return np.array([u, v])
 
 # Facial Landmark Gaze Estimation
 class FLGE():
@@ -170,6 +192,7 @@ class FLGE():
 
         # Gaze filter
         self.prior_gaze = None
+        self.prior_depth = None
 
     def estimate_inter_pupillary_distance_2d(self, facial_landmarks, height, width):
         data_2d_pairs = {
@@ -615,25 +638,10 @@ class FLGE():
         # Estimate the scale
         metric_scale = REAL_WORLD_IPD_CM * 10 / distances['canonical_ipd_3d']
 
-        # Estimate the depth
-        # focal_length_pixels = width / 2
-
-        # Obtain the yaw theta from the face_rt
-        theta = np.arctan(face_rt[0, 2] / face_rt[2, 2])
-        # print(f"Theta: {np.rad2deg(theta)}")
-
-        # depth_cm = (focal_length_pixels * REAL_WORLD_IPD * np.cos(theta)) / distances['image_ipd']
-        focal_length_pixels = 1 / np.tan(np.deg2rad(VERTICAL_FOV_DEGREES) / 2) * height / 2
-        depth_mm = (focal_length_pixels * REAL_WORLD_IPD_CM * 10 * np.cos(theta)) / distances['image_ipd'] / 2
-        print(f"Depth: {depth_mm}")
-
         # Convert uvz to xyz
         relative_face_mesh = np.array([convert_uv_to_xyz(self.perspective_matrix, x[0], x[1], x[2]) for x in facial_landmarks[:, :3]])
-
-        # import pdb; pdb.set_trace()
-        # centroid = relative_face_mesh.mean(axis=0)
-        centroid = np.array([0,0,0])
-        demeaned_relative_face_mesh = relative_face_mesh - centroid
+        centroid = relative_face_mesh.mean(axis=0)
+        demeaned_relative_face_mesh = relative_face_mesh.copy() # - centroid
         
         data_3d_pairs = {
             'left': demeaned_relative_face_mesh[LEFT_EYE_LANDMARKS][:, :3],
@@ -649,17 +657,25 @@ class FLGE():
         l, r = origins_3d['left'], origins_3d['right']
         per_frame_ipd = np.sqrt(np.power(l[0] - r[0], 2) + np.power(l[1] - r[1],2) + np.power(l[2] - r[2], 2))
         scale = (10 * REAL_WORLD_IPD_CM) / per_frame_ipd
-        # print(f"Scale: {scale}")
+
+        # Compute the depth
+        theta = np.arctan(face_rt[0, 2] / face_rt[2, 2])
+        focal_length_pixels = 1 / np.tan(np.deg2rad(VERTICAL_FOV_DEGREES) / 2) * height / 2
+        depth_mm = (focal_length_pixels * REAL_WORLD_IPD_CM * 10 * np.cos(theta)) / distances['image_ipd'] * 2.25
+        if self.prior_depth is not None:
+            depth_mm = (depth_mm + self.prior_depth) / 2
+        self.prior_depth = depth_mm
+        print(f"Depth: {depth_mm}")
 
         # Apply the scale
         scaled_demeaned_relative_face_mesh = demeaned_relative_face_mesh * scale
 
         # Returned to the position
-        shifted_s_d_relative_face_mesh = scaled_demeaned_relative_face_mesh # + centroid
+        # z_ratio = depth_mm / centroid[2]
         translation = np.array([0, 0, depth_mm])
-        shifted_s_d_relative_face_mesh += translation
-        # import pdb; pdb.set_trace()
-
+        # translation = z_ratio * centroid
+        shifted_s_d_relative_face_mesh = scaled_demeaned_relative_face_mesh + translation
+        
         # Compute the 3D bounding box dimensions of the shifted_s_d_relative_face_mesh
         min_xyz = np.min(shifted_s_d_relative_face_mesh, axis=0)
         max_xyz = np.max(shifted_s_d_relative_face_mesh, axis=0)
@@ -672,14 +688,24 @@ class FLGE():
         # scale = depth_mm / relative_face_mesh[164][2]
         # relative_face_mesh *= metric_scale
 
+        # Estimate intrinsics based on width
+        intrinsics = np.array([
+            [width*1.5, 0, width / 2],
+            [0, height*1.9, height / 2],
+            [0, 0, 1]
+        ])
+
         # Convert xyz back to uvz
-        re_facial_landmarks = np.array([convert_xyz_to_uv(self.perspective_matrix, x[0], x[1], x[2]) for x in shifted_s_d_relative_face_mesh])
+        re_facial_landmarks = np.array([convert_xyz_to_uv_with_intrinsic(intrinsics, x[0], x[1], x[2]) for x in shifted_s_d_relative_face_mesh])
+        # re_facial_landmarks = np.array([convert_xyz_to_uv(self.perspective_matrix, x[0], x[1], x[2]) for x in shifted_s_d_relative_face_mesh])
+        # re_facial_landmarks = np.array([convert_xyz_to_uv(self.perspective_matrix, x[0], x[1], x[2]) for x in relative_face_mesh])
 
         # Draw the original facial
         draw_frame = frame.copy()
         for (u,v), (nu, nv) in zip(facial_landmarks[:, :2], re_facial_landmarks[:, :2]):
             cv2.circle(draw_frame, (int(u * width), int(v * height)), 2, (0, 255, 0), -1)
-            cv2.circle(draw_frame, (int(nu * width), int(nv * height)), 2, (0, 0, 255), -1)
+            # cv2.circle(draw_frame, (int(nu * width), int(nv * height)), 2, (0, 0, 255), -1)
+            cv2.circle(draw_frame, (int(nu), int(nv)), 2, (0, 0, 255), -1)
 
         # import pdb; pdb.set_trace()
         cv2.imshow('draw', draw_frame)
@@ -702,7 +728,7 @@ class FLGE():
         # tf_face_points = np.copy(facial_landmarks[:, :3]) * 1000
 
         tf_face_points = shifted_s_d_relative_face_mesh
-        # tf_face_points = relative_face_mesh * metric_scale
+        # tf_face_points = demeaned_relative_face_mesh * 500
         # tf_face_points *= metric_scale
 
         # Compute the position based on the 2D xy and the depth
