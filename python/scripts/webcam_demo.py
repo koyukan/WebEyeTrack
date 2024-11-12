@@ -125,6 +125,14 @@ if __name__ == '__main__':
     right_eyeball.paint_uniform_color([1, 1, 1])
     visual.add_geometry(left_eyeball)
     visual.add_geometry(right_eyeball)
+
+    # Initial Setup for Gaze Vectors
+    left_gaze_vector = o3d.geometry.LineSet()
+    right_gaze_vector = o3d.geometry.LineSet()
+
+    # Add the gaze vectors to the visualizer
+    visual.add_geometry(left_gaze_vector)
+    visual.add_geometry(right_gaze_vector)
     
     # Pipeline
     pipeline = FLGE(str(GIT_ROOT / 'python'/ 'weights' / 'face_landmarker_v2_with_blendshapes.task'), EYE_TRACKING_APPROACH)
@@ -171,13 +179,27 @@ if __name__ == '__main__':
             point_cloud.colors = o3d.utility.Vector3dVector(colors.reshape(-1, 3))
             visual.update_geometry(point_cloud)
 
-            # Draw the 3D eyeball
-            # for e in [result.left, result.right]:
+            # Draw the 3D eyeball and gaze vector
             for side in ['left', 'right']:
                 e = result.left if side == 'left' else result.right
                 ball = left_eyeball if side == 'left' else right_eyeball
+                gaze_vector = left_gaze_vector if side == 'left' else right_gaze_vector
+
+                # Eyeball
                 ball.translate(e.origin * SCALE, relative=False)
                 visual.update_geometry(ball)
+
+                # Gaze vector
+                # direction = e.direction # unit xyz vector
+                points = np.array([e.origin, e.origin + e.direction * np.array([-1, -1, 1]) * 1e3]) * SCALE
+                lines = np.array([[0, 1]])
+                print(points)
+
+                # Update geometry in the visualizer
+                gaze_vector.points = o3d.utility.Vector3dVector(points)
+                gaze_vector.lines = o3d.utility.Vector2iVector(lines)
+                gaze_vector.colors = o3d.utility.Vector3dVector([[0, 1, 0]])  # Green color for gaze vectors
+                visual.update_geometry(gaze_vector)
 
             # Update visualizer
             visual.poll_events()
