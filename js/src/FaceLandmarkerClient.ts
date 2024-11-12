@@ -35,14 +35,20 @@ export default class FaceLandmarkerClient {
     }
   }
 
-  async processFrame() {
+  async processFrame(frame: HTMLVideoElement | null): Promise<any> {
     if (!this.faceLandmarker) {
       console.error("FaceLandmarker is not loaded yet.");
       return;
     }
+    console.log("FaceLandmarker: Processing frame...");
 
     const startTimeMs = performance.now();
-    const result = await this.faceLandmarker.detectForVideo(this.videoElement, startTimeMs);
+    let result: any;
+    if (!frame) {
+      result = await this.faceLandmarker.detectForVideo(this.videoElement, startTimeMs);
+    } else {
+      result = await this.faceLandmarker.process(frame, startTimeMs);
+    }
 
     // Clear the canvas before drawing
     if (this.canvasCtx) {

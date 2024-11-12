@@ -19,10 +19,8 @@ export default function App() {
         await faceLandmarker.initialize();
 
         // Start the webcam
-        webcamClient.startWebcam(async () => {
-          if (faceLandmarkerRef.current) {
-            await faceLandmarkerRef.current.processFrame();
-          }
+        webcamClient.startWebcam(async (frame) => {
+          await faceLandmarker.processFrame(frame);
         });
 
         // Cleanup: stop the webcam and clear references when the component unmounts
