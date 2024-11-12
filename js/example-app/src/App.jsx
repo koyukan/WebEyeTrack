@@ -1,10 +1,11 @@
 import React, { useEffect, useRef } from 'react';
-import { WebcamClient, FaceLandmarkerClient } from 'webeyetrack';
+import { WebcamClient, FaceLandmarkerClient, WebEyeTrack } from 'webeyetrack';
 
 export default function App() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const faceLandmarkerRef = useRef(null);
+  const webEyeTrack = new WebEyeTrack();
   let canvasDimensionFlag = false;
 
   useEffect(() => {
@@ -26,7 +27,11 @@ export default function App() {
             canvasDimensionFlag = true;
           }
 
-          await faceLandmarker.processFrame(frame);
+          let results = await faceLandmarker.processFrame(frame);
+          console.log(results);
+
+          // Further process the results with the WebEyeTrack library
+          webEyeTrack.step(results, frame);
         });
 
         // Cleanup: stop the webcam and clear references when the component unmounts
