@@ -1,0 +1,6 @@
+open3d
+imutils
+# If you are using Windows or Linux, you will need to install the following packages
+screeninfo
+# If you are using a Mac, you will need to install the following packages
+pyobjc-framework-Quartz

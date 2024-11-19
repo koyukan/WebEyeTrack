@@ -1,6 +1,6 @@
 import pathlib
 import time
-from screeninfo import get_monitors
+import platform
 
 import open3d as o3d
 import cv2
@@ -21,9 +21,27 @@ EYE_TRACKING_APPROACH = "model-based"
 # EYE_TRACKING_APPROACH = "blendshape"
 
 # Screen dimensions
-m = get_monitors()[0]
-SCREEN_HEIGHT_MM = m.height_mm
-SCREEN_WIDTH_MM = m.width_mm
+
+# Based on platform, use different approaches for determining size
+# For Windows and Linux, use the screeninfo library
+# For MacOS, use the Quartz library
+if platform.system() == 'Windows' or platform.system() == 'Linux':
+    from screeninfo import get_monitors
+    m = get_monitors()[0]
+    SCREEN_HEIGHT_MM = m.height_mm
+    SCREEN_WIDTH_MM = m.width_mm
+    SCREEN_HEIGHT_PX = m.height
+    SCREEN_WIDTH_PX = m.width
+elif platform.system() == 'Darwin':
+    import Quartz
+    main_display_id = Quartz.CGMainDisplayID()
+    width_mm, height_mm = Quartz.CGDisplayScreenSize(main_display_id)
+    width_px, height_px = Quartz.CGDisplayPixelsWide(main_display_id), Quartz.CGDisplayPixelsHigh(main_display_id)
+    SCREEN_HEIGHT_MM = height_mm
+    SCREEN_WIDTH_MM = width_mm
+    SCREEN_HEIGHT_PX = height_px
+    SCREEN_WIDTH_PX = width_px
+
 SCALE = 2e-3
 print(f"Screen Height: {SCREEN_HEIGHT_MM} mm, Screen Width: {SCREEN_WIDTH_MM} mm")
 
@@ -163,11 +181,11 @@ if __name__ == '__main__':
             intrinsics, 
             smooth=True,
             screen_R=np.deg2rad(np.array([0, -180, 0]).astype(np.float32)),
-            screen_t=np.array([0.5*m.width_mm, 0, 0]).astype(np.float32),
-            screen_width_mm=m.width_mm,
-            screen_height_mm=m.height_mm,
-            screen_width_px=m.width,
-            screen_height_px=m.height
+            screen_t=np.array([0.5*SCREEN_WIDTH_MM, 0, 0]).astype(np.float32),
+            screen_width_mm=SCREEN_WIDTH_MM,
+            screen_height_mm=SCREEN_HEIGHT_MM,
+            screen_width_px=SCREEN_WIDTH_PX,
+            screen_height_px=SCREEN_HEIGHT_PX
         )
 
         if result:
@@ -225,7 +243,8 @@ if __name__ == '__main__':
                     cv2.imshow('frame', img)
 
         # cv2.imshow('frame', frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        key = cv2.waitKey(1)
+        if key == ord('q') or key == 27:  # 27 is the ESC key
             break
 
     cv2.destroyAllWindows()
