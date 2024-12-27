@@ -348,6 +348,9 @@ class FLGE():
             gaze_vector = pupil_3d - sphere_center
             gaze_vector /= np.linalg.norm(gaze_vector)
 
+            # For debugging purposes, make the gaze vector straight to the z-axis
+            gaze_vector = np.array([0, 0, -1])
+
             # Convert gaze vector to pitch and yaw to correct
             pitch, yaw = vector_to_pitch_yaw(gaze_vector)
             pitch, yaw = pitch, -yaw
@@ -362,14 +365,14 @@ class FLGE():
             face_gaze_vector /= np.linalg.norm(face_gaze_vector)
         elif 'left' in gaze_vectors:
             face_gaze_vector = gaze_vectors['left']
-            gaze_vectors['right'] = np.array([0,0,1])
+            gaze_vectors['right'] = np.array([0,0,-1])
         elif 'right' in gaze_vectors:
             face_gaze_vector = gaze_vectors['right']
-            gaze_vectors['left'] = np.array([0,0,1])
+            gaze_vectors['left'] = np.array([0,0,-1])
         else:
-            face_gaze_vector = np.array([0,0,1])
-            gaze_vectors['left'] = np.array([0,0,1])
-            gaze_vectors['right'] = np.array([0,0,1])
+            face_gaze_vector = np.array([0,0,-1])
+            gaze_vectors['left'] = np.array([0,0,-1])
+            gaze_vectors['right'] = np.array([0,0,-1])
 
         # Debugging purposes
         # cv2.imshow('debug_frame', frame)
@@ -739,6 +742,8 @@ class FLGE():
             screen_R,
             screen_t
         )
+        # left_pog_mm = np.array([0, 0])
+        # right_pog_mm = np.array([-145.284, 0])
 
         # Convert mm to normalized coordinates
         left_pog_norm = np.array([left_pog_mm[0] / screen_width_mm, left_pog_mm[1] / screen_height_mm])

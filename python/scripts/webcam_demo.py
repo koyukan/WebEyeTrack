@@ -112,6 +112,7 @@ if __name__ == '__main__':
         [rw/2,0,0],
         [-rw/2,0,0]
     ]).astype(np.float32)
+    print(rectangle_points)
 
     # Define triangles using indices to the points (two triangles to form a rectangle)
     triangles = np.array([
@@ -144,13 +145,49 @@ if __name__ == '__main__':
     visual.add_geometry(left_eyeball)
     visual.add_geometry(right_eyeball)
 
+    # PoG
+    left_pog = o3d.geometry.TriangleMesh.create_sphere(radius=12 * SCALE)
+    right_pog = o3d.geometry.TriangleMesh.create_sphere(radius=12 * SCALE)
+    left_pog.paint_uniform_color([0, 1, 0])
+    right_pog.paint_uniform_color([0, 0, 1])
+    visual.add_geometry(left_pog)
+    visual.add_geometry(right_pog)
+
     # Initial Setup for Gaze Vectors
     left_gaze_vector = o3d.geometry.LineSet()
+    left_gaze_vector.paint_uniform_color([0, 1, 0])  # Green color for left
     right_gaze_vector = o3d.geometry.LineSet()
+    right_gaze_vector.paint_uniform_color([0, 0, 1])  # Blue color for right
 
     # Add the gaze vectors to the visualizer
     visual.add_geometry(left_gaze_vector)
     visual.add_geometry(right_gaze_vector)
+
+    # Draw an xyz coordinate axis with lines of length 10mm
+    axis_length = rw #mm
+    axis_x= o3d.geometry.LineSet()
+    axis_x.colors = o3d.utility.Vector3dVector([[1, 0, 0]])
+    points = np.array([[0,0,0], [axis_length,0,0]]) * SCALE
+    lines = np.array([[0, 1]])
+    axis_x.points = o3d.utility.Vector3dVector(points)
+    axis_x.lines = o3d.utility.Vector2iVector(lines)
+    visual.add_geometry(axis_x)
+
+    axis_y= o3d.geometry.LineSet()
+    axis_y.colors = o3d.utility.Vector3dVector([[0, 1, 0]])
+    points = np.array([[0,0,0], [0,axis_length,0]]) * SCALE
+    lines = np.array([[0, 1]])
+    axis_y.points = o3d.utility.Vector3dVector(points)
+    axis_y.lines = o3d.utility.Vector2iVector(lines)
+    visual.add_geometry(axis_y)
+
+    axis_z= o3d.geometry.LineSet()
+    axis_z.colors = o3d.utility.Vector3dVector([[0, 0, 1]])
+    points = np.array([[0,0,0], [0,0,axis_length]]) * SCALE
+    lines = np.array([[0, 1]])
+    axis_z.points = o3d.utility.Vector3dVector(points)
+    axis_z.lines = o3d.utility.Vector2iVector(lines)
+    visual.add_geometry(axis_z)
     
     # Pipeline
     pipeline = FLGE(str(GIT_ROOT / 'python'/ 'weights' / 'face_landmarker_v2_with_blendshapes.task'), EYE_TRACKING_APPROACH)
@@ -197,11 +234,15 @@ if __name__ == '__main__':
             point_cloud.colors = o3d.utility.Vector3dVector(colors.reshape(-1, 3))
             visual.update_geometry(point_cloud)
 
+            # Compare left and right PoG
+            # print(f"Left {result.left.pog_mm}, Right {result.right.pog_mm}")
+
             # Draw the 3D eyeball and gaze vector
             for side in ['left', 'right']:
                 e = result.left if side == 'left' else result.right
                 ball = left_eyeball if side == 'left' else right_eyeball
                 gaze_vector = left_gaze_vector if side == 'left' else right_gaze_vector
+                pog = left_pog if side == 'left' else right_pog
 
                 # Eyeball
                 ball.translate(e.origin * SCALE, relative=False)
@@ -211,13 +252,22 @@ if __name__ == '__main__':
                 # direction = e.direction # unit xyz vector
                 points = np.array([e.origin, e.origin + e.direction * np.array([-1, -1, 1]) * 1e3]) * SCALE
                 lines = np.array([[0, 1]])
-                print(points)
 
                 # Update geometry in the visualizer
                 gaze_vector.points = o3d.utility.Vector3dVector(points)
                 gaze_vector.lines = o3d.utility.Vector2iVector(lines)
-                gaze_vector.colors = o3d.utility.Vector3dVector([[0, 1, 0]])  # Green color for gaze vectors
+                if side == 'left':
+                    gaze_vector.colors = o3d.utility.Vector3dVector([[0, 1, 0]])
+                else:
+                    gaze_vector.colors = o3d.utility.Vector3dVector([[0, 0, 1]])
                 visual.update_geometry(gaze_vector)
+
+                # Transform the PoG to match the 3D coordinate space
+                e.pog_mm[0] = -e.pog_mm[0] + SCREEN_WIDTH_MM/2 # x-axis
+                e.pog_mm[1] = e.pog_mm[1] + SCREEN_HEIGHT_MM/2 # y-axis
+
+                pog.translate(np.array([e.pog_mm[0], e.pog_mm[1], 0]) * SCALE, relative=False)
+                visual.update_geometry(pog)
 
             # Update visualizer
             visual.poll_events()
