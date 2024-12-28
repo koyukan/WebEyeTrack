@@ -58,7 +58,7 @@ if __name__ == '__main__':
 
     # Initialize Open3D Visualizer
     visual = o3d.visualization.Visualizer()
-    visual.create_window()
+    visual.create_window(width=1920, height=1080)
     visual.get_render_option().background_color = [0.1, 0.1, 0.1]
 
     # Add a camera frustrum of the webcam
@@ -217,8 +217,11 @@ if __name__ == '__main__':
             frame, 
             intrinsics, 
             smooth=True,
-            screen_R=np.deg2rad(np.array([0, -180, 0]).astype(np.float32)),
-            screen_t=np.array([0.5*SCREEN_WIDTH_MM, 0, 0]).astype(np.float32),
+            # screen_R=np.deg2rad(np.array([0, -180, 0]).astype(np.float32)),
+            # screen_t=np.array([0.5*SCREEN_WIDTH_MM, 0, 0]).astype(np.float32),
+            screen_R=np.deg2rad(np.array([0, 0, 0]).astype(np.float32)),
+            # screen_t=np.array([SCREEN_WIDTH_MM/2, 0, 0]).astype(np.float32),
+            screen_t=np.array([0, 0, 0]).astype(np.float32),
             screen_width_mm=SCREEN_WIDTH_MM,
             screen_height_mm=SCREEN_HEIGHT_MM,
             screen_width_px=SCREEN_WIDTH_PX,
@@ -262,9 +265,10 @@ if __name__ == '__main__':
                     gaze_vector.colors = o3d.utility.Vector3dVector([[0, 0, 1]])
                 visual.update_geometry(gaze_vector)
 
+                print(f"Origin: {e.origin}, Direction: {e.direction}, PoG: {e.pog_mm}") 
                 # Transform the PoG to match the 3D coordinate space
-                e.pog_mm[0] = -e.pog_mm[0] + SCREEN_WIDTH_MM/2 # x-axis
-                e.pog_mm[1] = e.pog_mm[1] + SCREEN_HEIGHT_MM/2 # y-axis
+                # e.pog_mm[0] = -e.pog_mm[0] + SCREEN_WIDTH_MM/2 # x-axis
+                # e.pog_mm[1] = -e.pog_mm[1]
 
                 pog.translate(np.array([e.pog_mm[0], e.pog_mm[1], 0]) * SCALE, relative=False)
                 visual.update_geometry(pog)
