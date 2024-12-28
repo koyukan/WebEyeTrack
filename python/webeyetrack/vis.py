@@ -156,7 +156,7 @@ def model_based_gaze_render(frame: np.ndarray, result: FLGEResult):
         # Convert 3D to pitch and yaw
         iris_center = iris_px[0]
         pitch, yaw = vector_to_pitch_yaw(eye_result.direction)
-        frame = draw_axis(frame, pitch, yaw, 0, int(iris_center[0]), int(iris_center[1]), 100)
+        frame = draw_axis(frame, -pitch, -yaw, 0, int(iris_center[0]), int(iris_center[1]), 100)
 
     # Draw the eyeballs on the frame itself
     for eye_result in [result.left, result.right]:

@@ -8,7 +8,7 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
-from webeyetrack.datasets.utils import screen_plane_intersection
+from webeyetrack.datasets.utils import screen_plane_intersection, screen_plane_intersection_2
 from ..vis import draw_axis
 from ..core import pitch_yaw_to_gaze_vector, rotation_matrix_to_euler_angles, vector_to_pitch_yaw
 from ..data_protocols import FLGEResult, EyeResult
@@ -349,12 +349,14 @@ class FLGE():
             gaze_vector /= np.linalg.norm(gaze_vector)
 
             # DEBUG: For debugging purposes, make the gaze vector straight to the z-axis
-            gaze_vector = np.array([0, 0, -1])
+            # gaze_vector = np.array([0, 0, -1])
+            # gaze_vector = np.array([-0.1, 0.0, -0.9])
+            # gaze_vector /= np.linalg.norm(gaze_vector)
             # gaze_vector = np.array([-0.04122334, -0.25422794, -0.96626538])
 
             # Convert gaze vector to pitch and yaw to correct
             pitch, yaw = vector_to_pitch_yaw(gaze_vector)
-            pitch, yaw = pitch, -yaw
+            pitch, yaw = -pitch, yaw
             gaze_vector = pitch_yaw_to_gaze_vector(pitch, yaw)
 
             # Store
@@ -732,17 +734,13 @@ class FLGE():
     def compute_pog(self, gaze_origins, gaze_vectors, screen_R, screen_t, screen_width_mm, screen_height_mm, screen_width_px, screen_height_px):
         
         # Perform intersection with plane using gaze origin and vector
-        left_pog_mm = screen_plane_intersection(
+        left_pog_mm = screen_plane_intersection_2(
             gaze_origins['eye_origins_3d']['left'],
             gaze_vectors['eyes']['vector']['left'],
-            screen_R,
-            screen_t
         )
-        right_pog_mm = screen_plane_intersection(
+        right_pog_mm = screen_plane_intersection_2(
             gaze_origins['eye_origins_3d']['right'],
             gaze_vectors['eyes']['vector']['right'],
-            screen_R,
-            screen_t
         )
 
         # Convert mm to normalized coordinates

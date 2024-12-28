@@ -140,3 +140,30 @@ def screen_plane_intersection(o, d, screen_R, screen_t):
     pog_mm = p[:2]
 
     return pog_mm
+
+def screen_plane_intersection_2(o, d):
+    """
+    Calculate the intersection of a gaze direction with a screen plane.
+    
+    Parameters:
+    - o: Gaze origin (3D coordinates)
+    - d: Gaze direction (3D coordinates)
+    
+    Returns:
+    - pog_mm: 2D point of gaze on the screen in millimeters (x, y)
+    """
+
+    # Screen plane: z = 0 (assumed to be at origin with a normal vector along z-axis)
+    a = np.array([0, 0, 0], dtype=np.float32)  # Point on the screen plane
+    n = np.array([0, 0, 1], dtype=np.float32)  # Normal vector of the screen plane
+
+    # Calculate the distance (lambda) to the screen plane
+    lambda_ = np.dot(a - o, n) / np.dot(d, n)
+
+    # Calculate the intersection point (3D)
+    p = o + lambda_ * d
+
+    # Keep only the x and y coordinates (2D point of gaze on screen)
+    pog_mm = p[:2]
+
+    return pog_mm

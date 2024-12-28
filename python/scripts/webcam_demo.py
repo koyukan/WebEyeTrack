@@ -253,7 +253,7 @@ if __name__ == '__main__':
 
                 # Gaze vector
                 # direction = e.direction # unit xyz vector
-                points = np.array([e.origin, e.origin + e.direction * np.array([-1, -1, 1]) * 1e3]) * SCALE
+                points = np.array([e.origin, e.origin + e.direction * np.array([1, 1, 1]) * 1e3]) * SCALE
                 lines = np.array([[0, 1]])
 
                 # Update geometry in the visualizer
