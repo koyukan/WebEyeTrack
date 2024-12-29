@@ -45,9 +45,35 @@ R = np.array([
     [0, 1, 0]  # New Z-axis points where Y-axis was
 ])
 
+class Canvas2DWidget(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setStyleSheet("background-color: white;")
+        self.circle_radius = 50
+        self.resize(SCREEN_WIDTH_PX, SCREEN_HEIGHT_PX)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 0, 0)))
+        circle_center_x = self.width() // 2
+        circle_center_y = self.height() // 2
+        painter.drawEllipse(circle_center_x - self.circle_radius, 
+                            circle_center_y - self.circle_radius, 
+                            self.circle_radius * 2, 
+                            self.circle_radius * 2)
+
 class PointCloudApp(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
+        
+        # Set up window properties
+        self.setWindowTitle("3D Point Cloud Viewer with Webcam Overlay")
+        self.resize(SCREEN_WIDTH_PX, SCREEN_HEIGHT_PX)
 
         # Main widget to hold the GLViewWidget and overlayed webcam
         self.central_widget = QtWidgets.QWidget()
@@ -57,6 +83,14 @@ class PointCloudApp(QtWidgets.QMainWindow):
         # Set up the GL view widget
         self.gl_widget = gl.GLViewWidget()
         self.layout.addWidget(self.gl_widget)
+
+        # Add 2D canvas
+        self.canvas_2d = Canvas2DWidget()
+        self.layout.addWidget(self.canvas_2d)
+        self.canvas_2d.hide()
+
+        # UI controls
+        self.add_ui_controls()
 
         # Add grid to the view
         grid = gl.GLGridItem()
@@ -84,9 +118,35 @@ class PointCloudApp(QtWidgets.QMainWindow):
         self.timer.timeout.connect(self.update_webcam)
         self.timer.start(30)  # Update every 30ms
 
-        # Set up window properties
-        self.setWindowTitle("3D Point Cloud Viewer with Webcam Overlay")
-        self.resize(SCREEN_WIDTH_PX, SCREEN_HEIGHT_PX)
+    def toggle_canvas(self):
+        if self.canvas_2d.isVisible():
+            self.canvas_2d.hide()
+            self.gl_widget.show()
+        else:
+            self.gl_widget.hide()
+            self.canvas_2d.show()
+            self.ui_container.raise_()
+
+    def add_ui_controls(self):
+        # Create a fixed-position rectangle for the UI controls
+        self.ui_container = QtWidgets.QWidget(self)
+        self.ui_container.setGeometry(self.central_widget.width() * 2, 10, 190, 100)  # Top-right corner
+        self.ui_container.setStyleSheet("background-color: rgba(0, 0, 0, 0.7); border-radius: 10px; border: 1px solid white;")
+
+        # Create a layout for buttons inside the container
+        layout = QtWidgets.QVBoxLayout(self.ui_container)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        # Add a label
+        label = QtWidgets.QLabel("Controls", self)
+        label.setStyleSheet("color: white; border: 0px; font-size: 20px; padding: 0px; margin: 0px;")
+        layout.addWidget(label)
+
+        # Add the calibrate button
+        calibrate_button = QtWidgets.QPushButton("Calibrate", self)
+        calibrate_button.clicked.connect(self.toggle_canvas)
+        calibrate_button.setStyleSheet("background-color: rgba(50, 50, 50, 1.0); color: white; border-radius: 10px; border: 0px")
+        layout.addWidget(calibrate_button)
 
     def add_screen_rect(self):
 
@@ -142,7 +202,7 @@ class PointCloudApp(QtWidgets.QMainWindow):
 
     def add_camera_frustum(self):
         # Frustum parameters
-        frustrum_scale = 1.5
+        frustrum_scale = 1.0
         origin = np.array([0, 0, 0])
         near_plane_dist = 0.5
         far_plane_dist = 0.75
