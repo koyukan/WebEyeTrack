@@ -37,6 +37,13 @@ pipeline = FLGE(str(GIT_ROOT / 'python'/ 'weights' / 'face_landmarker_v2_with_bl
 
 WEBCAM_WIDTH = 320
 WEBCAM_HEIGHT = 240
+SCALE = 0.0075 # Scale factor of mm to GL units
+
+R = np.array([
+    [-1, 0, 0],
+    [0, 0, 1],  # New Y-axis points where Z-axis was
+    [0, 1, 0]  # New Z-axis points where Y-axis was
+])
 
 class PointCloudApp(QtWidgets.QMainWindow):
     def __init__(self):
@@ -62,6 +69,11 @@ class PointCloudApp(QtWidgets.QMainWindow):
         # Create a GL scatter plot
         scatter_plot = gl.GLScatterPlotItem(pos=pos, color=(1, 0, 0, 1), size=5)
         self.gl_widget.addItem(scatter_plot)
+        
+        # Add static elements
+        self.add_screen_rect() # Add first
+        self.add_xyz_axes()
+        self.add_camera_frustum()
 
         # Webcam overlay
         self.webcam_label = QtWidgets.QLabel(self)
@@ -79,6 +91,128 @@ class PointCloudApp(QtWidgets.QMainWindow):
         # Set up window properties
         self.setWindowTitle("3D Point Cloud Viewer with Webcam Overlay")
         self.resize(SCREEN_WIDTH_PX, SCREEN_HEIGHT_PX)
+
+    # def add_screen_rect(self):
+
+    #     # Define rectangle corner points
+    #     rectangle_points = np.array([
+    #         [-SCREEN_WIDTH_MM / 2, 0, 0],
+    #         [SCREEN_WIDTH_MM / 2, 0, 0],
+    #         [SCREEN_WIDTH_MM / 2, -SCREEN_HEIGHT_MM, 0],
+    #         [-SCREEN_WIDTH_MM / 2, -SCREEN_HEIGHT_MM, 0]
+    #     ]) * SCALE
+
+    #     # Define lines for the rectangle
+    #     rectangle_lines = np.array([
+    #         [0, 1],
+    #         [1, 2],
+    #         [2, 3],
+    #         [3, 0]
+    #     ])
+
+    #     # Create the rectangle lines in the GLViewWidget
+    #     for line in rectangle_lines:
+    #         line_points = rectangle_points[line]
+    #         line_points = np.dot(line_points, R)  # Rotate the points
+    #         plot_line = gl.GLLinePlotItem(pos=line_points, color=(0, 0, 1, 1), width=2, antialias=True)
+    #         self.gl_widget.addItem(plot_line)
+
+    def add_screen_rect(self):
+
+        # Define rectangle corner points
+        # rectangle_points = np.array([
+        #     [-SCREEN_WIDTH_MM / 2, -SCREEN_HEIGHT_MM / 2, 0],
+        #     [SCREEN_WIDTH_MM / 2, -SCREEN_HEIGHT_MM / 2, 0],
+        #     [SCREEN_WIDTH_MM / 2, SCREEN_HEIGHT_MM / 2, 0],
+        #     [-SCREEN_WIDTH_MM / 2, SCREEN_HEIGHT_MM / 2, 0]
+        # ]) * SCALE
+
+        rectangle_points = np.array([
+            [-SCREEN_WIDTH_MM / 2, 0, 0],
+            [SCREEN_WIDTH_MM / 2, 0, 0],
+            [SCREEN_WIDTH_MM / 2, -SCREEN_HEIGHT_MM, 0],
+            [-SCREEN_WIDTH_MM / 2, -SCREEN_HEIGHT_MM, 0]
+        ]) * SCALE
+
+        rectangle_points = np.dot(rectangle_points, R)  # Rotate the points
+
+        # Define faces (triangles) for the rectangle
+        rectangle_faces = np.array([
+            [0, 1, 2],  # First triangle
+            [0, 2, 3]   # Second triangle
+        ])
+
+        # Create the mesh item
+        rectangle_mesh = gl.GLMeshItem(
+            vertexes=rectangle_points,  # Points of the rectangle
+            faces=rectangle_faces,      # Faces defined by the points
+            faceColors=[(0, 0, 0.3, 1)] * 4,  # Semi-transparent blue
+            drawEdges=True,             # Optionally draw edges
+            edgeColor=(0, 0, 1, 1)      # Edge color
+        )
+
+        # Add the rectangle to the GLViewWidget
+        self.gl_widget.addItem(rectangle_mesh)
+
+
+    def add_xyz_axes(self):
+        # Axis length
+        axis_length = 1.0
+
+        # X-axis
+        x_points = np.array([[0, 0, 0], [axis_length, 0, 0]])
+        x_points = np.dot(x_points, R)  # Rotate the points
+        x_line = gl.GLLinePlotItem(pos=x_points, color=(1, 0, 0, 1), width=2, antialias=True)
+        self.gl_widget.addItem(x_line)
+
+        # Y-axis
+        y_points = np.array([[0, 0, 0], [0, axis_length, 0]])
+        y_points = np.dot(y_points, R)  # Rotate the points
+        y_line = gl.GLLinePlotItem(pos=y_points, color=(0, 1, 0, 1), width=2, antialias=True)
+        self.gl_widget.addItem(y_line)
+
+        # Z-axis
+        z_points = np.array([[0, 0, 0], [0, 0, axis_length]])
+        z_points = np.dot(z_points, R)  # Rotate the points
+        z_line = gl.GLLinePlotItem(pos=z_points, color=(0, 0, 1, 1), width=2, antialias=True)
+        self.gl_widget.addItem(z_line)
+
+    def add_camera_frustum(self):
+        # Frustum parameters
+        frustrum_scale = 1.5
+        origin = np.array([0, 0, 0])
+        near_plane_dist = 0.5
+        far_plane_dist = 0.75
+        frustum_width = 1.0 / frustrum_scale
+        frustum_height = 0.75 / frustrum_scale
+
+        # Define points: camera origin and 4 points at the far plane
+        points = np.array([
+            origin,
+            [frustum_width, frustum_height, far_plane_dist],   # Top-right
+            [-frustum_width, frustum_height, far_plane_dist],  # Top-left
+            [-frustum_width, -frustum_height, far_plane_dist], # Bottom-left
+            [frustum_width, -frustum_height, far_plane_dist]   # Bottom-right
+        ])
+
+        # Define lines to form the frustum
+        lines = np.array([
+            [0, 1],  # Origin to top-right
+            [0, 2],  # Origin to top-left
+            [0, 3],  # Origin to bottom-left
+            [0, 4],  # Origin to bottom-right
+            [1, 2],  # Top edge
+            [2, 3],  # Left edge
+            [3, 4],  # Bottom edge
+            [4, 1]   # Right edge
+        ])
+
+        # Create the frustum lines in the GLViewWidget
+        for line in lines:
+            line_points = points[line]
+            line_points = np.dot(line_points, R)  # Rotate the points
+            plot_line = gl.GLLinePlotItem(pos=line_points, color=(1, 0, 0, 1), width=2, antialias=True)
+            self.gl_widget.addItem(plot_line)
 
     def update_webcam(self):
         ret, frame = self.cap.read()
