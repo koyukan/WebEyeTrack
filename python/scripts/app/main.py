@@ -99,6 +99,22 @@ class Canvas2DWidget(QtWidgets.QWidget):
         self.return_button.clicked.connect(self.on_return_clicked)
         self.return_button.hide()  # Initially hide the button
 
+            # Get screen offset
+        x_offset, y_offset = self.get_screen_offset()
+
+    def get_screen_offset(self):
+        screen = QtWidgets.QApplication.primaryScreen()
+        screen_geometry = screen.geometry()
+        available_geometry = screen.availableGeometry()
+        # print(screen_geometry, available_geometry, SCREEN_WIDTH_PX, SCREEN_HEIGHT_PX)
+
+        # Calculate the offset caused by the menu bar and window decorations
+        x_offset = screen_geometry.x() - available_geometry.x()
+        y_offset = screen_geometry.y() - available_geometry.y()
+        # print(x_offset, y_offset)
+
+        return x_offset, y_offset
+
     def on_return_clicked(self):
         self.parent().parent().toggle_canvas()  # Assuming parent manages the toggle to GLViewWidget
 
@@ -151,6 +167,23 @@ class Canvas2DWidget(QtWidgets.QWidget):
     def paintEvent(self, event):
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
+
+        # Get the screen offset
+        x_offset, y_offset = self.get_screen_offset()
+        painter.translate(x_offset, y_offset)  # Shift the canvas up by the offset
+
+        # DEBUG
+        # Draw gridlines for debugging purposes
+        painter.setPen(QtGui.QPen(QtGui.QColor(200, 200, 200), 1))
+        for x in range(0, self.width(), self.width() // 10):
+            painter.drawLine(x, 0, x, self.height())
+        for y in range(0, self.height(), self.height() // 10):
+            painter.drawLine(0, y, self.width(), y)
+
+        # Draw X and Y axes at the origin (center of the widget)
+        painter.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0), 2))
+        painter.drawLine(self.width() // 2, 0, self.width() // 2, self.height())  # Y-axis
+        painter.drawLine(0, self.height() // 2, self.width(), self.height() // 2)  # X-axis
 
         if self.show_instructions:
             # Draw instructions
