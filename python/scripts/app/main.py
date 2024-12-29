@@ -37,7 +37,7 @@ pipeline = FLGE(str(GIT_ROOT / 'python'/ 'weights' / 'face_landmarker_v2_with_bl
 
 WEBCAM_WIDTH = 320
 WEBCAM_HEIGHT = 240
-SCALE = 0.0075 # Scale factor of mm to GL units
+SCALE = 0.005 # Scale factor of mm to GL units
 
 R = np.array([
     [-1, 0, 0],
@@ -62,13 +62,9 @@ class PointCloudApp(QtWidgets.QMainWindow):
         grid = gl.GLGridItem()
         self.gl_widget.addItem(grid)
 
-        # Generate random 3D points
-        num_points = 1000
-        pos = np.random.rand(num_points, 3) * 10 - 5  # Random points in a 10x10x10 cube
-
-        # Create a GL scatter plot
-        scatter_plot = gl.GLScatterPlotItem(pos=pos, color=(1, 0, 0, 1), size=5)
-        self.gl_widget.addItem(scatter_plot)
+        # Initialize an empty point cloud
+        self.point_cloud_item = gl.GLScatterPlotItem()
+        self.gl_widget.addItem(self.point_cloud_item)
         
         # Add static elements
         self.add_screen_rect() # Add first
@@ -92,41 +88,9 @@ class PointCloudApp(QtWidgets.QMainWindow):
         self.setWindowTitle("3D Point Cloud Viewer with Webcam Overlay")
         self.resize(SCREEN_WIDTH_PX, SCREEN_HEIGHT_PX)
 
-    # def add_screen_rect(self):
-
-    #     # Define rectangle corner points
-    #     rectangle_points = np.array([
-    #         [-SCREEN_WIDTH_MM / 2, 0, 0],
-    #         [SCREEN_WIDTH_MM / 2, 0, 0],
-    #         [SCREEN_WIDTH_MM / 2, -SCREEN_HEIGHT_MM, 0],
-    #         [-SCREEN_WIDTH_MM / 2, -SCREEN_HEIGHT_MM, 0]
-    #     ]) * SCALE
-
-    #     # Define lines for the rectangle
-    #     rectangle_lines = np.array([
-    #         [0, 1],
-    #         [1, 2],
-    #         [2, 3],
-    #         [3, 0]
-    #     ])
-
-    #     # Create the rectangle lines in the GLViewWidget
-    #     for line in rectangle_lines:
-    #         line_points = rectangle_points[line]
-    #         line_points = np.dot(line_points, R)  # Rotate the points
-    #         plot_line = gl.GLLinePlotItem(pos=line_points, color=(0, 0, 1, 1), width=2, antialias=True)
-    #         self.gl_widget.addItem(plot_line)
-
     def add_screen_rect(self):
 
         # Define rectangle corner points
-        # rectangle_points = np.array([
-        #     [-SCREEN_WIDTH_MM / 2, -SCREEN_HEIGHT_MM / 2, 0],
-        #     [SCREEN_WIDTH_MM / 2, -SCREEN_HEIGHT_MM / 2, 0],
-        #     [SCREEN_WIDTH_MM / 2, SCREEN_HEIGHT_MM / 2, 0],
-        #     [-SCREEN_WIDTH_MM / 2, SCREEN_HEIGHT_MM / 2, 0]
-        # ]) * SCALE
-
         rectangle_points = np.array([
             [-SCREEN_WIDTH_MM / 2, 0, 0],
             [SCREEN_WIDTH_MM / 2, 0, 0],
@@ -153,7 +117,6 @@ class PointCloudApp(QtWidgets.QMainWindow):
 
         # Add the rectangle to the GLViewWidget
         self.gl_widget.addItem(rectangle_mesh)
-
 
     def add_xyz_axes(self):
         # Axis length
@@ -239,6 +202,14 @@ class PointCloudApp(QtWidgets.QMainWindow):
 
             img = frame
             if result:
+
+                # Update the pointclouds based on the face points
+                # Get 3D landmark positions for the Face Mesh
+                points = result.tf_facial_landmarks[:, :3] * SCALE
+                points = np.dot(points, R)
+                color = (1, 0, 0, 1)
+                self.point_cloud_item.setData(pos=points, color=color, size=5)
+
                 if EYE_TRACKING_APPROACH == "model-based":
                     img = vis.model_based_gaze_render(frame, result)
                 elif EYE_TRACKING_APPROACH == "landmark2d":
