@@ -49,8 +49,17 @@ class Canvas2DWidget(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.setStyleSheet("background-color: white;")
-        self.circle_radius = 50
+        self.circle_radius = 20
         self.resize(SCREEN_WIDTH_PX, SCREEN_HEIGHT_PX)
+        self.show_instructions = True
+        self.instruction_timer = QtCore.QTimer(self)
+        self.instruction_timer.setSingleShot(True)
+        self.instruction_timer.timeout.connect(self.hide_instructions)
+        self.instruction_timer.start(5*1000)  # 5 seconds
+
+    def hide_instructions(self):
+        self.show_instructions = False
+        self.update()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -59,13 +68,23 @@ class Canvas2DWidget(QtWidgets.QWidget):
     def paintEvent(self, event):
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 0, 0)))
-        circle_center_x = self.width() // 2
-        circle_center_y = self.height() // 2
-        painter.drawEllipse(circle_center_x - self.circle_radius, 
-                            circle_center_y - self.circle_radius, 
-                            self.circle_radius * 2, 
-                            self.circle_radius * 2)
+
+        if self.show_instructions:
+            # Draw instructions
+            painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255)))
+            painter.setFont(QtGui.QFont("Arial", 16))
+            instructions = "Look at the red dots."
+            text_rect = self.rect()
+            painter.drawText(text_rect, QtCore.Qt.AlignCenter, instructions)
+        else:
+            # Draw the circle
+            painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 0, 0)))
+            circle_center_x = self.width() // 2
+            circle_center_y = self.height() // 2
+            painter.drawEllipse(circle_center_x - self.circle_radius, 
+                                circle_center_y - self.circle_radius, 
+                                self.circle_radius * 2, 
+                                self.circle_radius * 2)
 
 class PointCloudApp(QtWidgets.QMainWindow):
     def __init__(self):
