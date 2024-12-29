@@ -265,12 +265,12 @@ if __name__ == '__main__':
                     gaze_vector.colors = o3d.utility.Vector3dVector([[0, 0, 1]])
                 visual.update_geometry(gaze_vector)
 
-                print(f"Origin: {e.origin}, Direction: {e.direction}, PoG: {e.pog_mm}") 
+                # print(f"Origin: {e.origin}, Direction: {e.direction}, PoG: {e.pog_mm}") 
                 # Transform the PoG to match the 3D coordinate space
                 # e.pog_mm[0] = -e.pog_mm[0] + SCREEN_WIDTH_MM/2 # x-axis
                 # e.pog_mm[1] = -e.pog_mm[1]
 
-                pog.translate(np.array([e.pog_mm[0], e.pog_mm[1], 0]) * SCALE, relative=False)
+                pog.translate(np.array([e.pog_mm_c[0], e.pog_mm_c[1], 0]) * SCALE, relative=False)
                 visual.update_geometry(pog)
 
             # Update visualizer

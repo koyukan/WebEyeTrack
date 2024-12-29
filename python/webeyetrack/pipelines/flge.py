@@ -734,30 +734,50 @@ class FLGE():
     def compute_pog(self, gaze_origins, gaze_vectors, screen_R, screen_t, screen_width_mm, screen_height_mm, screen_width_px, screen_height_px):
         
         # Perform intersection with plane using gaze origin and vector
-        left_pog_mm = screen_plane_intersection_2(
+        # c for camera, s for screen
+        left_pog_mm_c = screen_plane_intersection_2(
             gaze_origins['eye_origins_3d']['left'],
             gaze_vectors['eyes']['vector']['left'],
         )
-        right_pog_mm = screen_plane_intersection_2(
+        right_pog_mm_c = screen_plane_intersection_2(
             gaze_origins['eye_origins_3d']['right'],
             gaze_vectors['eyes']['vector']['right'],
         )
 
+        # Then convert the PoG to screen coordinates
+        # Obtain rotation matrix from the Rodrigues vector
+        R_matrix, _ = cv2.Rodrigues(screen_R)  # screen_R should be a 3D vector (Rodrigues rotation)
+        inv_R_matrix = np.linalg.inv(R_matrix)  # Inverse of the rotation matrix
+
+        # Pad the points from 2 to 3 dimensions
+        pad_left_pog_mm_c = np.append(left_pog_mm_c, 0)
+        pad_right_pog_mm_c = np.append(right_pog_mm_c, 0)
+
+        # Transform gaze origin and direction to screen coordinates
+        left_pog_mm_s = np.dot(inv_R_matrix, (pad_right_pog_mm_c - screen_t.T[0]))
+        right_pog_mm_s = np.dot(inv_R_matrix, (pad_left_pog_mm_c - screen_t.T[0]))
+
         # Convert mm to normalized coordinates
-        left_pog_norm = np.array([left_pog_mm[0] / screen_width_mm, left_pog_mm[1] / screen_height_mm])
-        right_pog_norm = np.array([right_pog_mm[0] / screen_width_mm, right_pog_mm[1] / screen_height_mm])
+        left_pog_norm = np.array([left_pog_mm_s[0] / screen_width_mm, left_pog_mm_s[1] / screen_height_mm])
+        right_pog_norm = np.array([right_pog_mm_s[0] / screen_width_mm, right_pog_mm_s[1] / screen_height_mm])
 
         # Convert normalized coordinates to pixel coordinates
         left_pog_px = np.array([left_pog_norm[0] * screen_width_px, left_pog_norm[1] * screen_height_px])
         right_pog_px = np.array([right_pog_norm[0] * screen_width_px, right_pog_norm[1] * screen_height_mm])
 
         return {
-            'face_pog_mm': (left_pog_mm + right_pog_mm) / 2,
+            'face_pog_mm_c': (left_pog_mm_c + right_pog_mm_c) / 2,
+            'face_pog_mm_s': (left_pog_mm_s + right_pog_mm_s) / 2,
+            'face_pog_norm': (left_pog_norm + right_pog_norm) / 2,
             'face_pog_px': (left_pog_px + right_pog_px) / 2,
             'eye': {
-                'left_pog_mm': left_pog_mm,
+                'left_pog_mm_c': left_pog_mm_c,
+                'left_pog_mm_s': left_pog_mm_s,
+                'left_pog_norm': left_pog_norm,
                 'left_pog_px': left_pog_px,
-                'right_pog_mm': right_pog_mm,
+                'right_pog_mm_c': right_pog_mm_c,
+                'right_pog_mm_s': right_pog_mm_s,
+                'right_pog_norm': right_pog_norm,
                 'right_pog_px': right_pog_px
             }
         }
@@ -840,12 +860,18 @@ class FLGE():
         # Compute the PoG
         if screen_R is None or screen_t is None or screen_width_mm is None or screen_height_mm is None or screen_width_px is None or screen_height_px is None:
             pog = {
-                'face_pog_mm': np.array([0,0]),
+                'face_pog_mm_c': np.array([0,0]),
+                'face_pog_mm_s': np.array([0,0]),
+                'face_pog_norm': np.array([0,0]),
                 'face_pog_px': np.array([0,0]),
                 'eye': {
-                    'left_pog_mm': np.array([0,0]),
+                    'left_pog_mm_c': np.array([0,0]),
+                    'left_pog_mm_s': np.array([0,0]),
+                    'left_pog_norm': np.array([0,0]),
                     'left_pog_px': np.array([0,0]),
-                    'right_pog_mm': np.array([0,0]),
+                    'right_pog_mm_c': np.array([0,0]),
+                    'right_pog_mm_s': np.array([0,0]),
+                    'right_pog_norm': np.array([0,0]),
                     'right_pog_px': np.array([0,0])
                 }
             }
@@ -877,8 +903,10 @@ class FLGE():
                 origin=gaze_origins['eye_origins_3d']['left'],
                 origin_2d=gaze_origins['eye_origins_2d']['left'],
                 direction=gaze_vectors['eyes']['vector']['left'],
+                pog_mm_c=pog['eye']['left_pog_mm_c'],
+                pog_mm_s=pog['eye']['left_pog_mm_s'],
+                pog_norm=pog['eye']['left_pog_norm'],
                 pog_px=pog['eye']['left_pog_px'],
-                pog_mm=pog['eye']['left_pog_mm'],
                 meta_data={
                     **gaze_vectors['eyes']['meta_data']['left']
                 }
@@ -888,14 +916,18 @@ class FLGE():
                 origin=gaze_origins['eye_origins_3d']['right'],
                 origin_2d=gaze_origins['eye_origins_2d']['right'],
                 direction=gaze_vectors['eyes']['vector']['right'],
+                pog_mm_c=pog['eye']['right_pog_mm_c'],
+                pog_mm_s=pog['eye']['right_pog_mm_s'],
+                pog_norm=pog['eye']['right_pog_norm'],
                 pog_px=pog['eye']['right_pog_px'],
-                pog_mm=pog['eye']['right_pog_mm'],
                 meta_data={
                     **gaze_vectors['eyes']['meta_data']['right']
                 }
             ),
+            pog_mm_c=pog['face_pog_mm_c'],
+            pog_mm_s=pog['face_pog_mm_s'],
+            pog_norm=pog['face_pog_norm'],
             pog_px=pog['face_pog_px'],
-            pog_mm=pog['face_pog_mm'],
             duration=toc - tic
         )
     

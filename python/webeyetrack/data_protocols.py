@@ -68,8 +68,10 @@ class EyeResult:
     origin: np.ndarray # X, Y, Z
     origin_2d: np.ndarray # u, v
     direction: np.ndarray # X, Y, Z
+    pog_mm_c: np.ndarray
+    pog_mm_s: np.ndarray
+    pog_norm: np.ndarray
     pog_px: np.ndarray
-    pog_mm: np.ndarray
     meta_data: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
@@ -83,6 +85,8 @@ class FLGEResult:
     face_gaze: np.ndarray # X, Y, Z
     left: EyeResult
     right: EyeResult
+    pog_mm_c: np.ndarray # (2,)
+    pog_mm_s: np.ndarray # (2,)
+    pog_norm: np.ndarray # (2,)
     pog_px: np.ndarray
-    pog_mm: np.ndarray
     duration: float # seconds
