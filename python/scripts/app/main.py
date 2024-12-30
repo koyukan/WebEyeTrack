@@ -45,6 +45,17 @@ R = np.array([
     [0, 1, 0]  # New Z-axis points where Y-axis was
 ])
 
+def get_screen_offset():
+    screen = QtWidgets.QApplication.primaryScreen()
+    screen_geometry = screen.geometry()
+    available_geometry = screen.availableGeometry()
+
+    # Calculate the offset caused by the menu bar and window decorations
+    x_offset = screen_geometry.x() - available_geometry.x()
+    y_offset = screen_geometry.y() - available_geometry.y()
+
+    return x_offset, y_offset
+
 class Canvas2DWidget(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
@@ -98,22 +109,6 @@ class Canvas2DWidget(QtWidgets.QWidget):
         """)
         self.return_button.clicked.connect(self.on_return_clicked)
         self.return_button.hide()  # Initially hide the button
-
-            # Get screen offset
-        x_offset, y_offset = self.get_screen_offset()
-
-    def get_screen_offset(self):
-        screen = QtWidgets.QApplication.primaryScreen()
-        screen_geometry = screen.geometry()
-        available_geometry = screen.availableGeometry()
-        # print(screen_geometry, available_geometry, SCREEN_WIDTH_PX, SCREEN_HEIGHT_PX)
-
-        # Calculate the offset caused by the menu bar and window decorations
-        x_offset = screen_geometry.x() - available_geometry.x()
-        y_offset = screen_geometry.y() - available_geometry.y()
-        # print(x_offset, y_offset)
-
-        return x_offset, y_offset
 
     def on_return_clicked(self):
         self.parent().parent().toggle_canvas()  # Assuming parent manages the toggle to GLViewWidget
@@ -169,7 +164,7 @@ class Canvas2DWidget(QtWidgets.QWidget):
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
 
         # Get the screen offset
-        x_offset, y_offset = self.get_screen_offset()
+        x_offset, y_offset = get_screen_offset()
         painter.translate(x_offset, y_offset)  # Shift the canvas up by the offset
 
         # DEBUG
@@ -210,7 +205,40 @@ class Canvas2DWidget(QtWidgets.QWidget):
                                 self.circle_radius * 2, 
                                 self.circle_radius * 2)
 
+class GazeDotCanvas(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+        self.setAttribute(QtCore.Qt.WA_NoSystemBackground)
+        self.setStyleSheet("background: transparent;")
+        self.dot_position = [0.5, 0.5]  # Normalized position (center)
+        self.dot_radius = 15
+        self.dot_color = QtGui.QColor(0, 255, 0)
+
+    def update_dot(self, x, y):
+        """Update the dot's position and trigger a repaint."""
+        self.dot_position = [x, y]
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+
+        # Get the screen offset
+        x_offset, y_offset = get_screen_offset()
+        painter.translate(x_offset, y_offset)  # Shift the canvas up by the offset
+
+        painter.setBrush(QtGui.QBrush(self.dot_color))
+        circle_center_x = int(self.width() * self.dot_position[0])
+        circle_center_y = int(self.height() * self.dot_position[1])
+        painter.drawEllipse(circle_center_x - self.dot_radius,
+                            circle_center_y - self.dot_radius,
+                            self.dot_radius * 2,
+                            self.dot_radius * 2)
+
 class PointCloudApp(QtWidgets.QMainWindow):
+    gaze_dot_updated = QtCore.pyqtSignal(float, float)
+
     def __init__(self):
         super().__init__()
         
@@ -232,6 +260,13 @@ class PointCloudApp(QtWidgets.QMainWindow):
         self.layout.addWidget(self.canvas_2d)
         self.canvas_2d.hide()
 
+        # Add gaze dot canvas
+        self.gaze_dot_canvas = GazeDotCanvas()
+        self.gaze_dot_canvas.setParent(self)
+        self.gaze_dot_canvas.resize(self.size())
+        self.gaze_dot_canvas.show()
+        self.gaze_dot_updated.connect(self.gaze_dot_canvas.update_dot)
+
         # UI controls
         self.add_ui_controls()
 
@@ -247,6 +282,7 @@ class PointCloudApp(QtWidgets.QMainWindow):
         self.add_screen_rect() # Add first
         self.add_xyz_axes()
         self.add_camera_frustum()
+        self.add_gaze_elements()
 
         # Webcam overlay
         self.webcam_label = QtWidgets.QLabel(self)
@@ -384,6 +420,25 @@ class PointCloudApp(QtWidgets.QMainWindow):
             plot_line = gl.GLLinePlotItem(pos=line_points, color=(1, 0, 0, 1), width=2, antialias=True)
             self.gl_widget.addItem(plot_line)
 
+    def add_gaze_elements(self):
+        # Create left and right eyeballs
+        self.left_eyeball = gl.GLScatterPlotItem(size=10, color=(1, 1, 1, 1))
+        self.right_eyeball = gl.GLScatterPlotItem(size=10, color=(1, 1, 1, 1))
+        self.gl_widget.addItem(self.left_eyeball)
+        self.gl_widget.addItem(self.right_eyeball)
+
+        # Create left and right points-of-gaze
+        self.left_pog = gl.GLScatterPlotItem(size=10, color=(0, 1, 0, 1))
+        self.right_pog = gl.GLScatterPlotItem(size=10, color=(0, 0, 1, 1))
+        self.gl_widget.addItem(self.left_pog)
+        self.gl_widget.addItem(self.right_pog)
+
+        # Create left and right gaze vectors
+        self.left_gaze_vector = gl.GLLinePlotItem(color=(0, 1, 0, 1), width=2)
+        self.right_gaze_vector = gl.GLLinePlotItem(color=(0, 0, 1, 1), width=2)
+        self.gl_widget.addItem(self.left_gaze_vector)
+        self.gl_widget.addItem(self.right_gaze_vector)
+
     def update_webcam(self):
         ret, frame = self.cap.read()
         if ret:
@@ -416,6 +471,34 @@ class PointCloudApp(QtWidgets.QMainWindow):
                 points = np.dot(points, R)
                 color = (1, 0, 0, 1)
                 self.point_cloud_item.setData(pos=points, color=color, size=5)
+
+                for side in ['left', 'right']:
+                    e = result.left if side == 'left' else result.right
+                    eyeball = self.left_eyeball if side == 'left' else self.right_eyeball
+                    gaze_vector = self.left_gaze_vector if side == 'left' else self.right_gaze_vector
+                    pog = self.left_pog if side == 'left' else self.right_pog
+
+                    # Eyeball position
+                    origin = np.dot(e.origin, R)
+                    direction = np.dot(e.direction, R)
+                    eyeball.setData(pos=origin * SCALE, size=20)
+
+                    # Gaze vector (line from origin to scaled direction)
+                    points = np.array([
+                        origin,
+                        origin + direction * np.array([1, 1, 1]) * 1e3
+                    ]) * SCALE
+                    gaze_vector.setData(pos=points)
+
+                    # Point-of-gaze
+                    pog_mm_c_3d = np.array([[e.pog_mm_c[0], e.pog_mm_c[1], 0]])
+                    pog_mm_c = np.dot(pog_mm_c_3d, R)
+                    pog.setData(pos=pog_mm_c * SCALE, size=20)
+
+                # Update the 2D PoG
+                # gaze_x, gaze_y = np.random.uniform(0.1, 0.9), np.random.uniform(0.1, 0.9)
+                gaze_x, gaze_y = result.pog_norm[0], result.pog_norm[1]
+                self.gaze_dot_updated.emit(gaze_x, gaze_y)
 
                 if EYE_TRACKING_APPROACH == "model-based":
                     img = vis.model_based_gaze_render(frame, result)
