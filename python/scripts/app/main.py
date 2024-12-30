@@ -306,6 +306,7 @@ class PointCloudApp(QtWidgets.QMainWindow):
         else:
             self.gl_widget.hide()
             self.canvas_2d.show()
+            self.canvas_2d.complete = False
             self.ui_container.hide()
             self.webcam_label.hide()
             # self.ui_container.raise_()
@@ -451,11 +452,11 @@ class PointCloudApp(QtWidgets.QMainWindow):
                 frame, 
                 intrinsics, 
                 smooth=True,
-                # screen_R=np.deg2rad(np.array([0, -180, 0]).astype(np.float32)),
-                # screen_t=np.array([0.5*SCREEN_WIDTH_MM, 0, 0]).astype(np.float32),
                 screen_R=np.deg2rad(np.array([0, 0, 0]).astype(np.float32)),
-                # screen_t=np.array([SCREEN_WIDTH_MM/2, 0, 0]).astype(np.float32),
-                screen_t=np.array([0, 0, 0]).astype(np.float32),
+                # screen_t=np.array([0.5*SCREEN_WIDTH_MM, 0, 0]).astype(np.float32),
+                # screen_R=np.deg2rad(np.array([0, 0, 0]).astype(np.float32)),
+                screen_t=np.array([-SCREEN_WIDTH_MM/2, 0, 0]).astype(np.float32),
+                # screen_t=np.array([0, 0, 0]).astype(np.float32),
                 screen_width_mm=SCREEN_WIDTH_MM,
                 screen_height_mm=SCREEN_HEIGHT_MM,
                 screen_width_px=SCREEN_WIDTH_PX,
@@ -496,8 +497,8 @@ class PointCloudApp(QtWidgets.QMainWindow):
                     pog.setData(pos=pog_mm_c * SCALE, size=20)
 
                 # Update the 2D PoG
-                # gaze_x, gaze_y = np.random.uniform(0.1, 0.9), np.random.uniform(0.1, 0.9)
                 gaze_x, gaze_y = result.pog_norm[0], result.pog_norm[1]
+                gaze_y = 1 - gaze_y  # Invert Y-axis
                 self.gaze_dot_updated.emit(gaze_x, gaze_y)
 
                 if EYE_TRACKING_APPROACH == "model-based":
