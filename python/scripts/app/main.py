@@ -57,6 +57,7 @@ def get_screen_offset():
     return x_offset, y_offset
 
 class Canvas2DWidget(QtWidgets.QWidget):
+
     def __init__(self):
         super().__init__()
         self.setStyleSheet("background-color: white;")
@@ -206,6 +207,7 @@ class Canvas2DWidget(QtWidgets.QWidget):
                                 self.circle_radius * 2)
 
 class GazeDotCanvas(QtWidgets.QWidget):
+
     def __init__(self):
         super().__init__()
         self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
@@ -309,7 +311,6 @@ class PointCloudApp(QtWidgets.QMainWindow):
             self.canvas_2d.complete = False
             self.ui_container.hide()
             self.webcam_label.hide()
-            # self.ui_container.raise_()
 
     def add_ui_controls(self):
         # Create a fixed-position rectangle for the UI controls
