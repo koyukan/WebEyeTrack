@@ -194,6 +194,10 @@ class FLGE():
         self.prior_gaze = None
         self.prior_depth = None
 
+    def calibrate(self, samples):
+        import pdb; pdb.set_trace()
+        ...
+
     def estimate_inter_pupillary_distance_2d(self, facial_landmarks, height, width):
         data_2d_pairs = {
             'left': facial_landmarks[LEFT_EYE_LANDMARKS][:, :2] * np.array([width, height]),

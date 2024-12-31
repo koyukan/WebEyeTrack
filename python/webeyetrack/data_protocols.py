@@ -37,6 +37,8 @@ class Annotations:
     gaze_target_3d: np.ndarray # (3,)
     gaze_target_2d: np.ndarray # (2,)
     pog_px: np.ndarray # (2,)
+    pog_norm: np.ndarray # (2,)
+    pog_mm: np.ndarray # (2,)
 
     # Gaze State Information
     is_closed: np.ndarray # (1,)

@@ -25,6 +25,18 @@ FILE_DIR = pathlib.Path(__file__).parent
 OUTPUTS_DIR = CWD / 'outputs'
 SKIP_COUNT = 100
 
+CALIBRATION_POINTS = np.array([ # 9 points
+    [0.5, 0.5],
+    [0.1, 0.1],
+    [0.1, 0.9],
+    [0.9, 0.1],
+    [0.9, 0.9],
+    [0.5, 0.1],
+    [0.5, 0.9],
+    [0.1, 0.5],
+    [0.9, 0.5]
+])
+
 with open(FILE_DIR / 'config.yaml', 'r') as f:
     config = yaml.safe_load(f)
 
@@ -77,11 +89,12 @@ def eval(args):
     if (args.dataset == 'MPIIFaceGaze'):
         dataset = MPIIFaceGazeDataset(
             GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
-            participants=config['datasets']['MPIIFaceGaze']['val_subjects'] + config['datasets']['MPIIFaceGaze']['train_subjects'],
+            # participants=config['datasets']['MPIIFaceGaze']['val_subjects'] + config['datasets']['MPIIFaceGaze']['train_subjects'],
+            participants=[0, 1, 2],
             # img_size=[244,244],
             # face_size=[244,244],
             # dataset_size=100,
-            # per_participant_size=10
+            per_participant_size=50
         )
     elif (args.dataset == 'EyeDiap'):
         dataset = EyeDiapDataset(
@@ -105,7 +118,7 @@ def eval(args):
     print("FINISHED LOADING DATASET")
 
     metric_functions = {
-        'depth': distance, 
+        # 'depth': distance, 
         'face_gaze_vector': angle, 
         'gaze_origin': euclidean_distance, 
         'gaze_origin-x': euclidean_distance, 
@@ -117,54 +130,71 @@ def eval(args):
     metrics = defaultdict(list)
 
     df = dataset.to_df()
-    for i in tqdm(range(len(df))):
 
-        # Get sample and load the image
-        sample = df.iloc[i]
-        img = cv2.imread(str(sample['image_fp']))
-        # sample['image'] = img
+    # Group data by participant
+    for name, group in tqdm(df.groupby('participant_id')):
 
-        if type(img) == type(None):
-            import pdb; pdb.set_trace()
+        # For each participant, perform calibration first by selecting 9 samples
+        # by finding the closet point to the calibration points
+        calib_samples = []
+        for calib_point in CALIBRATION_POINTS:
+            # Find the closest point to the calibration point
+            distances = group.apply(lambda x: np.linalg.norm(x['pog_norm'].reshape(2) - calib_point), axis=1)
+            idx = np.argmin(distances)
+            sample = group.iloc[idx]
+            calib_samples.append(sample)
 
-        # Process the sample
-        # results = algo.process_frame(img, sample['intrinsics'])
-        results = algo.process_sample(img, sample)
+        # Perform calibration
+        algo.calibrate(calib_samples)
 
-        output = {
-            'face_origin': results.face_origin,
-            'face_origin_2d': results.face_origin_2d,
-            'face_origin-x': results.face_origin[1],
-            'face_origin-y': results.face_origin[0],
-            'face_origin-z': results.face_origin[2],
-            'face_gaze_vector': results.face_gaze,
-            'results': results,
-        }
+        for i in tqdm(range(len(group))):
 
-        # Compute the error
-        actual = {
-            'face_origin': sample['face_origin_3d'],
-            'face_origin_2d': sample['face_origin_2d'],
-            'face_origin-x': sample['face_origin_3d'][1],
-            'face_origin-y': sample['face_origin_3d'][0],
-            'face_origin-z': sample['face_origin_3d'][2],
-            'face_gaze_vector': sample['face_gaze_vector'],
-            'pog_px': sample['pog_px'],
-            # 'pog_mm': sample['pog_mm']
-        }
-        
-        for name, function in metric_functions.items():
-            if name not in output or name not in actual:
-                continue
-            metrics[name].append(function(actual[name], output[name]))
+            # Get sample and load the image
+            sample = df.iloc[i]
+            img = cv2.imread(str(sample['image_fp']))
+            # sample['image'] = img
 
-        if i % SKIP_COUNT == 0:
-            # Write to the output directory
-            drawn_img = visualize_differences(img.copy(), sample, output)
-            cv2.imwrite(str(RUN_DIR/ 'imgs' / f'gaze_diff_{i}.png'), drawn_img)
+            if type(img) == type(None):
+                import pdb; pdb.set_trace()
 
-            drawn_img = vis.landmark_gaze_render(img.copy(), results)
-            cv2.imwrite(str(RUN_DIR/ 'imgs' / f'landmark_{i}.png'), drawn_img)
+            # Process the sample
+            # results = algo.process_frame(img, sample['intrinsics'])
+            results = algo.process_sample(img, sample)
+
+            output = {
+                'face_origin': results.face_origin,
+                'face_origin_2d': results.face_origin_2d,
+                'face_origin-x': results.face_origin[1],
+                'face_origin-y': results.face_origin[0],
+                'face_origin-z': results.face_origin[2],
+                'face_gaze_vector': results.face_gaze,
+                'results': results,
+            }
+
+            # Compute the error
+            actual = {
+                'face_origin': sample['face_origin_3d'],
+                'face_origin_2d': sample['face_origin_2d'],
+                'face_origin-x': sample['face_origin_3d'][1],
+                'face_origin-y': sample['face_origin_3d'][0],
+                'face_origin-z': sample['face_origin_3d'][2],
+                'face_gaze_vector': sample['face_gaze_vector'],
+                'pog_px': sample['pog_px'],
+                # 'pog_mm': sample['pog_mm']
+            }
+            
+            for name, function in metric_functions.items():
+                if name not in output or name not in actual:
+                    continue
+                metrics[name].append(function(actual[name], output[name]))
+
+            if i % SKIP_COUNT == 0:
+                # Write to the output directory
+                drawn_img = visualize_differences(img.copy(), sample, output)
+                cv2.imwrite(str(RUN_DIR/ 'imgs' / f'gaze_diff_{i}.png'), drawn_img)
+
+                drawn_img = vis.landmark_gaze_render(img.copy(), results)
+                cv2.imwrite(str(RUN_DIR/ 'imgs' / f'landmark_{i}.png'), drawn_img)
 
     # Generate box plots for the metrics
     df = pd.DataFrame(metrics)

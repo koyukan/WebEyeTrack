@@ -109,7 +109,7 @@ class MPIIFaceGazeDataset(Dataset):
             annotations = {} 
             with open(txt_file_fp, 'r') as f:
                 lines = f.readlines()
-                for line in tqdm(lines, total=len(lines)):
+                for line in tqdm(lines, total=len(lines), desc="Loading annotations"):
 
                     if self.dataset_size is not None and num_samples >= self.dataset_size:
                         break
@@ -231,6 +231,21 @@ class MPIIFaceGazeDataset(Dataset):
                     # Convert face_blendshapes to a proper numpy array
                     np_face_blendshapes = np.array([x.score for x in face_blendshapes])
 
+                    # Extract the PoG
+                    pog_px=np.array(items[1:3], dtype=np.float32)
+
+                    # Compute the normalized PoG
+                    pog_norm = np.array([
+                        pog_px[0] / calibration_data.monitor_width_px,
+                        pog_px[1] / calibration_data.monitor_height_px
+                    ])
+
+                    # Compute the PoG in mm
+                    pog_mm = np.array([
+                        pog_norm[0] * calibration_data.monitor_width_mm,
+                        pog_norm[1] * calibration_data.monitor_height_mm
+                    ])
+
                     annotation = Annotations(
                         original_img_size=np.array(image_np.shape),
                         intrinsics=calibration_data.camera_matrix,
@@ -256,7 +271,9 @@ class MPIIFaceGazeDataset(Dataset):
                         # Target information
                         gaze_target_3d=gaze_target_3d,
                         gaze_target_2d=gaze_target_2d.flatten(),
-                        pog_px=np.array(items[1:3], dtype=np.float32),
+                        pog_px=pog_px,
+                        pog_norm=pog_norm,
+                        pog_mm=pog_mm,
                         # Gaze State Information
                         is_closed=np.array([False])
                     )
@@ -362,13 +379,6 @@ class MPIIFaceGazeDataset(Dataset):
         face_image_np = np.moveaxis(face_image_np, -1, 0)
         texture = np.moveaxis(texture, -1, 0)
 
-        # Compute the PoG in mm
-        pog_mm = np.array([
-            sample.annotations.pog_px[0] / calibration_data.monitor_width_px * calibration_data.monitor_width_mm,
-            sample.annotations.pog_px[1] / calibration_data.monitor_height_px * calibration_data.monitor_height_mm
-        ])
-
-        import pdb; pdb.set_trace()
         sample_dict = {
             'image': image_np,
             'face_image': face_image_np,
@@ -385,7 +395,6 @@ class MPIIFaceGazeDataset(Dataset):
             'gaze_origin_depth_std': self.gaze_origin_depth_std,
             'pog_px_mean': self.pog_px_mean,
             'pog_px_std': self.pog_px_std,
-            'pog_mm': pog_mm,
             'mediapipe_head_vector': head_direction_xyz.astype(np.float32),
             'relative_gaze_vector': relative_gaze_vector.astype(np.float32)
         }
