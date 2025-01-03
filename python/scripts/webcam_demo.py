@@ -11,10 +11,10 @@ from mediapipe.tasks.python import vision
 import imutils
 import math
 
+from webeyetrack import WebEyeTrack
 from webeyetrack.constants import GIT_ROOT
 from webeyetrack.datasets.utils import draw_landmarks_on_image
 from webeyetrack import vis
-from webeyetrack.pipelines.flge import FLGE
 
 EYE_TRACKING_APPROACH = "model-based"
 # EYE_TRACKING_APPROACH = "landmark2d"
@@ -190,7 +190,7 @@ if __name__ == '__main__':
     visual.add_geometry(axis_z)
     
     # Pipeline
-    pipeline = FLGE(str(GIT_ROOT / 'python'/ 'weights' / 'face_landmarker_v2_with_blendshapes.task'), EYE_TRACKING_APPROACH)
+    pipeline = WebEyeTrack(str(GIT_ROOT / 'python'/ 'weights' / 'face_landmarker_v2_with_blendshapes.task'), EYE_TRACKING_APPROACH)
 
     # Update the visualizer to patch the camera position
     # parameters = o3d.io.read_pinhole_camera_parameters("ScreenCamera_DEFAULT.json")

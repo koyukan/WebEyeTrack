@@ -4,38 +4,12 @@ from matplotlib import pyplot as plt
 from matplotlib.colors import Normalize
 import math
 
-from .data_protocols import FLGEResult, EyeResult
-from .core import vector_to_pitch_yaw, rotation_matrix_to_euler_angles
-
-LEFT_EYE_LANDMARKS = [263, 362, 386, 374, 380]
-RIGHT_EYE_LANDMARKS = [33, 133, 159, 145, 153]
-LEFT_BLENDSHAPES = [14, 16, 18, 12]
-RIGHT_BLENDSHAPES = [13, 15, 17, 11]
-REAL_WORLD_IPD = 6.3 # Inter-pupilary distance (cm)
-HFOV = 100
-VFOV = 90
-
-# Format [leftmost, rightmost, topmost, bottommost]
-LEFT_EYEAREA_LANDMARKS = [463, 359, 257, 253]
-RIGHT_EYEAREA_LANDMARKS = [130, 243, 27, 23]
-LEFT_EYEAREA_TOTAL_LANDMARKS = [463,  341, 256, 252, 253, 254, 339, 255, 359, 467, 260, 259, 257, 258, 286, 414]
-RIGHT_EYEAREA_TOTAL_LANDMARKS = [130, 25,  110, 24,  23,  22,  26,  112, 243, 190, 56,  28,  27,  29,  30,  247]
-
-# Format [leftmost, rightmost, topmost, bottommost]
-LEFT_EYELID_LANDMARKS = [362, 263, 386, 374]
-RIGHT_EYELID_LANDMARKS = [33, 133, 159, 145]
-LEFT_EYELID_TOTAL_LANDMARKS = [ 362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398]
-RIGHT_EYELID_TOTAL_LANDMARKS = [33,  7,   163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246]
-
-RIGHT_IRIS_LANDMARKS = [468, 470, 469, 472, 471] # center, top, right, botton, left
-LEFT_IRIS_LANDMARKS = [473, 475, 474, 477, 476] # center, top, right, botton, left
-
-# EYE_PADDING_HEIGHT = 0.1
-EYE_PADDING_WIDTH = 0.3
-EYE_HEIGHT_RATIO = 1
+from .data_protocols import GazeResult, EyeResult
+from .model_based import vector_to_pitch_yaw, rotation_matrix_to_euler_angles
+from .constants import *
 
 
-def model_based_gaze_render(frame: np.ndarray, result: FLGEResult):
+def model_based_gaze_render(frame: np.ndarray, result: GazeResult):
 
     # Extract the information
     facial_landmarks = result.facial_landmarks
@@ -194,7 +168,7 @@ def model_based_gaze_render(frame: np.ndarray, result: FLGEResult):
     # Concatenate the combined eyes image vertically with the frame
     return cv2.vconcat([frame, eyes_combined_resized])
 
-def landmark_gaze_render(frame: np.ndarray, result: FLGEResult):
+def landmark_gaze_render(frame: np.ndarray, result: GazeResult):
 
     # Extract the information
     facial_landmarks = result.facial_landmarks
@@ -344,7 +318,7 @@ def landmark_gaze_render(frame: np.ndarray, result: FLGEResult):
     # Concatenate the combined eyes image vertically with the frame
     return cv2.vconcat([frame, eyes_combined_resized])
 
-def blendshape_gaze_render(frame: np.ndarray, result: FLGEResult):
+def blendshape_gaze_render(frame: np.ndarray, result: GazeResult):
 
     # Extract the information
     facial_landmarks = result.facial_landmarks

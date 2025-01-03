@@ -77,7 +77,7 @@ class EyeResult:
     meta_data: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
-class FLGEResult:
+class GazeResult:
     facial_landmarks: np.ndarray
     tf_facial_landmarks: np.ndarray
     face_rt: np.ndarray

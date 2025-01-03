@@ -25,8 +25,7 @@ from mediapipe.tasks.python import vision
 from ..constants import GIT_ROOT
 from ..vis import draw_gaze_origin, draw_axis
 from ..data_protocols import Annotations, CalibrationData, Sample
-from .utils import resize_annotations, resize_intrinsics, draw_landmarks_on_image, compute_uv_texture
-from ..core import vector_to_pitch_yaw
+from ..model_based import vector_to_pitch_yaw
 
 CWD = pathlib.Path(__file__).parent
 
