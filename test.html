@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Optimization.js Example</title>
+    <script src="https://unpkg.com/optimization-js@latest/dist/optimization.js"></script>
+</head>
+<body>
+    <script>
+        // Objective function that needs to be minimized
+        function fnc(v) {
+            let result = 0.0;
+            for (let i = 0; i < v.length; i++) {
+                result += v[i] * v[i]; // Sum of squares
+            }
+            return result;
+        }
+
+        // Initial guess: a somewhat random vector
+        const x0 = [1.0, -1.0, 0.5, -0.5, 0.25, -0.25];
+
+        // Apply Powell's method for optimization
+        const solution = optimjs.minimize_Powell(fnc, x0);
+
+        // Output the results
+        // console.log("Optimized Parameters (Minimizer):", solution.argument); // Optimized vector
+        // console.log("Final Loss (Minimum Value):", solution.f); // Minimum value of the function
+        console.log(solution)
+    </script>
+</body>
+</html>

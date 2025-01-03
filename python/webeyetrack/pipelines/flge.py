@@ -7,6 +7,8 @@ import cv2
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
+from skopt import gp_minimize
+from skopt.space import Real
 
 from webeyetrack.datasets.utils import screen_plane_intersection, screen_plane_intersection_2
 from ..vis import draw_axis
@@ -195,8 +197,22 @@ class FLGE():
         self.prior_depth = None
 
     def calibrate(self, samples):
-        import pdb; pdb.set_trace()
-        ...
+
+        def loss_fn():
+            ...
+
+        dimensions = [
+            Real(15/2, 25/2, name='eyeball_radius'),
+            Real(EYEBALL_X/2, EYEBALL_X*2, name='eyeball_x'),
+            Real(EYEBALL_Y/2, EYEBALL_Y*2, name='eyeball_y'),
+            Real(EYEBALL_Z/2, EYEBALL_Z*2, name='eyeball_z')
+        ]
+
+        # Initial guess for the parameters
+        x0 = [EYEBALL_RADIUS, EYEBALL_X, EYEBALL_Y, EYEBALL_Z]
+
+        # Perform the optimization
+        
 
     def estimate_inter_pupillary_distance_2d(self, facial_landmarks, height, width):
         data_2d_pairs = {
