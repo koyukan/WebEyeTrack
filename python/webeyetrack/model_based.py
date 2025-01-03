@@ -325,7 +325,17 @@ def estimate_inter_pupillary_distance_2d(facial_landmarks, height, width):
 
     return (positions, distances)
 
-def estimate_gaze_vector_based_on_model_based(eyeball_centers, eyeball_radius, perspective_matrix, inv_perspective_matrix, facial_landmarks, face_rt, height, width, ear_threshold=EAR_THRESHOLD):
+def estimate_gaze_vector_based_on_model_based(
+        eyeball_centers, 
+        eyeball_radius, 
+        perspective_matrix, 
+        inv_perspective_matrix, 
+        facial_landmarks, 
+        face_rt, 
+        height, 
+        width, 
+        ear_threshold=EAR_THRESHOLD
+    ):
     
     # Estimate the eyeball centers
     face_rt_copy = face_rt.copy()
@@ -358,7 +368,7 @@ def estimate_gaze_vector_based_on_model_based(eyeball_centers, eyeball_radius, p
         eyeball_x_2d = (eyeball_x_2d_n + 1) * width / 2
         eyeball_y_2d = (eyeball_y_2d_n * -1 + 1) * height / 2
         eyeball_center_2d[i] = np.array([eyeball_x_2d, eyeball_y_2d])
-        eyeball_radius_2d[i] = 0.85 * (500/camera_eyeball[2])
+        eyeball_radius_2d[i] = 0.85 * (500/camera_eyeball[2]) # TODO: This is not correct since the camera's instrinsics are not the same
 
         # Draw the eyeball center and radius
         # cv2.circle(frame, (int(eyeball_x_2d), int(eyeball_y_2d)), 2, (0, 0, 255), -1)

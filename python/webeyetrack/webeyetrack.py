@@ -19,14 +19,19 @@ class WebEyeTrack():
     def __init__(
             self, 
             model_asset_path: str, 
-            gaze_direction_estimation: Literal['model-based', 'landmark2d', 'blendshape'] = 'model-based', 
+            frame_height: int,
+            frame_width: int,
+            intrinsics: np.ndarray,
+            screen_R: np.ndarray,
+            screen_t: np.ndarray,
+            screen_width_mm: float,
+            screen_height_mm: float,
+            screen_width_px: int,
+            screen_height_px: int,
             eyeball_centers: Tuple[np.ndarray, np.ndarray] = EYEBALL_DEFAULT,
             eyeball_radius: float = EYEBALL_RADIUS,
-            ear_threshold: float = 0.1
+            ear_threshold: float = 0.1,
         ):
-
-        # Saving options
-        self.gaze_direction_estimation = gaze_direction_estimation
 
         # Setup MediaPipe Face Facial Landmark model
         base_options = python.BaseOptions(model_asset_path=model_asset_path)
@@ -41,9 +46,18 @@ class WebEyeTrack():
         self.inv_perspective_matrix: Optional[np.ndarray] = None
 
         # Store default parameters
+        self.frame_height = frame_height
+        self.frame_width = frame_width
         self.eyeball_centers = eyeball_centers
         self.eyeball_radius = eyeball_radius
         self.ear_threshold = ear_threshold
+        self.intrinsics = intrinsics
+        self.screen_R = screen_R
+        self.screen_t = screen_t
+        self.screen_width_mm = screen_width_mm
+        self.screen_height_mm = screen_height_mm
+        self.screen_width_px = screen_width_px
+        self.screen_height_px = screen_height_px
 
         # Gaze filter
         self.prior_gaze = None
@@ -51,7 +65,8 @@ class WebEyeTrack():
 
     def calibrate(self, samples):
 
-        def loss_fn():
+        def loss_fn(params):
+            # The loss function is the sum of the squared differences between the esimated PoG and the ground truth PoG
             ...
 
         dimensions = [
@@ -65,32 +80,28 @@ class WebEyeTrack():
         x0 = [EYEBALL_RADIUS, EYEBALL_X, EYEBALL_Y, EYEBALL_Z]
 
         # Perform the optimization
+        result = gp_minimize(
+            func=loss_fn,
+            dimensions=dimensions,
+            x0=x0,
+            n_calls=2,
+            random_state=42
+        )
+
+        print(result)
         
     def step(
             self, 
-            frame,
             facial_landmarks, 
             face_rt, 
             face_blendshapes, 
-            height, 
-            width, 
-            intrinsics,
-            screen_R=None,
-            screen_t=None,
-            screen_width_mm=None,
-            screen_height_mm=None,
-            screen_width_px=None,
-            screen_height_px=None,
-            tic=None,
-            smooth: bool = False
         ):
 
-        if not tic:
-            tic = time.perf_counter()
+        tic = time.perf_counter()
 
         # If we don't have a perspective matrix, create it
         if type(self.perspective_matrix) == type(None):
-            self.perspective_matrix = create_perspective_matrix(aspect_ratio=width/height)
+            self.perspective_matrix = create_perspective_matrix(aspect_ratio=self.frame_width/self.frame_height)
             self.inv_perspective_matrix = np.linalg.inv(self.perspective_matrix)
         
         # Estimate the 2D and 3D position of the eye-center and the face-center
@@ -98,81 +109,35 @@ class WebEyeTrack():
             self.perspective_matrix,
             facial_landmarks,
             face_rt,
-            height,
-            width,
-            intrinsics
+            self.frame_height,
+            self.frame_width,
+            self.intrinsics
         )
 
         # Compute the gaze vectors
-        if self.gaze_direction_estimation == 'model-based':
-            gaze_vectors = estimate_gaze_vector_based_on_model_based(
-                self.eyeball_centers,
-                self.eyeball_radius,
-                self.perspective_matrix,
-                self.inv_perspective_matrix,
-                facial_landmarks,
-                face_rt,
-                width=width,
-                height=height,
-                ear_threshold=self.ear_threshold
-            )
-        elif self.gaze_direction_estimation == 'landmark2d':
-            gaze_vectors = estimate_gaze_vector_based_on_eye_landmarks(
-                facial_landmarks,
-                face_rt,
-                width=width,
-                height=height
-            )
-        elif self.gaze_direction_estimation == 'blendshape':
-            gaze_vectors = estimate_gaze_vector_based_on_eye_blendshapes(
-                face_blendshapes,
-                face_rt
-            )
-
-        # If smooth, apply a moving average filter
-        if smooth:
-            if self.prior_gaze:
-                for k in ['left', 'right']:
-                    if not gaze_vectors['eyes']['is_closed'][k]:
-                        new_vector = (gaze_vectors['eyes']['vector'][k] + self.prior_gaze['eyes']['vector'][k])
-                        gaze_vectors['eyes']['vector'][k] = new_vector / np.linalg.norm(new_vector)
-                
-                # Update the face gaze vector
-                if not gaze_vectors['eyes']['is_closed']['left'] and not gaze_vectors['eyes']['is_closed']['right']:
-                    new_vector = (gaze_vectors['eyes']['vector']['left'] + gaze_vectors['eyes']['vector']['right'])
-                    gaze_vectors['face'] = new_vector / np.linalg.norm(new_vector)
-
-            self.prior_gaze = gaze_vectors
+        gaze_vectors = estimate_gaze_vector_based_on_model_based(
+            self.eyeball_centers,
+            self.eyeball_radius,
+            self.perspective_matrix,
+            self.inv_perspective_matrix,
+            facial_landmarks,
+            face_rt,
+            width=self.frame_width,
+            height=self.frame_height,
+            ear_threshold=self.ear_threshold
+        )
 
         # Compute the PoG
-        if screen_R is None or screen_t is None or screen_width_mm is None or screen_height_mm is None or screen_width_px is None or screen_height_px is None:
-            pog = {
-                'face_pog_mm_c': np.array([0,0]),
-                'face_pog_mm_s': np.array([0,0]),
-                'face_pog_norm': np.array([0,0]),
-                'face_pog_px': np.array([0,0]),
-                'eye': {
-                    'left_pog_mm_c': np.array([0,0]),
-                    'left_pog_mm_s': np.array([0,0]),
-                    'left_pog_norm': np.array([0,0]),
-                    'left_pog_px': np.array([0,0]),
-                    'right_pog_mm_c': np.array([0,0]),
-                    'right_pog_mm_s': np.array([0,0]),
-                    'right_pog_norm': np.array([0,0]),
-                    'right_pog_px': np.array([0,0])
-                }
-            }
-        else:
-            pog = compute_pog(
-                gaze_origins,
-                gaze_vectors,
-                screen_R,
-                screen_t,
-                screen_width_mm,
-                screen_height_mm,
-                screen_width_px,
-                screen_height_px,
-            )
+        pog = compute_pog(
+            gaze_origins,
+            gaze_vectors,
+            self.screen_R,
+            self.screen_t,
+            self.screen_width_mm,
+            self.screen_height_mm,
+            self.screen_width_px,
+            self.screen_height_px
+        )
 
         toc = time.perf_counter()
 
@@ -218,12 +183,11 @@ class WebEyeTrack():
             duration=toc - tic
         )
     
-    def process_sample(self, frame: np.ndarray, sample: Dict[str, Any], smooth: bool = False) -> GazeResult:
+    def process_sample(self, frame: np.ndarray, sample: Dict[str, Any]) -> GazeResult:
 
         # Get the depth and scale
         # frame = cv2.cvtColor(np.moveaxis(sample['image'], 0, -1) * 255, cv2.COLOR_RGB2BGR)
         facial_landmarks = sample['facial_landmarks']
-        original_img_size = sample['original_img_size']
         face_rt = sample['facial_rt']
 
         return self.step(
@@ -231,29 +195,11 @@ class WebEyeTrack():
             facial_landmarks,
             face_rt,
             sample['face_blendshapes'],
-            original_img_size[0],
-            original_img_size[1],
-            sample['intrinsics'],
-            # sample['screen_R'],
-            # sample['screen_t'],
-            # sample['screen_width_mm'],
-            # sample['screen_height_mm'],
-            # sample['screen_width_px'],
-            # sample['screen_height_px']
-            smooth=smooth
         )
  
     def process_frame(
             self, 
             frame: np.ndarray, 
-            intrinsics: np.ndarray, 
-            screen_R=None,
-            screen_t=None,
-            screen_width_mm=None,
-            screen_height_mm=None,
-            screen_width_px=None,
-            screen_height_px=None,
-            smooth: bool = False
         ) -> Optional[GazeResult]:
 
         # Start a timer
@@ -276,19 +222,7 @@ class WebEyeTrack():
         
         # Perform step
         return self.step(
-            frame.astype(np.uint8),
             face_landmarks,
             face_rt,
-            face_blendshapes,
-            frame.shape[0],
-            frame.shape[1],
-            intrinsics,
-            screen_R=screen_R,
-            screen_t=screen_t,
-            screen_width_mm=screen_width_mm,
-            screen_height_mm=screen_height_mm,
-            screen_width_px=screen_width_px,
-            screen_height_px=screen_height_px,
-            tic=tic,
-            smooth=smooth
-        ) 
+            face_blendshapes
+        )

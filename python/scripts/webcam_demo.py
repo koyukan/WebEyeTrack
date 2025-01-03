@@ -188,9 +188,23 @@ if __name__ == '__main__':
     axis_z.points = o3d.utility.Vector3dVector(points)
     axis_z.lines = o3d.utility.Vector2iVector(lines)
     visual.add_geometry(axis_z)
+
+    # Define intrinsics based on the frame
+    intrinsics = np.array([[width, 0, width // 2], [0, height, height // 2], [0, 0, 1]])
     
     # Pipeline
-    pipeline = WebEyeTrack(str(GIT_ROOT / 'python'/ 'weights' / 'face_landmarker_v2_with_blendshapes.task'), EYE_TRACKING_APPROACH)
+    pipeline = WebEyeTrack(
+        model_asset_path=str(GIT_ROOT / 'python'/ 'weights' / 'face_landmarker_v2_with_blendshapes.task'), 
+        frame_height=height,
+        frame_width=width,
+        intrinsics=intrinsics,
+        screen_R=np.deg2rad(np.array([0, 0, 0]).astype(np.float32)),
+        screen_t=np.array([0, 0, 0]).astype(np.float32),
+        screen_width_mm=SCREEN_WIDTH_MM,
+        screen_height_mm=SCREEN_HEIGHT_MM,
+        screen_width_px=SCREEN_WIDTH_PX,
+        screen_height_px=SCREEN_HEIGHT_PX
+    )
 
     # Update the visualizer to patch the camera position
     # parameters = o3d.io.read_pinhole_camera_parameters("ScreenCamera_DEFAULT.json")
@@ -209,24 +223,7 @@ if __name__ == '__main__':
         if not ret:
             break
 
-        # Define intrinsics based on the frame
-        width, height = frame.shape[:2]
-        intrinsics = np.array([[width, 0, width // 2], [0, height, height // 2], [0, 0, 1]])
-
-        result = pipeline.process_frame(
-            frame, 
-            intrinsics, 
-            smooth=True,
-            # screen_R=np.deg2rad(np.array([0, -180, 0]).astype(np.float32)),
-            # screen_t=np.array([0.5*SCREEN_WIDTH_MM, 0, 0]).astype(np.float32),
-            screen_R=np.deg2rad(np.array([0, 0, 0]).astype(np.float32)),
-            # screen_t=np.array([SCREEN_WIDTH_MM/2, 0, 0]).astype(np.float32),
-            screen_t=np.array([0, 0, 0]).astype(np.float32),
-            screen_width_mm=SCREEN_WIDTH_MM,
-            screen_height_mm=SCREEN_HEIGHT_MM,
-            screen_width_px=SCREEN_WIDTH_PX,
-            screen_height_px=SCREEN_HEIGHT_PX
-        )
+        result = pipeline.process_frame(frame)
 
         if result:
 

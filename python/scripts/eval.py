@@ -14,11 +14,11 @@ import yaml
 import matplotlib
 matplotlib.use('TkAgg')
 
+from webeyetrack import WebEyeTrack
 from webeyetrack.constants import GIT_ROOT
 from webeyetrack.datasets import MPIIFaceGazeDataset, GazeCaptureDataset, EyeDiapDataset
-from webeyetrack.pipelines import FLGE
 import webeyetrack.vis as vis
-import webeyetrack.core as core
+from webeyetrack.model_based import vector_to_pitch_yaw
 
 CWD = pathlib.Path(__file__).parent
 FILE_DIR = pathlib.Path(__file__).parent
@@ -54,11 +54,11 @@ def visualize_differences(img, sample, output):
     # Draw the facial_landmarks
     height, width = img.shape[:2]
 
-    pitch, yaw = core.vector_to_pitch_yaw(sample['face_gaze_vector'])
+    pitch, yaw = vector_to_pitch_yaw(sample['face_gaze_vector'])
     cv2.circle(img, (int(sample['face_origin_2d'][0]), int(sample['face_origin_2d'][1])), 5, (0, 0, 255), -1)
     img = vis.draw_axis(img, pitch, yaw, 0, tdx=sample['face_origin_2d'][0], tdy=sample['face_origin_2d'][1], size=100)
 
-    pitch, yaw = core.vector_to_pitch_yaw(output['face_gaze_vector'])
+    pitch, yaw = vector_to_pitch_yaw(output['face_gaze_vector'])
     cv2.circle(img, (int(output['face_origin_2d'][0]), int(output['face_origin_2d'][1])), 5, (255, 0, 0), -1)
     img = vis.draw_axis(img, pitch, yaw, 0, tdx=output['face_origin_2d'][0], tdy=output['face_origin_2d'][1], size=100)
 
@@ -69,7 +69,7 @@ def visualize_differences(img, sample, output):
         cv2.circle(img, (int(centroid[0]), int(centroid[1])), 5, (255, 0, 0), -1)
 
         # Convert 3D to pitch and yaw
-        pitch, yaw = core.vector_to_pitch_yaw(eye_result.direction)
+        pitch, yaw = vector_to_pitch_yaw(eye_result.direction)
         img = vis.draw_axis(img, pitch, yaw, 0, tdx=centroid[0], tdy=centroid[1], size=100)
 
     return img
@@ -80,7 +80,7 @@ def euclidean_distance(y, y_hat):
 def eval(args):
 
     # Create pipeline
-    algo = FLGE(
+    algo = WebEyeTrack(
         str(GIT_ROOT / 'python' / 'weights' / 'face_landmarker_v2_with_blendshapes.task'),
         args.method
     )
