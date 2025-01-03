@@ -6,10 +6,10 @@ import cv2
 import imutils
 import platform
 
+from webeyetrack import WebEyeTrack
 from webeyetrack.constants import GIT_ROOT
 from webeyetrack.datasets.utils import draw_landmarks_on_image
 from webeyetrack import vis
-from webeyetrack.pipelines.flge import FLGE
 
 # Based on platform, use different approaches for determining size
 # For Windows and Linux, use the screeninfo library
@@ -33,7 +33,7 @@ elif platform.system() == 'Darwin':
 
 # Pipeline
 EYE_TRACKING_APPROACH = "model-based"
-pipeline = FLGE(str(GIT_ROOT / 'python'/ 'weights' / 'face_landmarker_v2_with_blendshapes.task'), EYE_TRACKING_APPROACH)
+pipeline = WebEyeTrack(str(GIT_ROOT / 'python'/ 'weights' / 'face_landmarker_v2_with_blendshapes.task'), EYE_TRACKING_APPROACH)
 
 WEBCAM_WIDTH = 320
 WEBCAM_HEIGHT = 240
