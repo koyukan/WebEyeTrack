@@ -113,6 +113,13 @@ def model_based_gaze_render(frame: np.ndarray, result: GazeResult):
             new_value = (prior_value + np.array([150, 150, 150])) / 2
             draw_frame[int(screen_sphere_y_2d[j]), int(screen_sphere_x_2d[j])] = new_value
 
+        # Draw the eyeball center
+        if i == 0:
+            eyeball_center_2d = result.left.meta_data['eyeball_center_2d']
+        else:
+            eyeball_center_2d = result.right.meta_data['eyeball_center_2d']
+        cv2.circle(draw_frame, tuple(eyeball_center_2d.astype(int)), 3, (0, 0, 255), -1)
+
         # Draw the iris center
         iris_center = left_2d_iris_px if i == 0 else right_2d_iris_px
         iris_center = iris_center[0]
@@ -156,43 +163,50 @@ def model_based_gaze_render(frame: np.ndarray, result: GazeResult):
         eye_image = cv2.resize(eye_image, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
         eye_images[i] = eye_image
 
+        # Compute the shift and the scale
+        shift_value = np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
+        scale_value = np.array([new_width/original_width, new_height/original_height])
+
         # Draw the outline of the eyelid
-        shifted_eyelid_px = eyelid_total - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
+        shifted_eyelid_px = eyelid_total - shift_value
         prior_px = None
         for px in shifted_eyelid_px:
-            resized_px = px * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
+            resized_px = px * scale_value
             if prior_px is not None:
                 cv2.line(eye_image, tuple(prior_px.astype(int)), tuple(resized_px.astype(int)), (255, 0, 0), 1)
             prior_px = resized_px
         
         # Draw the last line to close the loop
-        resized_first_px = shifted_eyelid_px[0] * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
+        resized_first_px = shifted_eyelid_px[0] * scale_value
         cv2.line(eye_image, tuple(prior_px.astype(int)), tuple(resized_first_px.astype(int)), (255, 0, 0), 1)
-
-        # Shift the IRIS landmarks to the cropped eye
-        iris_px = left_2d_iris_px if i == 'left' else right_2d_iris_px
-        shifted_iris_px = iris_px - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
-        scaled_shifted_iris_px = shifted_iris_px * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
-        cv2.circle(eye_image, tuple(scaled_shifted_iris_px[0].astype(int)), 3, (0, 0, 255), -1)
-        # for iris_px_pt in shifted_iris_px:
-        #     resized_iris_px = iris_px_pt * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
-        #     cv2.circle(eye_image, tuple(resized_iris_px.astype(int)), 3, (0, 0, 255), -1)
 
         # Draw the eyeball
         screen_eye_points = named_sphere_points[i]
         for j in range(screen_eye_points.shape[0]):
-            shifted_eyeball_pt = screen_eye_points[j] - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
-            resized_eyeball_pt = shifted_eyeball_pt * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
-            cv2.circle(eye_image, tuple(resized_eyeball_pt.astype(int)), 1, (0, 0, 255), -1)
+            shifted_eyeball_pt = screen_eye_points[j] - shift_value
+            resized_eyeball_pt = shifted_eyeball_pt * scale_value
+            cv2.circle(eye_image, tuple(resized_eyeball_pt.astype(int)), 1, (200, 200, 200), -1)
 
         if is_closed:
             cv2.putText(eye_image, 'Closed', (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
             continue
 
+        # Draw the eyeball center
+        eyeball_center_2d = eye_result.meta_data['eyeball_center_2d']
+        shifted_eyeball_2d = eyeball_center_2d - shift_value
+        scaled_eyeball_2d = shifted_eyeball_2d * scale_value
+        cv2.circle(eye_image, scaled_eyeball_2d.astype(int), 5, (0, 255, 0), -1)
+        
         # Convert 3D to pitch and yaw
-        iris_center = iris_px[0]
         pitch, yaw = vector_to_pitch_yaw(eye_result.direction)
-        draw_frame = draw_axis(draw_frame, -pitch, -yaw, 0, int(iris_center[0]), int(iris_center[1]), 100)
+        draw_frame = draw_axis(draw_frame, -pitch, -yaw, 0, int(eyeball_center_2d[0]), int(eyeball_center_2d[1]), 100)
+        eye_image = draw_axis(eye_image, -pitch, -yaw, 0, int(scaled_eyeball_2d[0]), int(scaled_eyeball_2d[1]), 100)
+
+        # Shift the IRIS landmarks to the cropped eye
+        iris_px = left_2d_iris_px if i == 'left' else right_2d_iris_px
+        shifted_iris_px = iris_px - shift_value
+        scaled_shifted_iris_px = shifted_iris_px * scale_value
+        cv2.circle(eye_image, tuple(scaled_shifted_iris_px[0].astype(int)), 3, (0, 0, 255), -1)
 
     # Draw the FPS on the topright
     fps = 1/result.duration
@@ -227,7 +241,7 @@ def model_based_gaze_render(frame: np.ndarray, result: GazeResult):
 
     # Pad the total frame with black at the bottom to avoid gittering when displaying
     total_height = total_frame.shape[0]
-    padding_height = 800 - total_height
+    padding_height = max(0, 800 - total_height)
     total_frame = cv2.copyMakeBorder(total_frame, 0, padding_height, 0, 0, cv2.BORDER_CONSTANT, value=(0, 0, 0))
 
     return total_frame
