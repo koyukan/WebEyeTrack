@@ -23,7 +23,7 @@ from webeyetrack.model_based import vector_to_pitch_yaw
 CWD = pathlib.Path(__file__).parent
 FILE_DIR = pathlib.Path(__file__).parent
 OUTPUTS_DIR = CWD / 'outputs'
-SKIP_COUNT = 100
+SKIP_COUNT = 10
 
 CALIBRATION_POINTS = np.array([ # 9 points
     [0.5, 0.5],
@@ -78,13 +78,7 @@ def euclidean_distance(y, y_hat):
     return np.linalg.norm(y - y_hat)
 
 def eval(args):
-
-    # Create pipeline
-    algo = WebEyeTrack(
-        str(GIT_ROOT / 'python' / 'weights' / 'face_landmarker_v2_with_blendshapes.task'),
-        args.method
-    )
-    
+ 
     # Create a dataset object
     if (args.dataset == 'MPIIFaceGaze'):
         dataset = MPIIFaceGazeDataset(
@@ -108,6 +102,11 @@ def eval(args):
         )
     else:
         raise ValueError(f"Dataset {args.dataset} not supported")
+    
+    # Create pipeline
+    algo = WebEyeTrack(
+        str(GIT_ROOT / 'python' / 'weights' / 'face_landmarker_v2_with_blendshapes.task'),
+    )
 
     RUN_TIMESTAMP = pd.Timestamp.now().strftime('%Y%m%d%H%M%S')
     RUN_DIR = OUTPUTS_DIR / f"{RUN_TIMESTAMP}_{args.dataset}"
@@ -145,14 +144,14 @@ def eval(args):
             calib_samples.append(sample)
 
         # Perform calibration
-        algo.calibrate(calib_samples)
+        # algo.calibrate(calib_samples)
 
         for i in tqdm(range(len(group))):
 
             # Get sample and load the image
             sample = df.iloc[i]
-            img = cv2.imread(str(sample['image_fp']))
-            # sample['image'] = img
+            img = np.moveaxis(sample['image'], 0, -1) * 255
+            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
             if type(img) == type(None):
                 import pdb; pdb.set_trace()
@@ -189,6 +188,7 @@ def eval(args):
                 metrics[name].append(function(actual[name], output[name]))
 
             if i % SKIP_COUNT == 0:
+                print("Processing sample", i)
                 # Write to the output directory
                 drawn_img = visualize_differences(img.copy(), sample, output)
                 cv2.imwrite(str(RUN_DIR/ 'imgs' / f'gaze_diff_{i}.png'), drawn_img)
@@ -249,7 +249,7 @@ if __name__ == '__main__':
     # Parse arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, required=True, choices=['MPIIFaceGaze', 'EyeDiap'], help='Dataset to evaluate')
-    parser.add_argument('--method', type=str, required=True, choices=['blendshape', 'landmark2d', 'model-based'], help='Method to evaluate')
+    # parser.add_argument('--method', type=str, required=True, choices=['blendshape', 'landmark2d', 'model-based'], help='Method to evaluate')
     args = parser.parse_args()
 
     eval(args)

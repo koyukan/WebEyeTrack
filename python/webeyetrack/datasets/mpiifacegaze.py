@@ -380,6 +380,7 @@ class MPIIFaceGazeDataset(Dataset):
         texture = np.moveaxis(texture, -1, 0)
 
         sample_dict = {
+            'participant_id': sample.participant_id,
             'image': image_np,
             'face_image': face_image_np,
             # 'uv_texture': texture,
@@ -407,10 +408,9 @@ class MPIIFaceGazeDataset(Dataset):
     def to_df(self):
 
         data = defaultdict(list)
-        for sample in self.samples:
-            data['image_fp'].append(sample.image_fp)
-            data['participant_id'].append(sample.participant_id)
-            for k, v in asdict(sample.annotations).items():
+        for i in range(len(self.samples)):
+            sample = self[i]
+            for k, v in sample.items():
                 data[k].append(v)
 
         return pd.DataFrame(data)

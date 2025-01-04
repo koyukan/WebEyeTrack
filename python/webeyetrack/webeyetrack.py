@@ -19,15 +19,15 @@ class WebEyeTrack():
     def __init__(
             self, 
             model_asset_path: str, 
-            frame_height: int,
-            frame_width: int,
-            intrinsics: np.ndarray,
-            screen_R: np.ndarray,
-            screen_t: np.ndarray,
-            screen_width_mm: float,
-            screen_height_mm: float,
-            screen_width_px: int,
-            screen_height_px: int,
+            frame_height: Optional[int] = None,
+            frame_width: Optional[int] = None,
+            intrinsics: Optional[np.ndarray] = None,
+            screen_R: Optional[np.ndarray] = None,
+            screen_t: Optional[np.ndarray] = None,
+            screen_width_mm: Optional[float] = None,
+            screen_height_mm: Optional[float] = None,
+            screen_width_px: Optional[int] = None,
+            screen_height_px: Optional[int] = None,
             eyeball_centers: Tuple[np.ndarray, np.ndarray] = EYEBALL_DEFAULT,
             eyeball_radius: float = EYEBALL_RADIUS,
             ear_threshold: float = 0.1,
@@ -190,8 +190,18 @@ class WebEyeTrack():
         facial_landmarks = sample['facial_landmarks']
         face_rt = sample['facial_rt']
 
+        # Update the attributes
+        self.frame_height = frame.shape[0]
+        self.frame_width = frame.shape[1]
+        self.intrinsics = sample['intrinsics']
+        self.screen_R = sample['screen_R']
+        self.screen_t = sample['screen_t']
+        self.screen_width_mm = sample['screen_width_mm']
+        self.screen_height_mm = sample['screen_height_mm']
+        self.screen_width_px = sample['screen_width_px']
+        self.screen_height_px = sample['screen_height_px']
+
         return self.step(
-            frame,
             facial_landmarks,
             face_rt,
             sample['face_blendshapes'],
