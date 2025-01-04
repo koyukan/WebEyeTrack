@@ -44,8 +44,8 @@ EYE_HEIGHT_RATIO = 0.7
 # RIGHT_EYEBALL_CENTER = np.array([-3.0278, -2.7526, 2.7234]) * 10 # X, Y, Z
 
 # Average radius of an eyeball in cm
-EYEBALL_RADIUS = 1
-EYEBALL_X, EYEBALL_Y, EYEBALL_Z = 3, 2.7, 3
+EYEBALL_RADIUS = 1.2
+EYEBALL_X, EYEBALL_Y, EYEBALL_Z = 3, 2.8, 3
 EYEBALL_DEFAULT = (np.array([-EYEBALL_X, -EYEBALL_Y, -EYEBALL_Z]), np.array([EYEBALL_X, -EYEBALL_Y, -EYEBALL_Z])) # left, right
 
 # According to https://github.com/google-ai-edge/mediapipe/blob/master/mediapipe/graphs/face_effect/face_effect_gpu.pbtxt#L61-L65

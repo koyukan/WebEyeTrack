@@ -9,7 +9,7 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.000000
 d 1.000000
 illum 1
-map_Kd /Users/eduardodavalos/GitHub/RedForest/WebEyeTrack/python/assets/eyeball/Eye_D.jpg
+map_Kd /Users/eduardodavalos/GitHub/RedForest/WebEyeTrack/python/assets/eyeball/textures/Eye_D.jpg
 
 newmtl Eye_Iris
 Ns 17.647060
@@ -17,10 +17,10 @@ Ka 1.000000 1.000000 1.000000
 Ni 1.000000
 d 1.000000
 illum 2
-map_Kd /Users/eduardodavalos/GitHub/RedForest/WebEyeTrack/python/assets/eyeball/Eye_D.jpg
-map_Ks /Users/eduardodavalos/GitHub/RedForest/WebEyeTrack/python/assets/eyeball/Eye_D.jpg
-map_Ke /Users/eduardodavalos/GitHub/RedForest/WebEyeTrack/python/assets/eyeball/Eye_D.jpg
-map_Bump /Users/eduardodavalos/GitHub/RedForest/WebEyeTrack/python/assets/eyeball/Eye_N.jpg
+map_Kd /Users/eduardodavalos/GitHub/RedForest/WebEyeTrack/python/assets/eyeball/textures/Eye_D.jpg
+map_Ks /Users/eduardodavalos/GitHub/RedForest/WebEyeTrack/python/assets/eyeball/textures/Eye_D.jpg
+map_Ke /Users/eduardodavalos/GitHub/RedForest/WebEyeTrack/python/assets/eyeball/textures/Eye_D.jpg
+map_Bump /Users/eduardodavalos/GitHub/RedForest/WebEyeTrack/python/assets/eyeball/textures/Eye_N.jpg
 
 newmtl Eye_white
 Ns 550.955444
@@ -29,7 +29,7 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.000000
 d 1.000000
 illum 2
-map_Kd /Users/eduardodavalos/GitHub/RedForest/WebEyeTrack/python/assets/eyeball/Eye_D.jpg
-map_Ks /Users/eduardodavalos/GitHub/RedForest/WebEyeTrack/python/assets/eyeball/Eye_D.jpg
-map_refl /Users/eduardodavalos/GitHub/RedForest/WebEyeTrack/python/assets/eyeball/REF 1.jpg
-map_Bump /Users/eduardodavalos/GitHub/RedForest/WebEyeTrack/python/assets/eyeball/Eye_N.jpg
+map_Kd /Users/eduardodavalos/GitHub/RedForest/WebEyeTrack/python/assets/eyeball/textures/Eye_D.jpg
+map_Ks /Users/eduardodavalos/GitHub/RedForest/WebEyeTrack/python/assets/eyeball/textures/Eye_D.jpg
+map_refl /Users/eduardodavalos/GitHub/RedForest/WebEyeTrack/python/assets/eyeball/textures/REF 1.jpg
+map_Bump /Users/eduardodavalos/GitHub/RedForest/WebEyeTrack/python/assets/eyeball/textures/Eye_N.jpg

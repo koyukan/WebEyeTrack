@@ -54,11 +54,14 @@ face_mesh.triangles = o3d.utility.Vector3iVector(facemesh_triangles)
 face_mesh.compute_vertex_normals()
 
 # Load eyeball model
-eyeball_mesh_fp = GIT_ROOT / 'python' / 'assets' / 'eyeball.obj'
+eyeball_mesh_fp = GIT_ROOT / 'python' / 'assets' / 'eyeball' / 'trimesh_eyeball.obj'
 assert eyeball_mesh_fp.exists()
-eyeball_mesh = o3d.io.read_triangle_mesh(str(eyeball_mesh_fp))
-eyeball_mesh.compute_vertex_normals()
-# import pdb; pdb.set_trace()
+eyeball_meshes = {}
+for i in ['left', 'right']:
+    eyeball_mesh = o3d.io.read_triangle_mesh(str(eyeball_mesh_fp), True)
+    eyeball_mesh.vertices = o3d.utility.Vector3dVector(np.array(eyeball_mesh.vertices) * SCALE * 10)
+    eyeball_mesh.compute_vertex_normals()
+    eyeball_meshes[i] = eyeball_mesh
 
 # Add the lineset for the face mesh
 face_mesh_lines = o3d.geometry.LineSet.create_from_triangle_mesh(face_mesh)
@@ -166,7 +169,8 @@ if __name__ == '__main__':
     # right_eyeball.paint_uniform_color([1, 1, 1])
     # visual.add_geometry(left_eyeball)
     # visual.add_geometry(right_eyeball)
-    visual.add_geometry(eyeball_mesh)
+    visual.add_geometry(eyeball_meshes['left'])
+    visual.add_geometry(eyeball_meshes['right'])
 
     # PoG
     left_pog = o3d.geometry.TriangleMesh.create_sphere(radius=12 * SCALE)
@@ -277,10 +281,11 @@ if __name__ == '__main__':
                 # ball = left_eyeball if side == 'left' else right_eyeball
                 gaze_vector = left_gaze_vector if side == 'left' else right_gaze_vector
                 pog = left_pog if side == 'left' else right_pog
+                eyeball_mesh_c = eyeball_meshes[side]
 
                 # Eyeball
-                # ball.translate(e.origin * SCALE, relative=False)
-                # visual.update_geometry(ball)
+                eyeball_mesh_c.translate(e.origin * SCALE, relative=False)
+                visual.update_geometry(eyeball_mesh_c)
 
                 # Gaze vector
                 # direction = e.direction # unit xyz vector
