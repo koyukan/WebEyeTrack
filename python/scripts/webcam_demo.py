@@ -1,6 +1,7 @@
 import pathlib
 import time
 import platform
+import json
 
 import open3d as o3d
 import cv2
@@ -45,6 +46,18 @@ elif platform.system() == 'Darwin':
 SCALE = 2e-3
 print(f"Screen Height: {SCREEN_HEIGHT_MM} mm, Screen Width: {SCREEN_WIDTH_MM} mm")
 
+# Load the facemesh triangles
+facemesh_triangles = np.load(GIT_ROOT / 'python' / 'assets' / 'facemesh_triangles.npy')
+
+# import pdb; pdb.set_trace()
+face_mesh = o3d.io.read_triangle_mesh(str(GIT_ROOT / 'python' / 'assets' / 'canonical_face_model.obj'))
+face_mesh.vertices = o3d.utility.Vector3dVector(np.array(face_mesh.vertices) * SCALE * 10)
+face_mesh.triangles = o3d.utility.Vector3iVector(facemesh_triangles)
+face_mesh.compute_vertex_normals()
+
+# Add the lineset for the face mesh
+face_mesh_lines = o3d.geometry.LineSet.create_from_triangle_mesh(face_mesh)
+
 if __name__ == '__main__':
     
     # Load the webcam 
@@ -60,6 +73,7 @@ if __name__ == '__main__':
     visual = o3d.visualization.Visualizer()
     visual.create_window(width=1920, height=1080)
     visual.get_render_option().background_color = [0.1, 0.1, 0.1]
+    visual.get_render_option().mesh_show_back_face = True
 
     # Add a camera frustrum of the webcam
     # Frustum parameters
@@ -132,10 +146,13 @@ if __name__ == '__main__':
     visual.add_geometry(rectangle_mesh)
 
     # Face Mesh
-    point_cloud = o3d.geometry.PointCloud()
-    point_cloud.points = o3d.utility.Vector3dVector(np.array([[0,0,0], [1, 1, 1]]).reshape(-1, 3))
-    point_cloud.colors = o3d.utility.Vector3dVector(np.array([[1, 0, 0], [0, 1, 0]]).reshape(-1, 3))
-    visual.add_geometry(point_cloud)
+    # face_mesh = o3d.geometry.TriangleMesh()
+    visual.add_geometry(face_mesh) 
+    visual.add_geometry(face_mesh_lines)
+    # point_cloud = o3d.geometry.PointCloud()
+    # point_cloud.points = o3d.utility.Vector3dVector(np.array([[0,0,0], [1, 1, 1]]).reshape(-1, 3))
+    # point_cloud.colors = o3d.utility.Vector3dVector(np.array([[1, 0, 0], [0, 1, 0]]).reshape(-1, 3))
+    # visual.add_geometry(point_cloud)
 
     # Eyeballs
     left_eyeball = o3d.geometry.TriangleMesh.create_sphere(radius=12 * SCALE)
@@ -229,10 +246,21 @@ if __name__ == '__main__':
 
             # Get 3D landmark positions for the Face Mesh
             points = result.tf_facial_landmarks[:, :3] * SCALE
-            colors = np.array([[1, 0, 0] for _ in range(points.shape[0])])
-            point_cloud.points = o3d.utility.Vector3dVector(points.reshape(-1, 3))
-            point_cloud.colors = o3d.utility.Vector3dVector(colors.reshape(-1, 3))
-            visual.update_geometry(point_cloud)
+            color = [[1, 0, 0] for _ in range(len(points))]
+            face_mesh.vertices = o3d.utility.Vector3dVector(points)
+            face_mesh.vertex_colors = o3d.utility.Vector3dVector(color)
+            face_mesh.compute_vertex_normals()
+            new_face_mesh_lines = o3d.geometry.LineSet.create_from_triangle_mesh(face_mesh)
+            face_mesh_lines.points = new_face_mesh_lines.points
+            visual.update_geometry(face_mesh)
+            visual.update_geometry(face_mesh_lines)
+            # face_mesh.vertices = o3d.utility.Vector3dVector(points)
+            # face_mesh.triangles = o3d.utility.Vector3iVector(facemesh_triangles)
+            # face_mesh.vertex_colors = o3d.utility.Vector3dVector(colors)
+            # visual.update_geometry(face_mesh)
+            # point_cloud.points = o3d.utility.Vector3dVector(points.reshape(-1, 3))
+            # point_cloud.colors = o3d.utility.Vector3dVector(colors.reshape(-1, 3))
+            # visual.update_geometry(point_cloud)
 
             # Compare left and right PoG
             # print(f"Left {result.left.pog_mm}, Right {result.right.pog_mm}")
