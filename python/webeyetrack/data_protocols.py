@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 from dataclasses import dataclass, field
 import numpy as np
 import pathlib
@@ -78,17 +78,29 @@ class EyeResult:
 
 @dataclass
 class GazeResult:
+    # Inputs
     facial_landmarks: np.ndarray
     tf_facial_landmarks: np.ndarray
     face_rt: np.ndarray
     face_blendshapes: np.ndarray
+
+    # Face Gaze
     face_origin: np.ndarray # X, Y, Z
     face_origin_2d: np.ndarray # X, Y
     face_gaze: np.ndarray # X, Y, Z
+
+    # Per eye results
     left: EyeResult
     right: EyeResult
+
+    # PoG
     pog_mm_c: np.ndarray # (2,)
     pog_mm_s: np.ndarray # (2,)
     pog_norm: np.ndarray # (2,)
     pog_px: np.ndarray
+
+    # Meta data
     duration: float # seconds
+    eyeball_radius: float
+    eyeball_centers: Tuple[np.ndarray, np.ndarray]
+    perspective_matrix: np.ndarray

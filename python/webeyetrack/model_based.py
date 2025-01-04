@@ -347,7 +347,7 @@ def estimate_gaze_vector_based_on_model_based(
 
     # Visualization for debug
     eyeball_center_2d = {'left': None, 'right': None}
-    eyeball_radius_2d = {'left': None, 'right': None}
+    # eyeball_radius_2d = {'left': None, 'right': None}
 
     for i, canonical_eyeball in zip(['left', 'right'], eyeball_centers):
         # if i == 'right':
@@ -368,7 +368,9 @@ def estimate_gaze_vector_based_on_model_based(
         eyeball_x_2d = (eyeball_x_2d_n + 1) * width / 2
         eyeball_y_2d = (eyeball_y_2d_n * -1 + 1) * height / 2
         eyeball_center_2d[i] = np.array([eyeball_x_2d, eyeball_y_2d])
-        eyeball_radius_2d[i] = 0.85 * (500/camera_eyeball[2]) # TODO: This is not correct since the camera's instrinsics are not the same
+        # eyeball_radius_2d[i] = 0.85 * (500/camera_eyeball[2]) # TODO: This is not correct since the camera's instrinsics are not the same
+
+        # print(f"A - {i}: canonical_eyeball: {canonical_eyeball}, face_rt_copy: {face_rt_copy}, width, height: {width, height}, eyeball_center_2d: {eyeball_center_2d[i]}")
 
         # Draw the eyeball center and radius
         # cv2.circle(frame, (int(eyeball_x_2d), int(eyeball_y_2d)), 2, (0, 0, 255), -1)
@@ -484,11 +486,11 @@ def estimate_gaze_vector_based_on_model_based(
             'meta_data': {
                 'left': {
                     'eyeball_center_2d': eyeball_center_2d['left'],
-                    'eyeball_radius_2d': eyeball_radius_2d['left']
+                    # 'eyeball_radius_2d': eyeball_radius_2d['left']
                 },
                 'right': {
                     'eyeball_center_2d': eyeball_center_2d['right'],
-                    'eyeball_radius_2d': eyeball_radius_2d['right']
+                    # 'eyeball_radius_2d': eyeball_radius_2d['right']
                 }
             }
         }
@@ -910,6 +912,10 @@ def compute_pog(gaze_origins, gaze_vectors, screen_R, screen_t, screen_width_mm,
     # Transform gaze origin and direction to screen coordinates
     left_pog_mm_s = np.dot(inv_R_matrix, (pad_right_pog_mm_c - screen_t.T[0]))
     right_pog_mm_s = np.dot(inv_R_matrix, (pad_left_pog_mm_c - screen_t.T[0]))
+
+    # Remove the z-axis
+    left_pog_mm_s = left_pog_mm_s[:2]
+    right_pog_mm_s = right_pog_mm_s[:2]
 
     # Convert mm to normalized coordinates
     left_pog_norm = np.array([left_pog_mm_s[0] / screen_width_mm, left_pog_mm_s[1] / screen_height_mm])

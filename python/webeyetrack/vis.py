@@ -3,17 +3,23 @@ import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.colors import Normalize
 import math
+import trimesh
 
 from .data_protocols import GazeResult, EyeResult
 from .model_based import vector_to_pitch_yaw, rotation_matrix_to_euler_angles
 from .constants import *
 
+EYE_IMAGE_WIDTH = 400
 
 def model_based_gaze_render(frame: np.ndarray, result: GazeResult):
 
     # Extract the information
     facial_landmarks = result.facial_landmarks
     height, width = frame.shape[:2]
+
+    # Estimate the eyeball centers
+    face_rt_copy = result.face_rt.copy()
+    face_rt_copy[:3, 3] *= np.array([-1, -1, -1])
 
     intrinsics = np.array([
         [frame.shape[1], 0, frame.shape[1] / 2],
@@ -49,15 +55,19 @@ def model_based_gaze_render(frame: np.ndarray, result: GazeResult):
     ]
 
     eye_images = {}
+    original_sizes = {}
+    centroids = {}
     for i, (eye, eyelid, eyearea, eyelid_total) in {'left': left_landmarks, 'right': right_landmarks}.items():
         centroid = np.mean(eye, axis=0)
         width = np.abs(eye[0,0] - eye[1, 0]) * (1 + EYE_PADDING_WIDTH)
         height = width * EYE_HEIGHT_RATIO
+        centroids[i] = centroid
 
         # Determine if closed by the eyelid
         eyelid_width = np.abs(eyelid[0,0] - eyelid[1, 0])
         eyelid_height = np.abs(eyelid[3,1] - eyelid[2, 1])
         eye_result = result.left if i == 'left' else result.right
+        eyeball_center = result.eyeball_centers[0] if i == 'left' else result.eyeball_centers[1]
         is_closed = eye_result.is_closed
 
         if width == 0 or height == 0:
@@ -75,7 +85,8 @@ def model_based_gaze_render(frame: np.ndarray, result: GazeResult):
 
         # Create eye image
         original_height, original_width = eye_image.shape[:2]
-        new_width, new_height = 400, int(400*EYE_HEIGHT_RATIO)
+        original_sizes[i] = (original_width, original_height)
+        new_width, new_height = EYE_IMAGE_WIDTH, int(EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO)
         eye_image = cv2.resize(eye_image, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
         eye_images[i] = eye_image
 
@@ -83,44 +94,45 @@ def model_based_gaze_render(frame: np.ndarray, result: GazeResult):
         shifted_eyelid_px = eyelid_total - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
         prior_px = None
         for px in shifted_eyelid_px:
-            resized_px = px * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+            resized_px = px * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
             if prior_px is not None:
                 cv2.line(eye_image, tuple(prior_px.astype(int)), tuple(resized_px.astype(int)), (255, 0, 0), 1)
             prior_px = resized_px
         
         # Draw the last line to close the loop
-        resized_first_px = shifted_eyelid_px[0] * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+        resized_first_px = shifted_eyelid_px[0] * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
         cv2.line(eye_image, tuple(prior_px.astype(int)), tuple(resized_first_px.astype(int)), (255, 0, 0), 1)
 
         # Shift the IRIS landmarks to the cropped eye
         iris_px = left_2d_iris_px if i == 'left' else right_2d_iris_px
         shifted_iris_px = iris_px - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
-        scaled_shifted_iris_px = shifted_iris_px * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+        scaled_shifted_iris_px = shifted_iris_px * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
         cv2.circle(eye_image, tuple(scaled_shifted_iris_px[0].astype(int)), 3, (0, 0, 255), -1)
         # for iris_px_pt in shifted_iris_px:
-        #     resized_iris_px = iris_px_pt * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+        #     resized_iris_px = iris_px_pt * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
         #     cv2.circle(eye_image, tuple(resized_iris_px.astype(int)), 3, (0, 0, 255), -1)
 
         # Draw the eyeball
-        if 'eyeball_center_2d' in eye_result.meta_data and eye_result.meta_data['eyeball_center_2d'] is not None:
+        # if 'eyeball_center_2d' in eye_result.meta_data and eye_result.meta_data['eyeball_center_2d'] is not None:
             # Offset the eyeball center to the cropped eye
-            eyeball_center_2d = eye_result.meta_data['eyeball_center_2d']
-            eyeball_radius_2d = eye_result.meta_data['eyeball_radius_2d']
-            shifted_eyeball_center_2d = eyeball_center_2d - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
+            # import pdb; pdb.set_trace()
+            # eyeball_center_2d = eye_result.meta_data['eyeball_center_2d']
+            # eyeball_radius_2d = eye_result.meta_data['eyeball_radius_2d']
+            # shifted_eyeball_center_2d = eyeball_center_2d - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
 
             # Apply the scaling factor
-            resized_eyeball_center_2d = shifted_eyeball_center_2d * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
-            resized_eyeball_radius_2d = eyeball_radius_2d * 400/original_width
+            # resized_eyeball_center_2d = shifted_eyeball_center_2d * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
+            # resized_eyeball_radius_2d = eyeball_radius_2d * EYE_IMAGE_WIDTH/original_width
 
             # Draw the eyeball
             # import pdb; pdb.set_trace()
-            cv2.circle(eye_image, tuple(resized_eyeball_center_2d.astype(int)), int(resized_eyeball_radius_2d), (0, 0, 255), 1)
-
+            # cv2.circle(eye_image, tuple(resized_eyeball_center_2d.astype(int)), int(resized_eyeball_radius_2d), (0, 0, 255), 1)
+ 
         # Draw the centroid of the eyeball
         # cv2.circle(eye_image, (int(new_width/2), int(new_height/2)), 3, (255, 0, 0), -1)
         
         # Compute the line between the iris center and the centroid
-        # new_shifted_iris_px_center = shifted_iris_px[0] * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+        # new_shifted_iris_px_center = shifted_iris_px[0] * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
         # cv2.line(eye_image, (int(new_width/2), int(new_height/2)), tuple(new_shifted_iris_px_center.astype(int)), (0, 255, 0), 2)
 
         if is_closed:
@@ -133,11 +145,88 @@ def model_based_gaze_render(frame: np.ndarray, result: GazeResult):
         frame = draw_axis(frame, -pitch, -yaw, 0, int(iris_center[0]), int(iris_center[1]), 100)
 
     # Draw the eyeballs on the frame itself
-    for eye_result in [result.left, result.right]:
-        if 'eyeball_center_2d' in eye_result.meta_data and eye_result.meta_data['eyeball_center_2d'] is not None:
-            eyeball_center_2d = eye_result.meta_data['eyeball_center_2d']
-            eyeball_radius_2d = eye_result.meta_data['eyeball_radius_2d']
-            cv2.circle(frame, tuple(eyeball_center_2d.astype(int)), int(eyeball_radius_2d), (0, 0, 255), 1)
+    # for eye_result in [result.left, result.right]:
+    #     if 'eyeball_center_2d' in eye_result.meta_data and eye_result.meta_data['eyeball_center_2d'] is not None:
+    #         eyeball_center_2d = eye_result.meta_data['eyeball_center_2d']
+    #         eyeball_radius_2d = eye_result.meta_data['eyeball_radius_2d']
+    #         cv2.circle(frame, tuple(eyeball_center_2d.astype(int)), int(eyeball_radius_2d), (0, 0, 255), 1)
+
+    # Draw the eyeballs on the frame itsef
+    for i, eye_result in enumerate([result.left, result.right]):
+        eyeball_center = result.eyeball_centers[0] if i == 0 else result.eyeball_centers[1]
+        name = 'left' if i == 0 else 'right'
+
+        # Convert to homogenous
+        # eyeball_homogeneous = np.append(eyeball_center, 1)
+
+        # Convert from canonical to camera space
+        # camera_eyeball = face_rt_copy @ eyeball_homogeneous
+        # sphere_center = camera_eyeball[:3]
+
+        # Obtain the 2D eyeball center and radius
+        # screen_landmark_homogenous = result.perspective_matrix @ camera_eyeball
+        # eyeball_x_2d_n = screen_landmark_homogenous[0] / screen_landmark_homogenous[2]
+        # eyeball_y_2d_n = screen_landmark_homogenous[1] / screen_landmark_homogenous[2]
+        # height, width = frame.shape[:2]
+        # eyeball_x_2d = (eyeball_x_2d_n + 1) * width / 2
+        # eyeball_y_2d = (eyeball_y_2d_n * -1 + 1) * height / 2
+        # eyeball_center_2d[i] = np.array([eyeball_x_2d, eyeball_y_2d])
+        # cv2.circle(frame, (int(eyeball_x_2d), int(eyeball_y_2d)), 3, (0, 0, 255), -1)
+        # print(f"B - {name}: canonical_eyeball: {eyeball_center}, face_rt_copy: {face_rt_copy}, width, height: {width, height}, eyeball_center_2d: {np.array([eyeball_x_2d, eyeball_y_2d])}")
+        # import pdb; pdb.set_trace()
+        # eyeball_center_2d = eye_result.meta_data['eyeball_center_2d']
+        # cv2.circle(frame, tuple(eyeball_center_2d.astype(int)), int(3), (0, 0, 255), 1)
+
+        # Draw the eyeball as a 3D sphere
+        # First, construct the 3D sphere within the canonical coordinate system
+        sphere_mesh = trimesh.creation.icosphere(subdivisions=2, radius=result.eyeball_radius)
+        sphere_points = np.array(sphere_mesh.vertices)
+        sphere_points += eyeball_center
+        sphere_points_homogenous = np.hstack([sphere_points, np.ones((sphere_points.shape[0], 1))])
+        sphere_points_transformed = (face_rt_copy @ sphere_points_homogenous.T).T
+
+        # Project the 3D sphere to the 2D image
+        height, width = frame.shape[:2]
+        screen_sphere_homogenous = (result.perspective_matrix @ sphere_points_transformed.T).T
+        screen_sphere_x_2d_n = screen_sphere_homogenous[:, 0] / screen_sphere_homogenous[:, 2]
+        screen_sphere_y_2d_n = screen_sphere_homogenous[:, 1] / screen_sphere_homogenous[:, 2]
+        screen_sphere_x_2d = (screen_sphere_x_2d_n + 1) * width / 2
+        screen_sphere_y_2d = (1 - screen_sphere_y_2d_n) * height / 2
+
+        # Draw the 2D sphere
+        for j in range(sphere_points.shape[0]):
+            # cv2.circle(frame, (int(screen_sphere_x_2d[i]), int(screen_sphere_y_2d[i])), 1, (0, 0, 255), -1)
+            prior_value = frame[int(screen_sphere_y_2d[j]), int(screen_sphere_x_2d[j])]
+            # Add a bit of grey to the color
+            new_value = (prior_value + np.array([150, 150, 150])) / 2
+            frame[int(screen_sphere_y_2d[j]), int(screen_sphere_x_2d[j])] = new_value
+
+        # Draw the 2D sphere in the eye images
+        eye_image = eye_images[name]
+        eye_image_height, eye_image_width = eye_image.shape[:2]
+        eye_image_original_height, eye_image_original_width = original_sizes[name]
+        eye_centroid = centroids[name]
+        for j in range(sphere_points.shape[0]):
+            # Need to shift and scale the 3D sphere points to the 2D image
+            # shifted_sphere_px = np.array([screen_sphere_x_2d[j], screen_sphere_y_2d[j]]) - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
+            sphere_px = np.array([screen_sphere_x_2d[j], screen_sphere_y_2d[j]])
+            offset_set = np.array([int(eye_centroid[0] - eye_image_original_width/2), int(eye_centroid[1] - eye_image_original_height/2)])
+            shifted_sphere_px = sphere_px - offset_set
+            ratio = np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
+            scaled_sphere_px = shifted_sphere_px * ratio
+            # shifted_iris_px = iris_px - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
+            # scaled_shifted_iris_px = shifted_iris_px * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
+
+            # It's possible that a point will be outside the eye image, so we need to check
+            if scaled_sphere_px[0] < 0 or scaled_sphere_px[0] >= EYE_IMAGE_WIDTH or scaled_sphere_px[1] < 0 or scaled_sphere_px[1] >= EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO:
+                continue
+
+            cv2.circle(eye_image, (int(scaled_sphere_px[0]), int(scaled_sphere_px[1])), 1, (0, 0, 255), -1)
+
+        # Draw the iris center
+        iris_center = left_2d_iris_px if i == 0 else right_2d_iris_px
+        iris_center = iris_center[0]
+        cv2.circle(frame, tuple(iris_center.astype(int)), 3, (0, 255, 0), -1)
 
     # Draw the FPS on the topright
     fps = 1/result.duration
@@ -152,12 +241,12 @@ def model_based_gaze_render(frame: np.ndarray, result: GazeResult):
 
     # Concatenate the images
     if 'right' not in eye_images:
-        right_eye_image = np.zeros((400, 400, 3), dtype=np.uint8)
+        right_eye_image = np.zeros((EYE_IMAGE_WIDTH, EYE_IMAGE_WIDTH, 3), dtype=np.uint8)
     else:
         right_eye_image = eye_images['right']
 
     if 'left' not in eye_images:
-        left_eye_image = np.zeros((400, 400, 3), dtype=np.uint8)
+        left_eye_image = np.zeros((EYE_IMAGE_WIDTH, EYE_IMAGE_WIDTH, 3), dtype=np.uint8)
     else:
         left_eye_image = eye_images['left']
 
@@ -234,7 +323,7 @@ def landmark_gaze_render(frame: np.ndarray, result: GazeResult):
 
         # Create eye image
         original_height, original_width = eye_image.shape[:2]
-        new_width, new_height = 400, int(400*EYE_HEIGHT_RATIO)
+        new_width, new_height = EYE_IMAGE_WIDTH, int(EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO)
         eye_image = cv2.resize(eye_image, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
         eye_images[i] = eye_image
 
@@ -242,46 +331,46 @@ def landmark_gaze_render(frame: np.ndarray, result: GazeResult):
         shifted_eyearea_px = eyearea - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
         prior_px = None
         for px in shifted_eyearea_px:
-            resized_px = px * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+            resized_px = px * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
             if prior_px is not None:
                 cv2.line(eye_image, tuple(prior_px.astype(int)), tuple(resized_px.astype(int)), (0, 255, 0), 1)
             prior_px = resized_px
         # Draw the last line to close the loop
-        resized_first_px = shifted_eyearea_px[0] * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+        resized_first_px = shifted_eyearea_px[0] * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
         cv2.line(eye_image, tuple(prior_px.astype(int)), tuple(resized_first_px.astype(int)), (0, 255, 0), 1)
 
         # Draw the outline of the eyelid
         shifted_eyelid_px = eyelid_total - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
         prior_px = None
         for px in shifted_eyelid_px:
-            resized_px = px * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+            resized_px = px * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
             if prior_px is not None:
                 cv2.line(eye_image, tuple(prior_px.astype(int)), tuple(resized_px.astype(int)), (255, 0, 0), 1)
             prior_px = resized_px
         
         # Draw the last line to close the loop
-        resized_first_px = shifted_eyelid_px[0] * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+        resized_first_px = shifted_eyelid_px[0] * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
         cv2.line(eye_image, tuple(prior_px.astype(int)), tuple(resized_first_px.astype(int)), (255, 0, 0), 1)
 
         # Shift the IRIS landmarks to the cropped eye
         iris_px = left_2d_iris_px if i == 'left' else right_2d_iris_px
         shifted_iris_px = iris_px - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
         for iris_px_pt in shifted_iris_px:
-            resized_iris_px = iris_px_pt * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+            resized_iris_px = iris_px_pt * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
             cv2.circle(eye_image, tuple(resized_iris_px.astype(int)), 3, (0, 0, 255), -1)
 
         # Draw the centroid of the eyeball
         cv2.circle(eye_image, (int(new_width/2), int(new_height/2)), 3, (255, 0, 0), -1)
         
         # Compute the line between the iris center and the centroid
-        new_shifted_iris_px_center = shifted_iris_px[0] * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+        new_shifted_iris_px_center = shifted_iris_px[0] * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
         cv2.line(eye_image, (int(new_width/2), int(new_height/2)), tuple(new_shifted_iris_px_center.astype(int)), (0, 255, 0), 2)
 
         # If available, visualize the headpose-corrected iris center
         if 'headpose_corrected_eye_center' in eye_result.meta_data:
             headpose_corrected_eye_center = eye_result.meta_data['headpose_corrected_eye_center']
             if headpose_corrected_eye_center is not None:
-                new_headpose_corrected_eye_center = headpose_corrected_eye_center * np.array([400/original_width, 400*EYE_HEIGHT_RATIO/original_height])
+                new_headpose_corrected_eye_center = headpose_corrected_eye_center * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
                 cv2.circle(eye_image, tuple(new_headpose_corrected_eye_center.astype(int)), 3, (0, 255, 255), -1)
 
                 # Draw a line between the headpose corrected iris center and the iris center

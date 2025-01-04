@@ -131,7 +131,7 @@ def eval(args):
     df = dataset.to_df()
 
     # Group data by participant
-    for name, group in tqdm(df.groupby('participant_id')):
+    for group_name, group in tqdm(df.groupby('participant_id')):
 
         # For each participant, perform calibration first by selecting 9 samples
         # by finding the closet point to the calibration points
@@ -157,7 +157,6 @@ def eval(args):
                 import pdb; pdb.set_trace()
 
             # Process the sample
-            # results = algo.process_frame(img, sample['intrinsics'])
             results = algo.process_sample(img, sample)
 
             output = {
@@ -188,13 +187,13 @@ def eval(args):
                 metrics[name].append(function(actual[name], output[name]))
 
             if i % SKIP_COUNT == 0:
-                print("Processing sample", i)
                 # Write to the output directory
                 drawn_img = visualize_differences(img.copy(), sample, output)
-                cv2.imwrite(str(RUN_DIR/ 'imgs' / f'gaze_diff_{i}.png'), drawn_img)
+                cv2.imwrite(str(RUN_DIR/ 'imgs' / f'{group_name}_gaze_diff_{i}.png'), drawn_img)
 
-                drawn_img = vis.landmark_gaze_render(img.copy(), results)
-                cv2.imwrite(str(RUN_DIR/ 'imgs' / f'landmark_{i}.png'), drawn_img)
+                # drawn_img = vis.landmark_gaze_render(img.copy(), results)
+                drawn_img = vis.model_based_gaze_render(img.copy(), results)
+                cv2.imwrite(str(RUN_DIR/ 'imgs' / f'{group_name}_gaze_vis_{i}.png'), drawn_img)
 
     # Generate box plots for the metrics
     df = pd.DataFrame(metrics)

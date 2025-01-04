@@ -67,35 +67,59 @@ class WebEyeTrack():
 
         def loss_fn(params):
             # The loss function is the sum of the squared differences between the esimated PoG and the ground truth PoG
-            ...
+            # For all samples, compute the error
+            errors = []
+            for sample in samples:
+
+                # Use the current parameters to compute the PoG
+                # eyeball_centers = (np.array([params[1], params[2], params[3]]), np.array([-params[1], params[2], params[3]]))
+                eyeball_centers = (np.array([params[0], params[1], params[2]]), np.array([-params[0], params[1], params[2]]))
+                # eyeball_radius = params[0]
+                results = self.process_sample(sample['image'], sample, eyeball_centers=eyeball_centers)
+
+                # Compute the error
+                error = np.linalg.norm(results.pog_mm_s - sample['pog_mm'].reshape((2)))
+                errors.append(error)
+
+            return sum(errors)
 
         dimensions = [
-            Real(15/2, 25/2, name='eyeball_radius'),
+            # Real(15/2, 25/2, name='eyeball_radius'),
             Real(EYEBALL_X/2, EYEBALL_X*2, name='eyeball_x'),
             Real(EYEBALL_Y/2, EYEBALL_Y*2, name='eyeball_y'),
             Real(EYEBALL_Z/2, EYEBALL_Z*2, name='eyeball_z')
         ]
 
         # Initial guess for the parameters
-        x0 = [EYEBALL_RADIUS, EYEBALL_X, EYEBALL_Y, EYEBALL_Z]
+        # x0 = [EYEBALL_RADIUS, EYEBALL_X, EYEBALL_Y, EYEBALL_Z]
+        x0 = [EYEBALL_X, EYEBALL_Y, EYEBALL_Z]
 
         # Perform the optimization
         result = gp_minimize(
             func=loss_fn,
             dimensions=dimensions,
             x0=x0,
-            n_calls=2,
+            n_calls=11,
             random_state=42
         )
 
         print(result)
+        import pdb; pdb.set_trace() # TODO
         
     def step(
             self, 
             facial_landmarks, 
             face_rt, 
             face_blendshapes, 
+            eyeball_centers: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+            eyeball_radius: Optional[float] = None,
         ):
+
+        # If we have new eyeball centers and radius, update them
+        if type(eyeball_centers) != type(None):
+            self.eyeball_centers = eyeball_centers
+        if type(eyeball_radius) != type(None):
+            self.eyeball_radius = eyeball_radius
 
         tic = time.perf_counter()
 
@@ -143,13 +167,18 @@ class WebEyeTrack():
 
         # Return the result
         return GazeResult(
+            # Inputs
             facial_landmarks=facial_landmarks,
             tf_facial_landmarks=gaze_origins['tf_face_points'],
             face_rt=face_rt,
             face_blendshapes=face_blendshapes,
+
+            # Face results
             face_origin=gaze_origins['face_origin_3d'],
             face_origin_2d=gaze_origins['face_origin_2d'],
             face_gaze=gaze_vectors['face'],
+
+            # Eye results
             left=EyeResult(
                 is_closed=gaze_vectors['eyes']['is_closed']['left'],
                 origin=gaze_origins['eye_origins_3d']['left'],
@@ -176,14 +205,27 @@ class WebEyeTrack():
                     **gaze_vectors['eyes']['meta_data']['right']
                 }
             ),
+
+            # PoG information
             pog_mm_c=pog['face_pog_mm_c'],
             pog_mm_s=pog['face_pog_mm_s'],
             pog_norm=pog['face_pog_norm'],
             pog_px=pog['face_pog_px'],
-            duration=toc - tic
+
+            # Meta data
+            duration=toc - tic,
+            eyeball_radius=self.eyeball_radius,
+            eyeball_centers=self.eyeball_centers,
+            perspective_matrix=self.perspective_matrix
         )
     
-    def process_sample(self, frame: np.ndarray, sample: Dict[str, Any]) -> GazeResult:
+    def process_sample(
+            self, 
+            frame: np.ndarray, 
+            sample: Dict[str, Any], 
+            eyeball_centers: Optional[Tuple[np.ndarray, np.ndarray]] = None, 
+            eyeball_radius: Optional[float] = None
+        ) -> GazeResult:
 
         # Get the depth and scale
         # frame = cv2.cvtColor(np.moveaxis(sample['image'], 0, -1) * 255, cv2.COLOR_RGB2BGR)
@@ -205,11 +247,15 @@ class WebEyeTrack():
             facial_landmarks,
             face_rt,
             sample['face_blendshapes'],
+            eyeball_centers=eyeball_centers,
+            eyeball_radius=eyeball_radius
         )
  
     def process_frame(
             self, 
-            frame: np.ndarray, 
+            frame: np.ndarray,
+            eyeball_centers: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+            eyeball_radius: Optional[float] = None
         ) -> Optional[GazeResult]:
 
         # Start a timer
@@ -234,5 +280,7 @@ class WebEyeTrack():
         return self.step(
             face_landmarks,
             face_rt,
-            face_blendshapes
+            face_blendshapes,
+            eyeball_centers=eyeball_centers,
+            eyeball_radius=eyeball_radius
         )
