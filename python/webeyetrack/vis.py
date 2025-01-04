@@ -16,6 +16,7 @@ def model_based_gaze_render(frame: np.ndarray, result: GazeResult):
     # Extract the information
     facial_landmarks = result.facial_landmarks
     height, width = frame.shape[:2]
+    draw_frame = frame.copy()
 
     # Estimate the eyeball centers
     face_rt_copy = result.face_rt.copy()
@@ -53,6 +54,45 @@ def model_based_gaze_render(frame: np.ndarray, result: GazeResult):
         right_2d_eyearea_total_px,
         right_2d_eyelid_total_px,
     ]
+
+    # Compute the eyeball locations
+    # Draw the eyeballs on the frame itsef
+    named_sphere_points = {}
+    for i, eye_result in enumerate([result.left, result.right]):
+        eyeball_center = result.eyeball_centers[0] if i == 0 else result.eyeball_centers[1]
+        name = 'left' if i == 0 else 'right'
+        
+        # Draw the eyeball as a 3D sphere
+        # First, construct the 3D sphere within the canonical coordinate system
+        sphere_mesh = trimesh.creation.icosphere(subdivisions=2, radius=result.eyeball_radius)
+        sphere_points = np.array(sphere_mesh.vertices)
+        sphere_points += eyeball_center
+        sphere_points_homogenous = np.hstack([sphere_points, np.ones((sphere_points.shape[0], 1))])
+        sphere_points_transformed = (face_rt_copy @ sphere_points_homogenous.T).T
+
+        # Project the 3D sphere to the 2D image
+        height, width = frame.shape[:2]
+        screen_sphere_homogenous = (result.perspective_matrix @ sphere_points_transformed.T).T
+        screen_sphere_x_2d_n = screen_sphere_homogenous[:, 0] / screen_sphere_homogenous[:, 2]
+        screen_sphere_y_2d_n = screen_sphere_homogenous[:, 1] / screen_sphere_homogenous[:, 2]
+        screen_sphere_x_2d = (screen_sphere_x_2d_n + 1) * width / 2
+        screen_sphere_y_2d = (1 - screen_sphere_y_2d_n) * height / 2
+
+        screen_sphere_points = np.hstack([screen_sphere_x_2d.reshape(-1, 1), screen_sphere_y_2d.reshape(-1, 1)])
+        named_sphere_points[name] = screen_sphere_points
+
+        # Draw the 2D sphere
+        for j in range(sphere_points.shape[0]):
+            # cv2.circle(frame, (int(screen_sphere_x_2d[i]), int(screen_sphere_y_2d[i])), 1, (0, 0, 255), -1)
+            prior_value = draw_frame[int(screen_sphere_y_2d[j]), int(screen_sphere_x_2d[j])]
+            # Add a bit of grey to the color
+            new_value = (prior_value + np.array([150, 150, 150])) / 2
+            draw_frame[int(screen_sphere_y_2d[j]), int(screen_sphere_x_2d[j])] = new_value
+
+        # Draw the iris center
+        iris_center = left_2d_iris_px if i == 0 else right_2d_iris_px
+        iris_center = iris_center[0]
+        cv2.circle(draw_frame, tuple(iris_center.astype(int)), 3, (0, 255, 0), -1)
 
     eye_images = {}
     original_sizes = {}
@@ -113,6 +153,13 @@ def model_based_gaze_render(frame: np.ndarray, result: GazeResult):
         #     cv2.circle(eye_image, tuple(resized_iris_px.astype(int)), 3, (0, 0, 255), -1)
 
         # Draw the eyeball
+        screen_eye_points = named_sphere_points[i]
+        for j in range(screen_eye_points.shape[0]):
+            shifted_eyeball_pt = screen_eye_points[j] - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
+            resized_eyeball_pt = shifted_eyeball_pt * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
+            cv2.circle(eye_image, tuple(resized_eyeball_pt.astype(int)), 1, (0, 0, 255), -1)
+
+        # Draw the eyeball
         # if 'eyeball_center_2d' in eye_result.meta_data and eye_result.meta_data['eyeball_center_2d'] is not None:
             # Offset the eyeball center to the cropped eye
             # import pdb; pdb.set_trace()
@@ -142,7 +189,7 @@ def model_based_gaze_render(frame: np.ndarray, result: GazeResult):
         # Convert 3D to pitch and yaw
         iris_center = iris_px[0]
         pitch, yaw = vector_to_pitch_yaw(eye_result.direction)
-        frame = draw_axis(frame, -pitch, -yaw, 0, int(iris_center[0]), int(iris_center[1]), 100)
+        draw_frame = draw_axis(draw_frame, -pitch, -yaw, 0, int(iris_center[0]), int(iris_center[1]), 100)
 
     # Draw the eyeballs on the frame itself
     # for eye_result in [result.left, result.right]:
@@ -151,86 +198,9 @@ def model_based_gaze_render(frame: np.ndarray, result: GazeResult):
     #         eyeball_radius_2d = eye_result.meta_data['eyeball_radius_2d']
     #         cv2.circle(frame, tuple(eyeball_center_2d.astype(int)), int(eyeball_radius_2d), (0, 0, 255), 1)
 
-    # Draw the eyeballs on the frame itsef
-    for i, eye_result in enumerate([result.left, result.right]):
-        eyeball_center = result.eyeball_centers[0] if i == 0 else result.eyeball_centers[1]
-        name = 'left' if i == 0 else 'right'
-
-        # Convert to homogenous
-        # eyeball_homogeneous = np.append(eyeball_center, 1)
-
-        # Convert from canonical to camera space
-        # camera_eyeball = face_rt_copy @ eyeball_homogeneous
-        # sphere_center = camera_eyeball[:3]
-
-        # Obtain the 2D eyeball center and radius
-        # screen_landmark_homogenous = result.perspective_matrix @ camera_eyeball
-        # eyeball_x_2d_n = screen_landmark_homogenous[0] / screen_landmark_homogenous[2]
-        # eyeball_y_2d_n = screen_landmark_homogenous[1] / screen_landmark_homogenous[2]
-        # height, width = frame.shape[:2]
-        # eyeball_x_2d = (eyeball_x_2d_n + 1) * width / 2
-        # eyeball_y_2d = (eyeball_y_2d_n * -1 + 1) * height / 2
-        # eyeball_center_2d[i] = np.array([eyeball_x_2d, eyeball_y_2d])
-        # cv2.circle(frame, (int(eyeball_x_2d), int(eyeball_y_2d)), 3, (0, 0, 255), -1)
-        # print(f"B - {name}: canonical_eyeball: {eyeball_center}, face_rt_copy: {face_rt_copy}, width, height: {width, height}, eyeball_center_2d: {np.array([eyeball_x_2d, eyeball_y_2d])}")
-        # import pdb; pdb.set_trace()
-        # eyeball_center_2d = eye_result.meta_data['eyeball_center_2d']
-        # cv2.circle(frame, tuple(eyeball_center_2d.astype(int)), int(3), (0, 0, 255), 1)
-
-        # Draw the eyeball as a 3D sphere
-        # First, construct the 3D sphere within the canonical coordinate system
-        sphere_mesh = trimesh.creation.icosphere(subdivisions=2, radius=result.eyeball_radius)
-        sphere_points = np.array(sphere_mesh.vertices)
-        sphere_points += eyeball_center
-        sphere_points_homogenous = np.hstack([sphere_points, np.ones((sphere_points.shape[0], 1))])
-        sphere_points_transformed = (face_rt_copy @ sphere_points_homogenous.T).T
-
-        # Project the 3D sphere to the 2D image
-        height, width = frame.shape[:2]
-        screen_sphere_homogenous = (result.perspective_matrix @ sphere_points_transformed.T).T
-        screen_sphere_x_2d_n = screen_sphere_homogenous[:, 0] / screen_sphere_homogenous[:, 2]
-        screen_sphere_y_2d_n = screen_sphere_homogenous[:, 1] / screen_sphere_homogenous[:, 2]
-        screen_sphere_x_2d = (screen_sphere_x_2d_n + 1) * width / 2
-        screen_sphere_y_2d = (1 - screen_sphere_y_2d_n) * height / 2
-
-        # Draw the 2D sphere
-        for j in range(sphere_points.shape[0]):
-            # cv2.circle(frame, (int(screen_sphere_x_2d[i]), int(screen_sphere_y_2d[i])), 1, (0, 0, 255), -1)
-            prior_value = frame[int(screen_sphere_y_2d[j]), int(screen_sphere_x_2d[j])]
-            # Add a bit of grey to the color
-            new_value = (prior_value + np.array([150, 150, 150])) / 2
-            frame[int(screen_sphere_y_2d[j]), int(screen_sphere_x_2d[j])] = new_value
-
-        # Draw the 2D sphere in the eye images
-        eye_image = eye_images[name]
-        eye_image_height, eye_image_width = eye_image.shape[:2]
-        eye_image_original_height, eye_image_original_width = original_sizes[name]
-        eye_centroid = centroids[name]
-        for j in range(sphere_points.shape[0]):
-            # Need to shift and scale the 3D sphere points to the 2D image
-            # shifted_sphere_px = np.array([screen_sphere_x_2d[j], screen_sphere_y_2d[j]]) - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
-            sphere_px = np.array([screen_sphere_x_2d[j], screen_sphere_y_2d[j]])
-            offset_set = np.array([int(eye_centroid[0] - eye_image_original_width/2), int(eye_centroid[1] - eye_image_original_height/2)])
-            shifted_sphere_px = sphere_px - offset_set
-            ratio = np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
-            scaled_sphere_px = shifted_sphere_px * ratio
-            # shifted_iris_px = iris_px - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
-            # scaled_shifted_iris_px = shifted_iris_px * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
-
-            # It's possible that a point will be outside the eye image, so we need to check
-            if scaled_sphere_px[0] < 0 or scaled_sphere_px[0] >= EYE_IMAGE_WIDTH or scaled_sphere_px[1] < 0 or scaled_sphere_px[1] >= EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO:
-                continue
-
-            cv2.circle(eye_image, (int(scaled_sphere_px[0]), int(scaled_sphere_px[1])), 1, (0, 0, 255), -1)
-
-        # Draw the iris center
-        iris_center = left_2d_iris_px if i == 0 else right_2d_iris_px
-        iris_center = iris_center[0]
-        cv2.circle(frame, tuple(iris_center.astype(int)), 3, (0, 255, 0), -1)
-
     # Draw the FPS on the topright
     fps = 1/result.duration
-    cv2.putText(frame, f'FPS: {fps:.2f}', (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+    cv2.putText(draw_frame, f'FPS: {fps:.2f}', (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
 
     # Draw the headpose on the frame
     # headrot = result.face_rt[:3, :3]
@@ -255,7 +225,7 @@ def model_based_gaze_render(frame: np.ndarray, result: GazeResult):
     eyes_combined_resized = cv2.resize(eyes_combined, (frame.shape[1], eyes_combined.shape[0]))
 
     # Concatenate the combined eyes image vertically with the frame
-    return cv2.vconcat([frame, eyes_combined_resized])
+    return cv2.vconcat([draw_frame, eyes_combined_resized])
 
 def landmark_gaze_render(frame: np.ndarray, result: GazeResult):
 
