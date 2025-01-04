@@ -4,12 +4,36 @@ from matplotlib import pyplot as plt
 from matplotlib.colors import Normalize
 import math
 import trimesh
+import imutils
 
 from .data_protocols import GazeResult, EyeResult
 from .model_based import vector_to_pitch_yaw, rotation_matrix_to_euler_angles
 from .constants import *
 
 EYE_IMAGE_WIDTH = 400
+
+
+def pad_and_concat_images(image1, image2):
+    # Get dimensions of both images
+    h1, w1 = image1.shape[:2]
+    h2, w2 = image2.shape[:2]
+
+    # Determine the new dimensions (max height and width)
+    new_height = max(h1, h2)
+    new_width = max(w1, w2)
+
+    # Create new black images with the target dimensions
+    padded_img1 = np.zeros((new_height, new_width, 3), dtype=image1.dtype)
+    padded_img2 = np.zeros((new_height, new_width, 3), dtype=image2.dtype)
+
+    # Copy original images into the padded ones
+    padded_img1[:h1, :w1] = image1
+    padded_img2[:h2, :w2] = image2
+
+    # Horizontally concatenate the two padded images
+    hconcat_image = np.hstack((padded_img1, padded_img2))
+
+    return hconcat_image
 
 def model_based_gaze_render(frame: np.ndarray, result: GazeResult):
 
@@ -126,7 +150,9 @@ def model_based_gaze_render(frame: np.ndarray, result: GazeResult):
         # Create eye image
         original_height, original_width = eye_image.shape[:2]
         original_sizes[i] = (original_width, original_height)
-        new_width, new_height = EYE_IMAGE_WIDTH, int(EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO)
+
+        # new_width, new_height = EYE_IMAGE_WIDTH, int(EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO)
+        new_width, new_height = EYE_IMAGE_WIDTH, (EYE_IMAGE_WIDTH*original_height) // original_width
         eye_image = cv2.resize(eye_image, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
         eye_images[i] = eye_image
 
@@ -159,29 +185,6 @@ def model_based_gaze_render(frame: np.ndarray, result: GazeResult):
             resized_eyeball_pt = shifted_eyeball_pt * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
             cv2.circle(eye_image, tuple(resized_eyeball_pt.astype(int)), 1, (0, 0, 255), -1)
 
-        # Draw the eyeball
-        # if 'eyeball_center_2d' in eye_result.meta_data and eye_result.meta_data['eyeball_center_2d'] is not None:
-            # Offset the eyeball center to the cropped eye
-            # import pdb; pdb.set_trace()
-            # eyeball_center_2d = eye_result.meta_data['eyeball_center_2d']
-            # eyeball_radius_2d = eye_result.meta_data['eyeball_radius_2d']
-            # shifted_eyeball_center_2d = eyeball_center_2d - np.array([int(centroid[0] - width/2), int(centroid[1] - height/2)])
-
-            # Apply the scaling factor
-            # resized_eyeball_center_2d = shifted_eyeball_center_2d * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
-            # resized_eyeball_radius_2d = eyeball_radius_2d * EYE_IMAGE_WIDTH/original_width
-
-            # Draw the eyeball
-            # import pdb; pdb.set_trace()
-            # cv2.circle(eye_image, tuple(resized_eyeball_center_2d.astype(int)), int(resized_eyeball_radius_2d), (0, 0, 255), 1)
- 
-        # Draw the centroid of the eyeball
-        # cv2.circle(eye_image, (int(new_width/2), int(new_height/2)), 3, (255, 0, 0), -1)
-        
-        # Compute the line between the iris center and the centroid
-        # new_shifted_iris_px_center = shifted_iris_px[0] * np.array([EYE_IMAGE_WIDTH/original_width, EYE_IMAGE_WIDTH*EYE_HEIGHT_RATIO/original_height])
-        # cv2.line(eye_image, (int(new_width/2), int(new_height/2)), tuple(new_shifted_iris_px_center.astype(int)), (0, 255, 0), 2)
-
         if is_closed:
             cv2.putText(eye_image, 'Closed', (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
             continue
@@ -190,13 +193,6 @@ def model_based_gaze_render(frame: np.ndarray, result: GazeResult):
         iris_center = iris_px[0]
         pitch, yaw = vector_to_pitch_yaw(eye_result.direction)
         draw_frame = draw_axis(draw_frame, -pitch, -yaw, 0, int(iris_center[0]), int(iris_center[1]), 100)
-
-    # Draw the eyeballs on the frame itself
-    # for eye_result in [result.left, result.right]:
-    #     if 'eyeball_center_2d' in eye_result.meta_data and eye_result.meta_data['eyeball_center_2d'] is not None:
-    #         eyeball_center_2d = eye_result.meta_data['eyeball_center_2d']
-    #         eyeball_radius_2d = eye_result.meta_data['eyeball_radius_2d']
-    #         cv2.circle(frame, tuple(eyeball_center_2d.astype(int)), int(eyeball_radius_2d), (0, 0, 255), 1)
 
     # Draw the FPS on the topright
     fps = 1/result.duration
@@ -209,23 +205,32 @@ def model_based_gaze_render(frame: np.ndarray, result: GazeResult):
     # face_origin = result.face_origin_2d
     # frame = draw_axis(frame, pitch, yaw, -roll, int(face_origin[0]), int(face_origin[1]), 100)
 
-    # Concatenate the images
-    if 'right' not in eye_images:
-        right_eye_image = np.zeros((EYE_IMAGE_WIDTH, EYE_IMAGE_WIDTH, 3), dtype=np.uint8)
-    else:
-        right_eye_image = eye_images['right']
+    # # Concatenate the images
+    # if 'right' not in eye_images:
+    #     right_eye_image = np.zeros((EYE_IMAGE_WIDTH, EYE_IMAGE_WIDTH, 3), dtype=np.uint8)
+    # else:
+    #     right_eye_image = eye_images['right']
 
-    if 'left' not in eye_images:
-        left_eye_image = np.zeros((EYE_IMAGE_WIDTH, EYE_IMAGE_WIDTH, 3), dtype=np.uint8)
-    else:
-        left_eye_image = eye_images['left']
+    # if 'left' not in eye_images:
+    #     left_eye_image = np.zeros((EYE_IMAGE_WIDTH, EYE_IMAGE_WIDTH, 3), dtype=np.uint8)
+    # else:
+    #     left_eye_image = eye_images['left']
+
+    # Combine the eye images
+    eye_combined = pad_and_concat_images(eye_images['right'], eye_images['left'])
 
     # Resize the combined eyes horizontally to match the width of the frame (640 pixels wide)
-    eyes_combined = cv2.hconcat([right_eye_image, left_eye_image])
-    eyes_combined_resized = cv2.resize(eyes_combined, (frame.shape[1], eyes_combined.shape[0]))
-
+    eyes_combined_resized = imutils.resize(eye_combined, width=frame.shape[1])
+    
     # Concatenate the combined eyes image vertically with the frame
-    return cv2.vconcat([draw_frame, eyes_combined_resized])
+    total_frame = cv2.vconcat([draw_frame, eyes_combined_resized])
+
+    # Pad the total frame with black at the bottom to avoid gittering when displaying
+    total_height = total_frame.shape[0]
+    padding_height = 800 - total_height
+    total_frame = cv2.copyMakeBorder(total_frame, 0, padding_height, 0, 0, cv2.BORDER_CONSTANT, value=(0, 0, 0))
+
+    return total_frame
 
 def landmark_gaze_render(frame: np.ndarray, result: GazeResult):
 
