@@ -1,6 +1,9 @@
 # VSCode
 .vscode/
 
+# MacOS
+.DS_Store
+
 # NodeJS
 node_modules/
 

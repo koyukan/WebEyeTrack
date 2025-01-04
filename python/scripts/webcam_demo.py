@@ -48,12 +48,17 @@ print(f"Screen Height: {SCREEN_HEIGHT_MM} mm, Screen Width: {SCREEN_WIDTH_MM} mm
 
 # Load the facemesh triangles
 facemesh_triangles = np.load(GIT_ROOT / 'python' / 'assets' / 'facemesh_triangles.npy')
-
-# import pdb; pdb.set_trace()
 face_mesh = o3d.io.read_triangle_mesh(str(GIT_ROOT / 'python' / 'assets' / 'canonical_face_model.obj'))
 face_mesh.vertices = o3d.utility.Vector3dVector(np.array(face_mesh.vertices) * SCALE * 10)
 face_mesh.triangles = o3d.utility.Vector3iVector(facemesh_triangles)
 face_mesh.compute_vertex_normals()
+
+# Load eyeball model
+eyeball_mesh_fp = GIT_ROOT / 'python' / 'assets' / 'eyeball.obj'
+assert eyeball_mesh_fp.exists()
+eyeball_mesh = o3d.io.read_triangle_mesh(str(eyeball_mesh_fp))
+eyeball_mesh.compute_vertex_normals()
+# import pdb; pdb.set_trace()
 
 # Add the lineset for the face mesh
 face_mesh_lines = o3d.geometry.LineSet.create_from_triangle_mesh(face_mesh)
@@ -155,12 +160,13 @@ if __name__ == '__main__':
     # visual.add_geometry(point_cloud)
 
     # Eyeballs
-    left_eyeball = o3d.geometry.TriangleMesh.create_sphere(radius=12 * SCALE)
-    right_eyeball = o3d.geometry.TriangleMesh.create_sphere(radius=12 * SCALE)
-    left_eyeball.paint_uniform_color([1, 1, 1])
-    right_eyeball.paint_uniform_color([1, 1, 1])
-    visual.add_geometry(left_eyeball)
-    visual.add_geometry(right_eyeball)
+    # left_eyeball = o3d.geometry.TriangleMesh.create_sphere(radius=12 * SCALE)
+    # right_eyeball = o3d.geometry.TriangleMesh.create_sphere(radius=12 * SCALE)
+    # left_eyeball.paint_uniform_color([1, 1, 1])
+    # right_eyeball.paint_uniform_color([1, 1, 1])
+    # visual.add_geometry(left_eyeball)
+    # visual.add_geometry(right_eyeball)
+    visual.add_geometry(eyeball_mesh)
 
     # PoG
     left_pog = o3d.geometry.TriangleMesh.create_sphere(radius=12 * SCALE)
@@ -268,13 +274,13 @@ if __name__ == '__main__':
             # Draw the 3D eyeball and gaze vector
             for side in ['left', 'right']:
                 e = result.left if side == 'left' else result.right
-                ball = left_eyeball if side == 'left' else right_eyeball
+                # ball = left_eyeball if side == 'left' else right_eyeball
                 gaze_vector = left_gaze_vector if side == 'left' else right_gaze_vector
                 pog = left_pog if side == 'left' else right_pog
 
                 # Eyeball
-                ball.translate(e.origin * SCALE, relative=False)
-                visual.update_geometry(ball)
+                # ball.translate(e.origin * SCALE, relative=False)
+                # visual.update_geometry(ball)
 
                 # Gaze vector
                 # direction = e.direction # unit xyz vector
