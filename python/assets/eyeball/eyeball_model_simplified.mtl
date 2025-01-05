@@ -1,0 +1,35 @@
+# Blender 4.3.2 MTL File: 'eyeball_model_simplied.blend'
+# www.blender.org
+
+newmtl EyeBlack
+Ns 1000.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 1
+map_Kd Eye_D.jpg
+
+newmtl Eye_Iris
+Ns 17.647060
+Ka 1.000000 1.000000 1.000000
+Ni 1.000000
+d 1.000000
+illum 2
+map_Kd Eye_D.jpg
+map_Ks Eye_D.jpg
+map_Ke Eye_D.jpg
+map_Bump Eye_N.jpg
+
+newmtl Eye_white
+Ns 550.955444
+Ka 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 2
+map_Kd Eye_D.jpg
+map_Ks Eye_D.jpg
+map_refl REF 1.jpg
+map_Bump Eye_N.jpg

@@ -13,6 +13,7 @@ import imutils
 import math
 
 from webeyetrack import WebEyeTrack
+from webeyetrack.model_based import get_rotation_matrix_from_vector
 from webeyetrack.constants import GIT_ROOT
 from webeyetrack.datasets.utils import draw_landmarks_on_image
 from webeyetrack import vis
@@ -54,14 +55,16 @@ face_mesh.triangles = o3d.utility.Vector3iVector(facemesh_triangles)
 face_mesh.compute_vertex_normals()
 
 # Load eyeball model
-eyeball_mesh_fp = GIT_ROOT / 'python' / 'assets' / 'eyeball' / 'trimesh_eyeball.obj'
+eyeball_mesh_fp = GIT_ROOT / 'python' / 'assets' / 'eyeball' / 'eyeball_model_simplified.obj'
 assert eyeball_mesh_fp.exists()
 eyeball_meshes = {}
+eyeball_R = {}
 for i in ['left', 'right']:
     eyeball_mesh = o3d.io.read_triangle_mesh(str(eyeball_mesh_fp), True)
     eyeball_mesh.vertices = o3d.utility.Vector3dVector(np.array(eyeball_mesh.vertices) * SCALE * 10)
     eyeball_mesh.compute_vertex_normals()
     eyeball_meshes[i] = eyeball_mesh
+    eyeball_R[i] = np.eye(3)
 
 # Add the lineset for the face mesh
 face_mesh_lines = o3d.geometry.LineSet.create_from_triangle_mesh(face_mesh)
@@ -154,21 +157,10 @@ if __name__ == '__main__':
     visual.add_geometry(rectangle_mesh)
 
     # Face Mesh
-    # face_mesh = o3d.geometry.TriangleMesh()
     visual.add_geometry(face_mesh) 
     visual.add_geometry(face_mesh_lines)
-    # point_cloud = o3d.geometry.PointCloud()
-    # point_cloud.points = o3d.utility.Vector3dVector(np.array([[0,0,0], [1, 1, 1]]).reshape(-1, 3))
-    # point_cloud.colors = o3d.utility.Vector3dVector(np.array([[1, 0, 0], [0, 1, 0]]).reshape(-1, 3))
-    # visual.add_geometry(point_cloud)
 
     # Eyeballs
-    # left_eyeball = o3d.geometry.TriangleMesh.create_sphere(radius=12 * SCALE)
-    # right_eyeball = o3d.geometry.TriangleMesh.create_sphere(radius=12 * SCALE)
-    # left_eyeball.paint_uniform_color([1, 1, 1])
-    # right_eyeball.paint_uniform_color([1, 1, 1])
-    # visual.add_geometry(left_eyeball)
-    # visual.add_geometry(right_eyeball)
     visual.add_geometry(eyeball_meshes['left'])
     visual.add_geometry(eyeball_meshes['right'])
 
@@ -284,6 +276,13 @@ if __name__ == '__main__':
                 eyeball_mesh_c = eyeball_meshes[side]
 
                 # Eyeball
+                current_eye_R = eyeball_R[side]
+                eye_R = get_rotation_matrix_from_vector(e.direction)
+
+                # Compute the rotation matrix to rotate the current to the target
+                new_eye_R = np.dot(eye_R, current_eye_R.T)
+                eyeball_R[side] = eye_R
+                eyeball_mesh_c.rotate(new_eye_R)
                 eyeball_mesh_c.translate(e.origin * SCALE, relative=False)
                 visual.update_geometry(eyeball_mesh_c)
 
