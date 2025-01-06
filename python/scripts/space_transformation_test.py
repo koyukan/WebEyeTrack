@@ -12,6 +12,8 @@ from webeyetrack.datasets.utils import draw_landmarks_on_image
 
 import numpy as np
 
+MAX_STEP_CM = 5
+
 def estimate_camera_intrinsics(frame, fov_x=None):
     """
     Estimate focal length and camera intrinsic parameters.
@@ -107,11 +109,11 @@ def refine_depth_by_radial_magnitude(
         # cv2.line(draw_frame, tuple(p1.astype(np.int32)), tuple(p2.astype(np.int32)), color, 2)
 
     distance_per_point = total_distance / len(final_projected_pts)
-    print(f"Distance per point: {distance_per_point}")
+    # print(f"Distance per point: {distance_per_point}")
 
     # Use the total distance to update the depth
     delta = 1e-1 * distance_per_point
-    safe_delta = max(-1, min(1, delta))
+    safe_delta = max(-MAX_STEP_CM, min(MAX_STEP_CM, delta))
     new_z = old_z + safe_delta
 
     return new_z, draw_frame
@@ -161,7 +163,7 @@ def main():
     # # 1) Load canonical mesh
     mesh_path = str(GIT_ROOT / 'python' / 'assets' / 'myface_face_mesh.obj')
     canonical_mesh = trimesh.load(mesh_path, force='mesh')
-    face_width_cm = 14.0
+    face_width_cm = 10
     canonical_pts_3d = np.asarray(canonical_mesh.vertices, dtype=np.float32) * face_width_cm * np.array([-1, 1, -1])
 
     # 2) Setup MediaPipe
@@ -253,9 +255,10 @@ def main():
         shift_3d = image_shift_to_3d(shift_2d, depth_z=guess_z, K=K)
         final_transform = init_transform.copy()
         final_transform[:3, 3] += shift_3d
+        first_final_transform = final_transform.copy()
 
         new_zs = [guess_z]
-        for i in range(2):
+        for i in range(10):
             # Now do the final projection
             final_projected_pts = transform_canonical_mesh(
                 canonical_pts_3d, final_transform, K
@@ -268,16 +271,21 @@ def main():
             # Compute the difference of the Z
             new_zs.append(new_z)
             diff_z = new_z - final_transform[2, 3]
-            if np.abs(diff_z) < 1:
+            if np.abs(diff_z) < 0.5:
                 break
 
-            # Compute the new xy shift
-            # shift_3d = image_shift_to_3d(shift_2d, depth_z=new_z, fx=1000.0, fy=1000.0)
-            # final_transform[:3, 3] += shift_3d
-            # final_transform[:3, 3] = shift_3d
-            # final_transform[2, 3] = new_z
+            # Use similar triangles to compute the new x and y
+            prior_x = first_final_transform[0, 3]
+            prior_y = first_final_transform[1, 3]
+            new_x = prior_x * (new_z / guess_z)
+            new_y = prior_y * (new_z / guess_z)
 
-        print(f"Zs: {new_zs}")
+            # Compute the new xy shift
+            final_transform[0, 3] = new_x
+            final_transform[1, 3] = new_y
+            final_transform[2, 3] = new_z
+
+        # print(f"Zs: {new_zs}")
 
         # 7) Project again with updated Z
         final_projected_pts = transform_canonical_mesh(
@@ -296,6 +304,9 @@ def main():
         # Draw the transformed face vertices only
         # for pt in final_projected_pts:
         #     cv2.circle(draw_frame, tuple(pt), 1, (0, 255, 0), -1)
+
+        # Draw the depth as text on the top-left corner
+        cv2.putText(draw_frame, f"Depth: {final_transform[2,3]:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
         cv2.imshow("Face Mesh", draw_frame)
         if cv2.waitKey(1) & 0xFF == ord("q"):
