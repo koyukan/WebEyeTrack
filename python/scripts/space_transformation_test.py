@@ -15,7 +15,7 @@ def refine_depth_by_radial_magnitude(
     final_projected_pts: np.ndarray,
     detected_2d: np.ndarray,
     old_z: float,
-    alpha: float = 0.5
+    alpha: float = 0.5,
 ) -> float:
     """
     Refines the face depth (Z) by comparing the radial 2D magnitude
@@ -32,8 +32,12 @@ def refine_depth_by_radial_magnitude(
     Returns:
       new_z: float, the updated depth
     """
+    # Make a copy of the frame
+    draw_frame = frame.copy()
+
     # Compute the centroid of the detected 2D points
     detected_center = detected_2d.mean(axis=0)
+    total_distance = 0
 
     # For each landmark pair, draw the lines between
     for i in range(len(final_projected_pts)):
@@ -44,6 +48,8 @@ def refine_depth_by_radial_magnitude(
         # of the detected face or away from it.
         # Vector from p1 to p2
         v = p2 - p1
+        v_norm = np.linalg.norm(v)
+
         # Vector from p1 to the detected center
         c = detected_center - p1
         dot_product = np.dot(v, c)
@@ -51,14 +57,22 @@ def refine_depth_by_radial_magnitude(
             # The line is pointing towards the center
             # Draw the line in red
             color = (0, 0, 255)
+            total_distance += v_norm
         else:
             # The line is pointing away from the center
             # Draw the line in green
             color = (0, 255, 0)
+            total_distance -= v_norm
 
-        cv2.line(frame, tuple(p1.astype(np.int32)), tuple(p2.astype(np.int32)), color, 2)
+        # cv2.line(draw_frame, tuple(p1.astype(np.int32)), tuple(p2.astype(np.int32)), color, 2)
 
-    return old_z
+    distance_per_point = total_distance / len(final_projected_pts)
+    print(f"Distance per point: {distance_per_point}")
+
+    # Use the total distance to update the depth
+    new_z = old_z + 1e-1 * distance_per_point
+
+    return new_z, draw_frame
 
 def partial_procrustes_translation_2d(canonical_2d, detected_2d):
     c_center = canonical_2d.mean(axis=0)
@@ -201,15 +215,26 @@ def main():
         final_transform = init_transform.copy()
         final_transform[:3, 3] += shift_3d
 
-        # Now do the final projection
-        final_projected_pts = transform_canonical_mesh(
-            canonical_pts_3d, final_transform, width, height
-        )
-        
-        new_z = refine_depth_by_radial_magnitude(
-            frame, final_projected_pts, detected_2d, old_z=final_transform[2, 3], alpha=0.5
-        )
-        final_transform[2, 3] = new_z  # update the Z
+        new_zs = [guess_z]
+        for i in range(10):
+            # Now do the final projection
+            final_projected_pts = transform_canonical_mesh(
+                canonical_pts_3d, final_transform, width, height
+            )
+            
+            new_z, draw_frame = refine_depth_by_radial_magnitude(
+                frame, final_projected_pts, detected_2d, old_z=final_transform[2, 3], alpha=0.5
+            )
+
+            # Compute the difference of the Z
+            new_zs.append(new_z)
+            diff_z = new_z - final_transform[2, 3]
+            if np.abs(diff_z) < 1:
+                break
+
+            final_transform[2, 3] = new_z  # update the Z
+
+        print(f"Zs: {new_zs}")
 
         # 7) Project again with updated Z
         final_projected_pts = transform_canonical_mesh(
@@ -217,19 +242,19 @@ def main():
         ).astype(np.int32)
 
         # Draw the transformed face mesh
-        # for triangle in canonical_mesh.faces:
-        #     p1 = final_projected_pts[triangle[0]]
-        #     p2 = final_projected_pts[triangle[1]]
-        #     p3 = final_projected_pts[triangle[2]]
-        #     cv2.line(frame, p1, p2, (0, 255, 0), 1)
-        #     cv2.line(frame, p2, p3, (0, 255, 0), 1)
-        #     cv2.line(frame, p3, p1, (0, 255, 0), 1)
+        for triangle in canonical_mesh.faces:
+            p1 = final_projected_pts[triangle[0]]
+            p2 = final_projected_pts[triangle[1]]
+            p3 = final_projected_pts[triangle[2]]
+            cv2.line(draw_frame, p1, p2, (0, 255, 0), 1)
+            cv2.line(draw_frame, p2, p3, (0, 255, 0), 1)
+            cv2.line(draw_frame, p3, p1, (0, 255, 0), 1)
 
         # Draw the transformed face vertices only
-        for pt in final_projected_pts:
-            cv2.circle(frame, tuple(pt), 1, (0, 255, 0), -1)
+        # for pt in final_projected_pts:
+        #     cv2.circle(draw_frame, tuple(pt), 1, (0, 255, 0), -1)
 
-        cv2.imshow("Face Mesh", frame)
+        cv2.imshow("Face Mesh", draw_frame)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
 
