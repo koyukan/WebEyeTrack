@@ -32,12 +32,31 @@ def refine_depth_by_radial_magnitude(
     Returns:
       new_z: float, the updated depth
     """
+    # Compute the centroid of the detected 2D points
+    detected_center = detected_2d.mean(axis=0)
 
     # For each landmark pair, draw the lines between
     for i in range(len(final_projected_pts)):
         p1 = final_projected_pts[i]
         p2 = detected_2d[i]
-        cv2.line(frame, tuple(p1.astype(np.int32)), tuple(p2.astype(np.int32)), (0, 0, 255), 2)
+
+        # Determine if the line is pointing towards the center
+        # of the detected face or away from it.
+        # Vector from p1 to p2
+        v = p2 - p1
+        # Vector from p1 to the detected center
+        c = detected_center - p1
+        dot_product = np.dot(v, c)
+        if dot_product < 0:
+            # The line is pointing towards the center
+            # Draw the line in red
+            color = (0, 0, 255)
+        else:
+            # The line is pointing away from the center
+            # Draw the line in green
+            color = (0, 255, 0)
+
+        cv2.line(frame, tuple(p1.astype(np.int32)), tuple(p2.astype(np.int32)), color, 2)
 
     return old_z
 
@@ -198,7 +217,7 @@ def main():
         ).astype(np.int32)
 
         # Draw the transformed face mesh
-        # for triangle in canonical_mesh.triangles:
+        # for triangle in canonical_mesh.faces:
         #     p1 = final_projected_pts[triangle[0]]
         #     p2 = final_projected_pts[triangle[1]]
         #     p3 = final_projected_pts[triangle[2]]
