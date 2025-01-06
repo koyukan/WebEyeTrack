@@ -10,6 +10,44 @@ import trimesh
 from webeyetrack.constants import GIT_ROOT
 from webeyetrack.datasets.utils import draw_landmarks_on_image
 
+import numpy as np
+
+def estimate_camera_intrinsics(frame, fov_x=None):
+    """
+    Estimate focal length and camera intrinsic parameters.
+    
+    Parameters:
+    - frame: NumPy array representing the image.
+    - fov_x: Horizontal field of view of the camera in degrees (optional).
+    
+    Returns:
+    - K: Intrinsics matrix (3x3).
+    """
+    h, w = frame.shape[:2]
+    
+    # Assume optical center is at the image center
+    c_x = w / 2
+    c_y = h / 2
+    
+    if fov_x is not None:
+        # Convert FOV from degrees to radians
+        fov_x_rad = np.radians(fov_x)
+        # Estimate focal length in pixels
+        f_x = w / (2 * np.tan(fov_x_rad / 2))
+        f_y = f_x  # Assume square pixels (f_x = f_y)
+    else:
+        # If no FOV is provided, assume a generic focal length
+        f_x = f_y = w  # Rough estimate (assuming 1 pixel ≈ 1 focal length)
+    
+    # Construct the camera intrinsic matrix
+    K = np.array([
+        [f_x, 0, c_x],
+        [0, f_y, c_y],
+        [0,  0,   1]
+    ])
+    
+    return K
+
 def refine_depth_by_radial_magnitude(
     frame: np.ndarray,
     final_projected_pts: np.ndarray,
@@ -38,6 +76,8 @@ def refine_depth_by_radial_magnitude(
     # Compute the centroid of the detected 2D points
     detected_center = detected_2d.mean(axis=0)
     total_distance = 0
+    # Draw the center
+    # cv2.circle(draw_frame, tuple(detected_center.astype(np.int32)), 10, (0, 255, 255), -1)
 
     # For each landmark pair, draw the lines between
     for i in range(len(final_projected_pts)):
@@ -70,7 +110,9 @@ def refine_depth_by_radial_magnitude(
     print(f"Distance per point: {distance_per_point}")
 
     # Use the total distance to update the depth
-    new_z = old_z + 1e-1 * distance_per_point
+    delta = 1e-1 * distance_per_point
+    safe_delta = max(-1, min(1, delta))
+    new_z = old_z + safe_delta
 
     return new_z, draw_frame
 
@@ -79,7 +121,9 @@ def partial_procrustes_translation_2d(canonical_2d, detected_2d):
     d_center = detected_2d.mean(axis=0)
     return d_center - c_center
 
-def image_shift_to_3d(shift_2d, depth_z, fx=1000.0, fy=1000.0):
+def image_shift_to_3d(shift_2d, depth_z, K):
+    fx = K[0, 0]
+    fy = K[1, 1]
     dx_3d = shift_2d[0] * (depth_z / fx)
     dy_3d = shift_2d[1] * (depth_z / fy)
     return np.array([dx_3d, dy_3d, 0.0], dtype=np.float32)
@@ -90,15 +134,8 @@ def load_canonical_mesh(mesh_path):
     mesh.triangles = o3d.utility.Vector3iVector(np.array(mesh.triangles))
     return mesh
 
-def transform_canonical_mesh(canonical_points, rt_matrix, width, height):
+def transform_canonical_mesh(canonical_points, rt_matrix, K):
     # same as you had before, with perspective divide...
-    fx = fy = 1000.0
-    intrinsics = np.array([
-        [fx,     0, width / 2],
-        [ 0,    fy, height / 2],
-        [ 0,     0,         1]
-    ])
-
     num_points = len(canonical_points)
     canonical_points_h = np.hstack([
         canonical_points, 
@@ -106,7 +143,7 @@ def transform_canonical_mesh(canonical_points, rt_matrix, width, height):
     ])
     transformed_points_h = (rt_matrix @ canonical_points_h.T).T
     transformed_xyz = transformed_points_h[:, :3]
-    camera_space = (intrinsics @ transformed_xyz.T).T
+    camera_space = (K @ transformed_xyz.T).T
 
     eps = 1e-6
     zs = np.where(np.abs(camera_space[:, 2]) < eps, eps, camera_space[:, 2])
@@ -122,15 +159,10 @@ def main():
     PYTHON_DIR = CWD.parent
 
     # # 1) Load canonical mesh
-    # mesh_path = str(GIT_ROOT / 'python' / 'assets' / 'canonical_face_model.obj')
     mesh_path = str(GIT_ROOT / 'python' / 'assets' / 'myface_face_mesh.obj')
-    # canonical_mesh = load_canonical_mesh(mesh_path)
     canonical_mesh = trimesh.load(mesh_path, force='mesh')
     face_width_cm = 14.0
     canonical_pts_3d = np.asarray(canonical_mesh.vertices, dtype=np.float32) * face_width_cm * np.array([-1, 1, -1])
-
-    # Mirror the X-axis
-    # canonical_pts_3d[:, 0] *= -1.0
 
     # 2) Setup MediaPipe
     base_options = python.BaseOptions(
@@ -145,13 +177,18 @@ def main():
     face_landmarker = vision.FaceLandmarker.create_from_options(options)
 
     cap = cv2.VideoCapture(0)
+    
+    # Get the cap sizes
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    K = estimate_camera_intrinsics(np.zeros((height, width, 3)))
+
     while cap.isOpened():
         success, frame = cap.read()
         if not success:
             break
 
         frame = cv2.flip(frame, 1)
-        height, width, _ = frame.shape
 
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame.astype(np.uint8))
         detection_results = face_landmarker.detect(mp_image)
@@ -167,6 +204,7 @@ def main():
         # 3) Extract the face transformation matrix from MediaPipe
         face_rt = detection_results.facial_transformation_matrixes[0]  # shape (4,4)
         face_r = face_rt[:3, :3].copy()
+
         # Scale is embedded in face_r's columns
         scales = np.linalg.norm(face_r, axis=0)
         face_s = scales.mean()  # average scale
@@ -177,9 +215,9 @@ def main():
 
         # ---------------------------------------------------------------
         # (A) Build an initial 4x4 transform that has R, s, and some guess at Z
-        #     For example, -30 in front of the camera
+        #     For example, -60 in front of the camera
         # ---------------------------------------------------------------
-        guess_z = -30.0
+        guess_z = -60.0
         init_transform = np.eye(4, dtype=np.float32)
         init_transform[:3, :3] = face_s * face_r
         init_transform[:3, 3]  = np.array([0, 0, guess_z], dtype=np.float32)
@@ -189,7 +227,7 @@ def main():
         #     We'll get a set of 2D points in pixel space
         # ---------------------------------------------------------------
         canonical_proj_2d = transform_canonical_mesh(
-            canonical_pts_3d, init_transform, width, height
+            canonical_pts_3d, init_transform, K 
         ).astype(np.float32)  # shape (N, 2)
 
         # ---------------------------------------------------------------
@@ -211,15 +249,16 @@ def main():
         # (E) Convert that 2D shift to a 3D offset at depth guess_z
         #     Then add it to the transform's translation
         # ---------------------------------------------------------------
-        shift_3d = image_shift_to_3d(shift_2d, depth_z=guess_z, fx=1000.0, fy=1000.0)
+        # Estimate the fx and fy based on the frame size
+        shift_3d = image_shift_to_3d(shift_2d, depth_z=guess_z, K=K)
         final_transform = init_transform.copy()
         final_transform[:3, 3] += shift_3d
 
         new_zs = [guess_z]
-        for i in range(10):
+        for i in range(2):
             # Now do the final projection
             final_projected_pts = transform_canonical_mesh(
-                canonical_pts_3d, final_transform, width, height
+                canonical_pts_3d, final_transform, K
             )
             
             new_z, draw_frame = refine_depth_by_radial_magnitude(
@@ -232,13 +271,17 @@ def main():
             if np.abs(diff_z) < 1:
                 break
 
-            final_transform[2, 3] = new_z  # update the Z
+            # Compute the new xy shift
+            # shift_3d = image_shift_to_3d(shift_2d, depth_z=new_z, fx=1000.0, fy=1000.0)
+            # final_transform[:3, 3] += shift_3d
+            # final_transform[:3, 3] = shift_3d
+            # final_transform[2, 3] = new_z
 
         print(f"Zs: {new_zs}")
 
         # 7) Project again with updated Z
         final_projected_pts = transform_canonical_mesh(
-            canonical_pts_3d, final_transform, width, height
+            canonical_pts_3d, final_transform, K
         ).astype(np.int32)
 
         # Draw the transformed face mesh
