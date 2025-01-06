@@ -5,9 +5,41 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import open3d as o3d
 import pathlib
+import trimesh
 
 from webeyetrack.constants import GIT_ROOT
 from webeyetrack.datasets.utils import draw_landmarks_on_image
+
+def refine_depth_by_radial_magnitude(
+    frame: np.ndarray,
+    final_projected_pts: np.ndarray,
+    detected_2d: np.ndarray,
+    old_z: float,
+    alpha: float = 0.5
+) -> float:
+    """
+    Refines the face depth (Z) by comparing the radial 2D magnitude
+    from the center of the face in 'final_projected_pts' versus
+    the center of the face in 'detected_2d'.
+
+    Args:
+      final_projected_pts: (N, 2) the 2D projection of the canonical mesh
+                          AFTER we've aligned X/Y.
+      detected_2d:        (N, 2) the detected landmarks in pixel coords.
+      old_z:              float, the current guess for Z (negative if forward).
+      alpha:              a blending factor [0..1]. 0 -> no update, 1 -> full update.
+
+    Returns:
+      new_z: float, the updated depth
+    """
+
+    # For each landmark pair, draw the lines between
+    for i in range(len(final_projected_pts)):
+        p1 = final_projected_pts[i]
+        p2 = detected_2d[i]
+        cv2.line(frame, tuple(p1.astype(np.int32)), tuple(p2.astype(np.int32)), (0, 0, 255), 2)
+
+    return old_z
 
 def partial_procrustes_translation_2d(canonical_2d, detected_2d):
     c_center = canonical_2d.mean(axis=0)
@@ -56,10 +88,16 @@ def main():
     CWD = pathlib.Path(__file__).parent
     PYTHON_DIR = CWD.parent
 
-    # 1) Load canonical mesh
-    mesh_path = str(GIT_ROOT / 'python' / 'assets' / 'canonical_face_model.obj')
-    canonical_mesh = load_canonical_mesh(mesh_path)
-    canonical_pts_3d = np.asarray(canonical_mesh.vertices, dtype=np.float32)
+    # # 1) Load canonical mesh
+    # mesh_path = str(GIT_ROOT / 'python' / 'assets' / 'canonical_face_model.obj')
+    mesh_path = str(GIT_ROOT / 'python' / 'assets' / 'myface_face_mesh.obj')
+    # canonical_mesh = load_canonical_mesh(mesh_path)
+    canonical_mesh = trimesh.load(mesh_path, force='mesh')
+    face_width_cm = 14.0
+    canonical_pts_3d = np.asarray(canonical_mesh.vertices, dtype=np.float32) * face_width_cm * np.array([-1, 1, -1])
+
+    # Mirror the X-axis
+    # canonical_pts_3d[:, 0] *= -1.0
 
     # 2) Setup MediaPipe
     base_options = python.BaseOptions(
@@ -148,15 +186,29 @@ def main():
         final_projected_pts = transform_canonical_mesh(
             canonical_pts_3d, final_transform, width, height
         )
+        
+        new_z = refine_depth_by_radial_magnitude(
+            frame, final_projected_pts, detected_2d, old_z=final_transform[2, 3], alpha=0.5
+        )
+        final_transform[2, 3] = new_z  # update the Z
+
+        # 7) Project again with updated Z
+        final_projected_pts = transform_canonical_mesh(
+            canonical_pts_3d, final_transform, width, height
+        ).astype(np.int32)
 
         # Draw the transformed face mesh
-        for triangle in canonical_mesh.triangles:
-            p1 = final_projected_pts[triangle[0]]
-            p2 = final_projected_pts[triangle[1]]
-            p3 = final_projected_pts[triangle[2]]
-            cv2.line(frame, p1, p2, (0, 255, 0), 1)
-            cv2.line(frame, p2, p3, (0, 255, 0), 1)
-            cv2.line(frame, p3, p1, (0, 255, 0), 1)
+        # for triangle in canonical_mesh.triangles:
+        #     p1 = final_projected_pts[triangle[0]]
+        #     p2 = final_projected_pts[triangle[1]]
+        #     p3 = final_projected_pts[triangle[2]]
+        #     cv2.line(frame, p1, p2, (0, 255, 0), 1)
+        #     cv2.line(frame, p2, p3, (0, 255, 0), 1)
+        #     cv2.line(frame, p3, p1, (0, 255, 0), 1)
+
+        # Draw the transformed face vertices only
+        for pt in final_projected_pts:
+            cv2.circle(frame, tuple(pt), 1, (0, 255, 0), -1)
 
         cv2.imshow("Face Mesh", frame)
         if cv2.waitKey(1) & 0xFF == ord("q"):
