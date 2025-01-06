@@ -9,123 +9,82 @@ import pathlib
 from webeyetrack.constants import GIT_ROOT
 from webeyetrack.datasets.utils import draw_landmarks_on_image
 
-CWD = pathlib.Path(__file__).parent
-PYTHON_DIR = CWD.parent
+def partial_procrustes_translation_2d(canonical_2d, detected_2d):
+    c_center = canonical_2d.mean(axis=0)
+    d_center = detected_2d.mean(axis=0)
+    return d_center - c_center
 
-# Load the canonical face mesh
+def image_shift_to_3d(shift_2d, depth_z, fx=1000.0, fy=1000.0):
+    dx_3d = shift_2d[0] * (depth_z / fx)
+    dy_3d = shift_2d[1] * (depth_z / fy)
+    return np.array([dx_3d, dy_3d, 0.0], dtype=np.float32)
+
 def load_canonical_mesh(mesh_path):
     mesh = o3d.io.read_triangle_mesh(mesh_path)
     mesh.vertices = o3d.utility.Vector3dVector(np.array(mesh.vertices))
     mesh.triangles = o3d.utility.Vector3iVector(np.array(mesh.triangles))
     return mesh
 
-# Transform the canonical face mesh to screen space
-# def transform_canonical_mesh(canonical_points, rt_matrix, width, height):
-#     transformed_points = []
-#     for point in canonical_points:
-#         # Convert to homogeneous coordinates
-#         canonical_point_h = np.append(point, 1)
-#         # Apply rotation-translation matrix
-#         transformed_point = np.dot(rt_matrix, canonical_point_h)
-#         # Perspective divide and convert to screen space
-#         screen_x = (transformed_point[0] / transformed_point[2]) * width / 2 + width / 2
-#         screen_y = (-transformed_point[1] / transformed_point[2]) * height / 2 + height / 2
-#         transformed_points.append((int(screen_x), int(screen_y)))
-#     return transformed_points
-
 def transform_canonical_mesh(canonical_points, rt_matrix, width, height):
-    """
-    Projects canonical 3D points into 2D screen coordinates using a
-    virtual perspective camera.
-
-    Args:
-        canonical_points: (N, 3) numpy array of 3D points in canonical space
-        rt_matrix: (4, 4) rigid (or similarity) transformation matrix
-        width, height: Image size for the principal point in intrinsics
-
-    Returns:
-        projected_points: (N, 2) int32 numpy array of pixel coordinates
-    """
-    # Intrinsic camera matrix (example)
-    # fx = fy = 1000, cx = width/2, cy = height/2
+    # same as you had before, with perspective divide...
+    fx = fy = 1000.0
     intrinsics = np.array([
-        [1000,    0, width / 2],
-        [   0, 1000, height / 2],
-        [   0,    0,          1]
+        [fx,     0, width / 2],
+        [ 0,    fy, height / 2],
+        [ 0,     0,         1]
     ])
 
-    # 1) Convert canonical 3D points to homogeneous coordinates: (x, y, z, 1)
     num_points = len(canonical_points)
     canonical_points_h = np.hstack([
         canonical_points, 
         np.ones((num_points, 1), dtype=np.float32)
-    ])  # shape: (N, 4)
-
-    # 2) Apply the 4x4 rigid (or similarity) transformation
-    #    transformed_points_h will be shape (N, 4).
+    ])
     transformed_points_h = (rt_matrix @ canonical_points_h.T).T
+    transformed_xyz = transformed_points_h[:, :3]
+    camera_space = (intrinsics @ transformed_xyz.T).T
 
-    # 3) Multiply by the 3x4 (intrinsics) if needed, or 3x3 if you treat the top-left 3x3
-    #    But usually we do 3x4 by ignoring the last column of intrinsics. 
-    #    Here we treat intrinsics as 3x3, so we only multiply the (x, y, z) part:
-    #    Note: we only need the first 3 components (x,y,z) from the transformed points for intrinsics multiplication.
-    transformed_xyz = transformed_points_h[:, :3]  # shape (N, 3)
-    # shape for multiplication: (3x3) @ (3xN) => (3xN)
-    camera_space = (intrinsics @ transformed_xyz.T).T  # shape (N, 3)
-
-    # 4) Perspective divide: X'/Z', Y'/Z'
-    #    Make sure we don't divide by zero (if Z' is zero or very close to zero).
     eps = 1e-6
     zs = np.where(np.abs(camera_space[:, 2]) < eps, eps, camera_space[:, 2])
     camera_space[:, 0] /= zs
     camera_space[:, 1] /= zs
 
-    # 5) The resulting (x, y) are the pixel coordinates in the image plane
     projected_points = camera_space[:, :2]
-
-    # 6) Convert to int (pixel) coordinates
     projected_points = projected_points.astype(np.int32)
-
     return projected_points
 
-# Compute rigid transform between canonical and detected landmarks
-def estimate_rigid_transform(canonical_points, detected_points):
-    src = np.array(canonical_points, dtype=np.float32)
-    dst = np.array(detected_points, dtype=np.float32)
-    matrix, _ = cv2.estimateAffine3D(src, dst)
-    if matrix is None:
-        raise ValueError("Could not compute a valid rigid transform")
-    return np.vstack([matrix, [0, 0, 0, 1]])
-
-# Main function
 def main():
-    # Load the canonical face mesh
+    CWD = pathlib.Path(__file__).parent
+    PYTHON_DIR = CWD.parent
+
+    # 1) Load canonical mesh
     mesh_path = str(GIT_ROOT / 'python' / 'assets' / 'canonical_face_model.obj')
     canonical_mesh = load_canonical_mesh(mesh_path)
+    canonical_pts_3d = np.asarray(canonical_mesh.vertices, dtype=np.float32)
 
-    # Setup MediaPipe Face Landmark model
-    base_options = python.BaseOptions(model_asset_path=str(PYTHON_DIR / 'weights' / 'face_landmarker_v2_with_blendshapes.task'))
-    options = vision.FaceLandmarkerOptions(base_options=base_options,
-                                        output_face_blendshapes=True,
-                                        output_facial_transformation_matrixes=True,
-                                        num_faces=1)
+    # 2) Setup MediaPipe
+    base_options = python.BaseOptions(
+        model_asset_path=str(PYTHON_DIR / 'weights' / 'face_landmarker_v2_with_blendshapes.task')
+    )
+    options = vision.FaceLandmarkerOptions(
+        base_options=base_options,
+        output_face_blendshapes=True,
+        output_facial_transformation_matrixes=True,
+        num_faces=1
+    )
     face_landmarker = vision.FaceLandmarker.create_from_options(options)
 
-    # Open webcam
     cap = cv2.VideoCapture(0)
     while cap.isOpened():
         success, frame = cap.read()
         if not success:
             break
 
-        # Flip and convert frame to RGB
-        frame_rgb = cv2.cvtColor(cv2.flip(frame, 1), cv2.COLOR_BGR2RGB)
+        frame = cv2.flip(frame, 1)
         height, width, _ = frame.shape
 
-        # Process the frame with MediaPipe
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame.astype(np.uint8))
         detection_results = face_landmarker.detect(mp_image)
-        if len(detection_results.face_landmarks) == 0:
+        if not detection_results.face_landmarks:
             cv2.imshow("Face Mesh", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
@@ -134,31 +93,71 @@ def main():
         # Draw the landmarks
         frame = draw_landmarks_on_image(frame, detection_results)
 
-        # Given the transformation matrix, transform the canonical face mesh to screen space
-        face_rt = detection_results.facial_transformation_matrixes[0]
-
-        # Decouple the rotation, translation and scale of the face_rt
-        face_r = face_rt[:3, :3]
-        face_t = face_rt[:3, 3]
-        face_s = np.linalg.norm(face_r, axis=0)
+        # 3) Extract the face transformation matrix from MediaPipe
+        face_rt = detection_results.facial_transformation_matrixes[0]  # shape (4,4)
+        face_r = face_rt[:3, :3].copy()
+        # Scale is embedded in face_r's columns
+        scales = np.linalg.norm(face_r, axis=0)
+        face_s = scales.mean()  # average scale
         face_r /= face_s
 
-        # Only use the rotation of the transformation matrix
-        new_face_rt = np.ones((4, 4))
-        new_face_rt[:3, :3] = np.eye(3)
-        new_face_rt[:3, 3] = np.array([0, 0, -30])
-        transformed_points = transform_canonical_mesh(canonical_mesh.vertices, new_face_rt, width, height)
+        # Optionally flip the x-axis
+        face_r[0, :] *= -1.0
+
+        # ---------------------------------------------------------------
+        # (A) Build an initial 4x4 transform that has R, s, and some guess at Z
+        #     For example, -30 in front of the camera
+        # ---------------------------------------------------------------
+        guess_z = -30.0
+        init_transform = np.eye(4, dtype=np.float32)
+        init_transform[:3, :3] = face_s * face_r
+        init_transform[:3, 3]  = np.array([0, 0, guess_z], dtype=np.float32)
+
+        # ---------------------------------------------------------------
+        # (B) Project canonical mesh using this initial transform
+        #     We'll get a set of 2D points in pixel space
+        # ---------------------------------------------------------------
+        canonical_proj_2d = transform_canonical_mesh(
+            canonical_pts_3d, init_transform, width, height
+        ).astype(np.float32)  # shape (N, 2)
+
+        # ---------------------------------------------------------------
+        # (C) Get the DETECTED 2D landmarks from MediaPipe
+        #     They are in normalized [0..1], so multiply by width/height
+        # ---------------------------------------------------------------
+        mp_landmarks = detection_results.face_landmarks[0]
+        detected_2d = np.array([
+            [lm.x * width, lm.y * height] for lm in mp_landmarks
+        ], dtype=np.float32)  # shape (468, 2)
+
+        # ---------------------------------------------------------------
+        # (D) Do partial Procrustes in 2D: translation only
+        #     shift_2d = (mean(detected) - mean(canonical_proj))
+        # ---------------------------------------------------------------
+        shift_2d = partial_procrustes_translation_2d(canonical_proj_2d, detected_2d)
+
+        # ---------------------------------------------------------------
+        # (E) Convert that 2D shift to a 3D offset at depth guess_z
+        #     Then add it to the transform's translation
+        # ---------------------------------------------------------------
+        shift_3d = image_shift_to_3d(shift_2d, depth_z=guess_z, fx=1000.0, fy=1000.0)
+        final_transform = init_transform.copy()
+        final_transform[:3, 3] += shift_3d
+
+        # Now do the final projection
+        final_projected_pts = transform_canonical_mesh(
+            canonical_pts_3d, final_transform, width, height
+        )
 
         # Draw the transformed face mesh
         for triangle in canonical_mesh.triangles:
-            p1 = transformed_points[triangle[0]]
-            p2 = transformed_points[triangle[1]]
-            p3 = transformed_points[triangle[2]]
+            p1 = final_projected_pts[triangle[0]]
+            p2 = final_projected_pts[triangle[1]]
+            p3 = final_projected_pts[triangle[2]]
             cv2.line(frame, p1, p2, (0, 255, 0), 1)
             cv2.line(frame, p2, p3, (0, 255, 0), 1)
             cv2.line(frame, p3, p1, (0, 255, 0), 1)
 
-        # Show the webcam frame
         cv2.imshow("Face Mesh", frame)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
