@@ -122,9 +122,12 @@ def refine_depth_by_radial_magnitude(
     return new_z, draw_frame
 
 def partial_procrustes_translation_2d(canonical_2d, detected_2d):
-    c_center = canonical_2d.mean(axis=0)
-    d_center = detected_2d.mean(axis=0)
-    return d_center - c_center
+    # c_center = canonical_2d.mean(axis=0)
+    # d_center = detected_2d.mean(axis=0)
+    # return d_center - c_center
+    c_nose = canonical_2d[4]
+    d_nose = detected_2d[4]
+    return d_nose - c_nose
 
 def image_shift_to_3d(shift_2d, depth_z, K):
     fx = K[0, 0]
@@ -208,7 +211,7 @@ def main():
             continue
 
         # Draw the landmarks
-        frame = draw_landmarks_on_image(frame, detection_results)
+        # frame = draw_landmarks_on_image(frame, detection_results)
 
         # Compute the face bounding box based on the MediaPipe landmarks
         try:
