@@ -12,7 +12,10 @@ from webeyetrack.datasets.utils import draw_landmarks_on_image
 
 import numpy as np
 
+from create_canonical_face import convert_uv_to_xyz, create_perspective_matrix
+
 MAX_STEP_CM = 5
+
 
 def estimate_camera_intrinsics(frame, fov_x=None):
     """
@@ -161,10 +164,13 @@ def main():
     PYTHON_DIR = CWD.parent
 
     # # 1) Load canonical mesh
-    mesh_path = str(GIT_ROOT / 'python' / 'assets' / 'myface_face_mesh.obj')
-    canonical_mesh = trimesh.load(mesh_path, force='mesh')
-    face_width_cm = 10
-    canonical_pts_3d = np.asarray(canonical_mesh.vertices, dtype=np.float32) * face_width_cm * np.array([-1, 1, -1])
+    # mesh_path = str(GIT_ROOT / 'python' / 'assets' / 'myface_face_mesh.obj')
+    # canonical_mesh = trimesh.load(mesh_path, force='mesh')
+    face_width_cm = 14
+    # canonical_pts_3d = np.asarray(canonical_mesh.vertices, dtype=np.float32) * face_width_cm * np.array([-1, 1, -1])
+    
+    # Load the facemesh triangles
+    facemesh_triangles = np.load(GIT_ROOT / 'python' / 'assets' / 'facemesh_triangles.npy')
 
     # 2) Setup MediaPipe
     base_options = python.BaseOptions(
@@ -184,6 +190,7 @@ def main():
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     K = estimate_camera_intrinsics(np.zeros((height, width, 3)))
+    perspective_matrix = create_perspective_matrix(aspect_ratio=width / height)
 
     while cap.isOpened():
         success, frame = cap.read()
@@ -203,6 +210,28 @@ def main():
         # Draw the landmarks
         frame = draw_landmarks_on_image(frame, detection_results)
 
+        # Compute the face bounding box based on the MediaPipe landmarks
+        try:
+            face_landmarks_proto = detection_results.face_landmarks[0]
+        except:
+            continue
+
+        # Extract information fro the results
+        face_landmarks = np.array([[lm.x, lm.y, lm.z, lm.visibility, lm.presence] for lm in face_landmarks_proto])
+
+        # Convert uvz to xyz
+        relative_face_mesh = np.array([convert_uv_to_xyz(perspective_matrix, x[0], x[1], x[2]) for x in face_landmarks[:, :3]])
+        
+        # Center to the nose 
+        nose = relative_face_mesh[4]
+        relative_face_mesh = relative_face_mesh - nose
+        
+        # make the width of the face length=1
+        leftmost = np.min(relative_face_mesh[:, 0])
+        rightmost = np.max(relative_face_mesh[:, 0])
+        relative_face_mesh[:, :] /= rightmost - leftmost
+        canonical_pts_3d = relative_face_mesh * face_width_cm
+
         # 3) Extract the face transformation matrix from MediaPipe
         face_rt = detection_results.facial_transformation_matrixes[0]  # shape (4,4)
         face_r = face_rt[:3, :3].copy()
@@ -221,7 +250,7 @@ def main():
         # ---------------------------------------------------------------
         guess_z = -60.0
         init_transform = np.eye(4, dtype=np.float32)
-        init_transform[:3, :3] = face_s * face_r
+        # init_transform[:3, :3] = face_s * face_r
         init_transform[:3, 3]  = np.array([0, 0, guess_z], dtype=np.float32)
 
         # ---------------------------------------------------------------
@@ -293,7 +322,8 @@ def main():
         ).astype(np.int32)
 
         # Draw the transformed face mesh
-        for triangle in canonical_mesh.faces:
+        # for triangle in canonical_mesh.faces:
+        for triangle in facemesh_triangles:
             p1 = final_projected_pts[triangle[0]]
             p2 = final_projected_pts[triangle[1]]
             p3 = final_projected_pts[triangle[2]]
