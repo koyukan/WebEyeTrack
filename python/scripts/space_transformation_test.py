@@ -15,7 +15,78 @@ import numpy as np
 from create_canonical_face import convert_uv_to_xyz, create_perspective_matrix
 
 MAX_STEP_CM = 5
+SCALE = 2e-3
 
+def create_rotation_matrix(rotation):
+    """
+    Creates a rotation matrix with deg vector.
+    
+    Parameters:
+    - rotation (list or np.array): Rotation vector in degrees [pitch, yaw, roll].
+    
+    Returns:
+    - rotation matrix(np.array): 3x3 transformation matrix.
+    """
+    # Convert rotation from degrees to radians
+    pitch, yaw, roll = np.radians(rotation)
+    
+    # Rotation matrices
+    R_x = np.array([
+        [1, 0, 0],
+        [0, np.cos(pitch), -np.sin(pitch)],
+        [0, np.sin(pitch), np.cos(pitch)]
+    ])
+    
+    R_y = np.array([
+        [np.cos(yaw), 0, np.sin(yaw)],
+        [0, 1, 0],
+        [-np.sin(yaw), 0, np.cos(yaw)]
+    ])
+    
+    R_z = np.array([
+        [np.cos(roll), -np.sin(roll), 0],
+        [np.sin(roll), np.cos(roll), 0],
+        [0, 0, 1]
+    ])
+    
+    # Combine rotations into a single matrix (R = Rz * Ry * Rx)
+    R = R_z @ R_y @ R_x
+    return R
+
+def create_transformation_matrix(scale, translation, rotation):
+    """
+    Creates a transformation matrix with scaling, translation, and rotation.
+    
+    Parameters:
+    - scale (float): Scaling scalar value.
+    - translation (list or np.array): Translation vector in cm [tx, ty, tz].
+    - rotation (list or np.array): Rotation vector in degrees [pitch, yaw, roll].
+    
+    Returns:
+    - transformation_matrix (np.array): 4x4 transformation matrix.
+    """
+    # Convert the rotation vector to matrix
+    R = create_rotation_matrix(rotation)
+     
+    # Apply scaling to the rotation matrix
+    R *= scale
+    
+    # Create the 4x4 transformation matrix
+    transformation_matrix = np.eye(4)
+    transformation_matrix[:3, :3] = R  # Top-left 3x3 part is the rotation (scaled)
+    transformation_matrix[:3, 3] = translation  # Last column is the translation vector
+    
+    return transformation_matrix
+
+RT = create_transformation_matrix(1, [0,0,0], [0,0,0])
+
+def transform_for_3d_scene(pts):
+    """
+    Apply a RT transformation to the points to get the desired 3D scene.
+    """
+    pts_h = np.hstack([pts, np.ones((pts.shape[0], 1), dtype=np.float32)])
+    transformed_pts_h = (RT @ pts_h.T).T
+    return transformed_pts_h[:, :3]
 
 def estimate_camera_intrinsics(frame, fov_x=None):
     """
@@ -122,12 +193,12 @@ def refine_depth_by_radial_magnitude(
     return new_z, draw_frame
 
 def partial_procrustes_translation_2d(canonical_2d, detected_2d):
-    # c_center = canonical_2d.mean(axis=0)
-    # d_center = detected_2d.mean(axis=0)
-    # return d_center - c_center
-    c_nose = canonical_2d[4]
-    d_nose = detected_2d[4]
-    return d_nose - c_nose
+    c_center = canonical_2d.mean(axis=0)
+    d_center = detected_2d.mean(axis=0)
+    return d_center - c_center
+    # c_nose = canonical_2d[4]
+    # d_nose = detected_2d[4]
+    # return d_nose - c_nose
 
 def image_shift_to_3d(shift_2d, depth_z, K):
     fx = K[0, 0]
@@ -141,6 +212,17 @@ def load_canonical_mesh(mesh_path):
     mesh.vertices = o3d.utility.Vector3dVector(np.array(mesh.vertices))
     mesh.triangles = o3d.utility.Vector3iVector(np.array(mesh.triangles))
     return mesh
+
+def canonical_to_camera(canonical_points, rt_matrix):
+    # same as you had before, with perspective divide...
+    num_points = len(canonical_points)
+    canonical_points_h = np.hstack([
+        canonical_points, 
+        np.ones((num_points, 1), dtype=np.float32)
+    ])
+    transformed_points_h = (rt_matrix @ canonical_points_h.T).T
+    transformed_xyz = transformed_points_h[:, :3]
+    return transformed_xyz
 
 def transform_canonical_mesh(canonical_points, rt_matrix, K):
     # same as you had before, with perspective divide...
@@ -167,13 +249,15 @@ def main():
     PYTHON_DIR = CWD.parent
 
     # # 1) Load canonical mesh
-    # mesh_path = str(GIT_ROOT / 'python' / 'assets' / 'myface_face_mesh.obj')
-    # canonical_mesh = trimesh.load(mesh_path, force='mesh')
+    mesh_path = str(GIT_ROOT / 'python' / 'assets' / 'face_model_with_iris.obj')
+    canonical_mesh = trimesh.load(mesh_path, force='mesh')
     face_width_cm = 14
     # canonical_pts_3d = np.asarray(canonical_mesh.vertices, dtype=np.float32) * face_width_cm * np.array([-1, 1, -1])
-    
-    # Load the facemesh triangles
-    facemesh_triangles = np.load(GIT_ROOT / 'python' / 'assets' / 'facemesh_triangles.npy')
+    # facemesh_triangles = np.load(GIT_ROOT / 'python' / 'assets' / 'facemesh_triangles.npy')
+    face_mesh = o3d.geometry.TriangleMesh()
+    face_mesh.vertices = o3d.utility.Vector3dVector(np.array(canonical_mesh.vertices))
+    face_mesh.triangles = o3d.utility.Vector3iVector(canonical_mesh.faces)
+    face_mesh_lines = o3d.geometry.LineSet.create_from_triangle_mesh(face_mesh)
 
     # 2) Setup MediaPipe
     base_options = python.BaseOptions(
@@ -187,14 +271,32 @@ def main():
     )
     face_landmarker = vision.FaceLandmarker.create_from_options(options)
 
-    cap = cv2.VideoCapture(0)
-    
+    # Initialize Open3D Visualizer
+    visual = o3d.visualization.Visualizer()
+    visual.create_window(width=1920, height=1080)
+    visual.get_render_option().background_color = [0.1, 0.1, 0.1]
+    visual.get_render_option().mesh_show_back_face = True
+
     # Get the cap sizes
+    cap = cv2.VideoCapture(0)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     K = estimate_camera_intrinsics(np.zeros((height, width, 3)))
     perspective_matrix = create_perspective_matrix(aspect_ratio=width / height)
 
+    # Change the z far to 1000
+    vis = visual.get_view_control()
+    vis.set_constant_z_far(1000)
+    params = o3d.camera.PinholeCameraParameters()
+    intrinsic = o3d.camera.PinholeCameraIntrinsic(intrinsic_matrix=K, width=width, height=height)
+    params.extrinsic = np.eye(4)
+    params.intrinsic = intrinsic
+    vis.convert_from_pinhole_camera_parameters(parameter=params)
+
+    # Add the face mesh to the visualizer
+    visual.add_geometry(face_mesh)
+    visual.add_geometry(face_mesh_lines)
+ 
     while cap.isOpened():
         success, frame = cap.read()
         if not success:
@@ -326,7 +428,8 @@ def main():
 
         # Draw the transformed face mesh
         # for triangle in canonical_mesh.faces:
-        for triangle in facemesh_triangles:
+        # for triangle in facemesh_triangles:
+        for triangle in canonical_mesh.faces:
             p1 = final_projected_pts[triangle[0]]
             p2 = final_projected_pts[triangle[1]]
             p3 = final_projected_pts[triangle[2]]
@@ -344,6 +447,21 @@ def main():
         cv2.imshow("Face Mesh", draw_frame)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
+
+        # Update 3D meshes
+        new_final_transform = final_transform.copy()
+        new_final_transform[:3, :3] = create_rotation_matrix([0, 180, 0])
+        new_final_transform[0, 3] *= -1
+        camera_pts_3d = canonical_to_camera(canonical_pts_3d, new_final_transform)
+        face_mesh.vertices = o3d.utility.Vector3dVector(transform_for_3d_scene(camera_pts_3d))
+        new_face_mesh_lines = o3d.geometry.LineSet.create_from_triangle_mesh(face_mesh)
+        face_mesh_lines.points = new_face_mesh_lines.points
+        visual.update_geometry(face_mesh)
+        visual.update_geometry(face_mesh_lines)
+
+        # Update visualizer
+        visual.poll_events()
+        visual.update_renderer()
 
     cap.release()
     cv2.destroyAllWindows()
