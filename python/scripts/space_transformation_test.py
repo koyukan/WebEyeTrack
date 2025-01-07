@@ -452,10 +452,12 @@ def main():
         new_final_transform = final_transform.copy()
         new_final_transform[:3, :3] = create_rotation_matrix([0, 180, 0])
         new_final_transform[0, 3] *= -1
+        new_final_transform[2, 3] += 50 # Account for the open3d camera position
         camera_pts_3d = canonical_to_camera(canonical_pts_3d, new_final_transform)
         face_mesh.vertices = o3d.utility.Vector3dVector(transform_for_3d_scene(camera_pts_3d))
         new_face_mesh_lines = o3d.geometry.LineSet.create_from_triangle_mesh(face_mesh)
         face_mesh_lines.points = new_face_mesh_lines.points
+        print(np.asarray(face_mesh.vertices).mean(axis=0))
         visual.update_geometry(face_mesh)
         visual.update_geometry(face_mesh_lines)
 
