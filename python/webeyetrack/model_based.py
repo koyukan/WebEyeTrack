@@ -325,6 +325,99 @@ def estimate_inter_pupillary_distance_2d(facial_landmarks, height, width):
 
     return (positions, distances)
 
+def estimate_2d_3d_eye_face_origins(perspective_matrix, facial_landmarks, face_rt, height, width, intrinsics):
+
+    # First, compute the inter-pupillary distance
+    positions, distances = estimate_inter_pupillary_distance_2d(
+        facial_landmarks, 
+        height, 
+        width
+    )
+
+    # Estimate the scale
+    metric_scale = REAL_WORLD_IPD_CM * 10 / distances['canonical_ipd_3d']
+
+    # Convert uvz to xyz
+    relative_face_mesh = np.array([convert_uv_to_xyz(perspective_matrix, x[0], x[1], x[2]) for x in facial_landmarks[:, :3]])
+    centroid = relative_face_mesh.mean(axis=0)
+    demeaned_relative_face_mesh = relative_face_mesh.copy() # - centroid
+    
+    data_3d_pairs = {
+        'left': demeaned_relative_face_mesh[LEFT_EYE_LANDMARKS][:, :3],
+        'right': demeaned_relative_face_mesh[RIGHT_EYE_LANDMARKS][:, :3]
+    }
+
+    # Compute the 3D eye origin
+    origins_3d = {}
+    for k, v in data_3d_pairs.items():
+        origins_3d[k] = np.mean(v, axis=0)
+
+    # Compute the scaling factor between mediapipe per-world & world mm coordinate
+    l, r = origins_3d['left'], origins_3d['right']
+    per_frame_ipd = np.sqrt(np.power(l[0] - r[0], 2) + np.power(l[1] - r[1],2) + np.power(l[2] - r[2], 2))
+    scale = (10 * REAL_WORLD_IPD_CM) / per_frame_ipd
+
+    # Compute the depth
+    theta = np.arctan(face_rt[0, 2] / face_rt[2, 2])
+    focal_length_pixels = 1 / np.tan(np.deg2rad(VERTICAL_FOV_DEGREES) / 2) * height / 2
+    depth_mm = (focal_length_pixels * REAL_WORLD_IPD_CM * 10 * np.cos(theta)) / distances['image_ipd'] * 2.25
+
+    # Apply the scale
+    scaled_demeaned_relative_face_mesh = demeaned_relative_face_mesh * scale
+
+    # Returned to the position
+    translation = np.array([0, 0, depth_mm])
+    shifted_s_d_relative_face_mesh = scaled_demeaned_relative_face_mesh + translation
+    
+    # Compute the 3D bounding box dimensions of the shifted_s_d_relative_face_mesh
+    min_xyz = np.min(shifted_s_d_relative_face_mesh, axis=0)
+    max_xyz = np.max(shifted_s_d_relative_face_mesh, axis=0)
+    distances = max_xyz - min_xyz
+    # print(f"Distances: {distances}")
+
+    # Estimate intrinsics based on width
+    intrinsics = np.array([
+        [width*1.5, 0, width / 2],
+        [0, height*1.9, height / 2],
+        [0, 0, 1]
+    ])
+
+    # Convert xyz back to uvz
+    re_facial_landmarks = np.array([convert_xyz_to_uv_with_intrinsic(intrinsics, x[0], x[1], x[2]) for x in shifted_s_d_relative_face_mesh])
+
+    # Draw the original facial (DEBUGGING)
+    # draw_frame = frame.copy()
+    # for (u,v), (nu, nv) in zip(facial_landmarks[:, :2], re_facial_landmarks[:, :2]):
+    #     cv2.circle(draw_frame, (int(u * width), int(v * height)), 2, (0, 255, 0), -1)
+    #     cv2.circle(draw_frame, (int(nu), int(nv)), 2, (0, 0, 255), -1)
+    # cv2.imshow('draw', draw_frame)
+
+    # Compute the average of the 2D eye origins
+    face_origin = (positions['eye_origins_2d']['left'] + positions['eye_origins_2d']['right']) / 2
+    tf_face_points = shifted_s_d_relative_face_mesh
+
+    # Compute the eye gaze origin in metric space
+    eye_g_o = {
+        'left': tf_face_points[LEFT_EYE_LANDMARKS],
+        'right': tf_face_points[RIGHT_EYE_LANDMARKS]
+    }
+
+    # Compute the 3D eye origin
+    for k, v in eye_g_o.items():
+        eye_g_o[k] = np.mean(v, axis=0)
+
+    # Compute face gaze origin
+    face_g_o = (eye_g_o['left'] + eye_g_o['right']) / 2
+
+    return {
+        'tf_face_points': tf_face_points,
+        'face_origin_3d': face_g_o,
+        'face_origin_2d': face_origin,
+        'eye_origins_3d': eye_g_o,
+        # 'eye_origins_3d': {'left': np.array([0,0,100]), 'right': np.array([0,0,100])},
+        'eye_origins_2d': positions['eye_origins_2d']
+    }
+
 def estimate_gaze_vector_based_on_model_based(
         eyeball_centers, 
         eyeball_radius, 
@@ -728,99 +821,6 @@ def estimate_gaze_vector_based_on_eye_blendshapes(face_blendshapes, face_rt):
                 'right': {}
             }
         }            
-    }
-
-def estimate_2d_3d_eye_face_origins(perspective_matrix, facial_landmarks, face_rt, height, width, intrinsics):
-
-    # First, compute the inter-pupillary distance
-    positions, distances = estimate_inter_pupillary_distance_2d(
-        facial_landmarks, 
-        height, 
-        width
-    )
-
-    # Estimate the scale
-    metric_scale = REAL_WORLD_IPD_CM * 10 / distances['canonical_ipd_3d']
-
-    # Convert uvz to xyz
-    relative_face_mesh = np.array([convert_uv_to_xyz(perspective_matrix, x[0], x[1], x[2]) for x in facial_landmarks[:, :3]])
-    centroid = relative_face_mesh.mean(axis=0)
-    demeaned_relative_face_mesh = relative_face_mesh.copy() # - centroid
-    
-    data_3d_pairs = {
-        'left': demeaned_relative_face_mesh[LEFT_EYE_LANDMARKS][:, :3],
-        'right': demeaned_relative_face_mesh[RIGHT_EYE_LANDMARKS][:, :3]
-    }
-
-    # Compute the 3D eye origin
-    origins_3d = {}
-    for k, v in data_3d_pairs.items():
-        origins_3d[k] = np.mean(v, axis=0)
-
-    # Compute the scaling factor between mediapipe per-world & world mm coordinate
-    l, r = origins_3d['left'], origins_3d['right']
-    per_frame_ipd = np.sqrt(np.power(l[0] - r[0], 2) + np.power(l[1] - r[1],2) + np.power(l[2] - r[2], 2))
-    scale = (10 * REAL_WORLD_IPD_CM) / per_frame_ipd
-
-    # Compute the depth
-    theta = np.arctan(face_rt[0, 2] / face_rt[2, 2])
-    focal_length_pixels = 1 / np.tan(np.deg2rad(VERTICAL_FOV_DEGREES) / 2) * height / 2
-    depth_mm = (focal_length_pixels * REAL_WORLD_IPD_CM * 10 * np.cos(theta)) / distances['image_ipd'] * 2.25
-
-    # Apply the scale
-    scaled_demeaned_relative_face_mesh = demeaned_relative_face_mesh * scale
-
-    # Returned to the position
-    translation = np.array([0, 0, depth_mm])
-    shifted_s_d_relative_face_mesh = scaled_demeaned_relative_face_mesh + translation
-    
-    # Compute the 3D bounding box dimensions of the shifted_s_d_relative_face_mesh
-    min_xyz = np.min(shifted_s_d_relative_face_mesh, axis=0)
-    max_xyz = np.max(shifted_s_d_relative_face_mesh, axis=0)
-    distances = max_xyz - min_xyz
-    # print(f"Distances: {distances}")
-
-    # Estimate intrinsics based on width
-    intrinsics = np.array([
-        [width*1.5, 0, width / 2],
-        [0, height*1.9, height / 2],
-        [0, 0, 1]
-    ])
-
-    # Convert xyz back to uvz
-    re_facial_landmarks = np.array([convert_xyz_to_uv_with_intrinsic(intrinsics, x[0], x[1], x[2]) for x in shifted_s_d_relative_face_mesh])
-
-    # Draw the original facial (DEBUGGING)
-    # draw_frame = frame.copy()
-    # for (u,v), (nu, nv) in zip(facial_landmarks[:, :2], re_facial_landmarks[:, :2]):
-    #     cv2.circle(draw_frame, (int(u * width), int(v * height)), 2, (0, 255, 0), -1)
-    #     cv2.circle(draw_frame, (int(nu), int(nv)), 2, (0, 0, 255), -1)
-    # cv2.imshow('draw', draw_frame)
-
-    # Compute the average of the 2D eye origins
-    face_origin = (positions['eye_origins_2d']['left'] + positions['eye_origins_2d']['right']) / 2
-    tf_face_points = shifted_s_d_relative_face_mesh
-
-    # Compute the eye gaze origin in metric space
-    eye_g_o = {
-        'left': tf_face_points[LEFT_EYE_LANDMARKS],
-        'right': tf_face_points[RIGHT_EYE_LANDMARKS]
-    }
-
-    # Compute the 3D eye origin
-    for k, v in eye_g_o.items():
-        eye_g_o[k] = np.mean(v, axis=0)
-
-    # Compute face gaze origin
-    face_g_o = (eye_g_o['left'] + eye_g_o['right']) / 2
-
-    return {
-        'tf_face_points': tf_face_points,
-        'face_origin_3d': face_g_o,
-        'face_origin_2d': face_origin,
-        'eye_origins_3d': eye_g_o,
-        # 'eye_origins_3d': {'left': np.array([0,0,100]), 'right': np.array([0,0,100])},
-        'eye_origins_2d': positions['eye_origins_2d']
     }
 
 def screen_plane_intersection(o, d, screen_R, screen_t):

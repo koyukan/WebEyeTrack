@@ -7,7 +7,7 @@ import open3d as o3d
 import pathlib
 import trimesh
 
-from webeyetrack.constants import GIT_ROOT
+from webeyetrack.constants import *
 from webeyetrack.datasets.utils import draw_landmarks_on_image
 
 import numpy as np
@@ -259,6 +259,26 @@ def main():
     face_mesh.triangles = o3d.utility.Vector3iVector(canonical_mesh.faces)
     face_mesh_lines = o3d.geometry.LineSet.create_from_triangle_mesh(face_mesh)
 
+    # Load eyeball model
+    eyeball_mesh_fp = GIT_ROOT / 'python' / 'assets' / 'eyeball' / 'eyeball_model_simplified.obj'
+    assert eyeball_mesh_fp.exists()
+    eyeball_diameter_cm = 2.5
+    eyeball_meshes = {}
+    eyeball_R = {}
+    for i in ['left', 'right']:
+        eyeball_mesh = o3d.io.read_triangle_mesh(str(eyeball_mesh_fp), True)
+        vertices = np.array(eyeball_mesh.vertices)
+        vertices -= vertices.mean(axis=0)
+        min_x, min_y, min_z = vertices.min(axis=0)
+        max_x, max_y, max_z = vertices.max(axis=0)
+        range_x, range_y, range_z = max_x - min_x, max_y - min_y, max_z - min_z
+        latest_range = max(range_x, range_y, range_z)
+        norm_vertices = vertices / latest_range
+        eyeball_mesh.vertices = o3d.utility.Vector3dVector(norm_vertices * eyeball_diameter_cm)
+        eyeball_mesh.compute_vertex_normals()
+        eyeball_meshes[i] = eyeball_mesh
+        eyeball_R[i] = np.eye(3)
+
     # 2) Setup MediaPipe
     base_options = python.BaseOptions(
         model_asset_path=str(PYTHON_DIR / 'weights' / 'face_landmarker_v2_with_blendshapes.task')
@@ -296,6 +316,8 @@ def main():
     # Add the face mesh to the visualizer
     visual.add_geometry(face_mesh)
     visual.add_geometry(face_mesh_lines)
+    visual.add_geometry(eyeball_meshes['left'])
+    visual.add_geometry(eyeball_meshes['right'])
  
     while cap.isOpened():
         success, frame = cap.read()
@@ -454,12 +476,35 @@ def main():
         new_final_transform[0, 3] *= -1
         new_final_transform[2, 3] += 50 # Account for the open3d camera position
         camera_pts_3d = canonical_to_camera(canonical_pts_3d, new_final_transform)
+
+        # Compute the face mesh
         face_mesh.vertices = o3d.utility.Vector3dVector(transform_for_3d_scene(camera_pts_3d))
         new_face_mesh_lines = o3d.geometry.LineSet.create_from_triangle_mesh(face_mesh)
         face_mesh_lines.points = new_face_mesh_lines.points
-        print(np.asarray(face_mesh.vertices).mean(axis=0))
+        
+        # Compute the eye gaze origin in metric space
+        eye_g_o = {
+            'left': camera_pts_3d[LEFT_EYE_LANDMARKS],
+            'right': camera_pts_3d[RIGHT_EYE_LANDMARKS]
+        }
+
+        # Compute the 3D eye origin
+        for k, v in eye_g_o.items():
+            eye_g_o[k] = np.mean(v, axis=0)
+            final_position = transform_for_3d_scene(eye_g_o[k].reshape((-1,3))).flatten()
+            final_position -= np.array([0,0,0.25])
+            eyeball_meshes[k].translate(final_position, relative=False)
+
+            # Debug, print out the mean eye gaze origin of the eyeball mesh
+            vertices = np.array(eyeball_meshes[k].vertices)
+            centroid = vertices.mean(axis=0)
+            print(f"Eye gaze origin ({k}): {centroid}")
+
+        # Update the geometry
         visual.update_geometry(face_mesh)
         visual.update_geometry(face_mesh_lines)
+        for i in ['left', 'right']:
+            visual.update_geometry(eyeball_meshes[i])
 
         # Update visualizer
         visual.poll_events()
