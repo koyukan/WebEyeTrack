@@ -224,6 +224,41 @@ def line_sphere_intersection(line_origin, line_direction, sphere_center, sphere_
         intersection_pt = line_origin + t2 * line_direction
     return intersection_pt
 
+def visualize_line_sphere_intersection(line_origin, line_direction, sphere_center, sphere_radius, intersection_pt):
+
+    # Visualize the line sphere problem using Trimesh
+    scene = trimesh.Scene()
+    eyeball_mesh = trimesh.creation.icosphere(subdivisions=3, radius=sphere_radius)
+    eyeball_mesh.apply_translation(sphere_center)
+    line = np.stack([line_origin, line_direction * 100]).reshape((-1, 2, 3))
+    path = trimesh.load_path(line)
+    colors = np.array([[255, 0, 255]])
+    path.colors = colors
+    intersection = trimesh.creation.icosphere(subdivisions=3, radius=sphere_radius * 0.25)
+    intersection.apply_translation(intersection_pt)
+    intersection.visual.face_colors = [255, 0, 0]
+
+    # Draw the xyz axis with paths
+    length = 1
+    x_line = np.stack([np.array([0, 0, 0]), np.array([length, 0, 0])]).reshape((-1, 2, 3))
+    y_line = np.stack([np.array([0, 0, 0]), np.array([0, length, 0])]).reshape((-1, 2, 3))
+    z_line = np.stack([np.array([0, 0, 0]), np.array([0, 0, length])]).reshape((-1, 2, 3))
+    x_path = trimesh.load_path(x_line)
+    y_path = trimesh.load_path(y_line)
+    z_path = trimesh.load_path(z_line)
+    x_path.colors = np.array([[255, 0, 0]])
+    y_path.colors = np.array([[0, 255, 0]])
+    z_path.colors = np.array([[0, 0, 255]])
+    scene.add_geometry(x_path)
+    scene.add_geometry(y_path)
+    scene.add_geometry(z_path)
+
+    scene.add_geometry(eyeball_mesh)
+    scene.add_geometry(path)
+    scene.add_geometry(intersection)
+    scene.show()
+    exit(0)
+
 def image_shift_to_3d(shift_2d, depth_z, K):
     fx = K[0, 0]
     fy = K[1, 1]
@@ -501,10 +536,6 @@ def main():
         # Draw the depth as text on the top-left corner
         cv2.putText(draw_frame, f"Depth: {final_transform[2,3]:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-        cv2.imshow("Face Mesh", draw_frame)
-        if cv2.waitKey(1) & 0xFF == ord("q"):
-            break
-
         # Compute the line-sphere intersection problem
         # Using the projected 2D center pupil landmark, estimate where a line 
         # intersects with the eyeball sphere
@@ -529,46 +560,21 @@ def main():
             )
             iris_eyeball_pts[i] = iris_eyeball_pt
 
-            # Visualize the line sphere problem using Trimesh
-            scene = trimesh.Scene()
-            eyeball_mesh = trimesh.creation.icosphere(subdivisions=3, radius=eyeball_diameter_cm / 2)
-            eyeball_mesh.apply_translation(eyeball_center)
-            line = np.stack([np.array([0, 0, 0]), line_direction * 100]).reshape((-1, 2, 3))
-            path = trimesh.load_path(line)
-            colors = np.array([[255, 0, 255]])
-            path.colors = colors
-            intersection_pt = trimesh.creation.icosphere(subdivisions=3, radius=eyeball_diameter_cm / 2 * 0.25)
-            intersection_pt.apply_translation(iris_eyeball_pt)
-            intersection_pt.visual.face_colors = [255, 0, 0]
-
-            # Draw the xyz axis with paths
-            length = 1
-            x_line = np.stack([np.array([0, 0, 0]), np.array([length, 0, 0])]).reshape((-1, 2, 3))
-            y_line = np.stack([np.array([0, 0, 0]), np.array([0, length, 0])]).reshape((-1, 2, 3))
-            z_line = np.stack([np.array([0, 0, 0]), np.array([0, 0, length])]).reshape((-1, 2, 3))
-            x_path = trimesh.load_path(x_line)
-            y_path = trimesh.load_path(y_line)
-            z_path = trimesh.load_path(z_line)
-            x_path.colors = np.array([[255, 0, 0]])
-            y_path.colors = np.array([[0, 255, 0]])
-            z_path.colors = np.array([[0, 0, 255]])
-            scene.add_geometry(x_path)
-            scene.add_geometry(y_path)
-            scene.add_geometry(z_path)
-
-            scene.add_geometry(eyeball_mesh)
-            scene.add_geometry(path)
-            scene.add_geometry(intersection_pt)
-            print(f"Eye center ({i}): {eyeball_center}")
-            print(f"Intersection point ({i}): {iris_eyeball_pt}")
-            scene.show()
-            exit(0)
-
             # Project the iris 3D point to the image plane and draw it
             iris_2d = np.dot(K, iris_eyeball_pt)
             iris_2d = iris_2d[:2] / iris_2d[2]
-            print(f"Iris 2D points ({i}): {iris_2d} - {center_iris}")
-            cv2.circle(draw_frame, tuple(iris_2d.astype(np.int32)), 10, (255, 0, 255), -1)
+            error = np.linalg.norm(iris_2d - center_iris)
+            print(f"Iris 2D points ({i}): {iris_2d} - {center_iris} - Error: {error}")
+            cv2.circle(draw_frame, tuple(iris_2d.astype(np.int32)), 5, (255, 0, 255), -1)
+
+            # Visualize the line-sphere intersection
+            # visualize_line_sphere_intersection(
+            #     np.array([0, 0, 0]),
+            #     line_direction,
+            #     eyeball_center,
+            #     eyeball_diameter_cm / 2,
+            #     iris_eyeball_pt
+            # )
 
         # Update 3D meshes
         new_final_transform = final_transform.copy()
@@ -588,7 +594,7 @@ def main():
         # Update the iris 3D points
         for i in ['left', 'right']:
             iris_scene_pts = transform_for_3d_scene(iris_camera_pts_3d[i])
-            print(f"Iris 3D points ({i}): {iris_scene_pts}")
+            # print(f"Iris 3D points ({i}): {iris_scene_pts}")
             iris_3d_pt[i].points = o3d.utility.Vector3dVector(iris_scene_pts)
             iris_3d_pt[i].paint_uniform_color([1, 0, 0])
         
@@ -608,7 +614,7 @@ def main():
             # Debug, print out the mean eye gaze origin of the eyeball mesh
             vertices = np.array(eyeball_meshes[k].vertices)
             centroid = vertices.mean(axis=0)
-            print(f"Eye gaze origin ({k}): {centroid}")
+            # print(f"Eye gaze origin ({k}): {centroid}")
 
         # Update the geometry
         visual.update_geometry(face_mesh)
@@ -620,6 +626,10 @@ def main():
         # Update visualizer
         visual.poll_events()
         visual.update_renderer()
+
+        cv2.imshow("Face Mesh", draw_frame)
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            break
 
     cap.release()
     cv2.destroyAllWindows()
