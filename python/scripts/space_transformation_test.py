@@ -562,15 +562,18 @@ def main():
         # Compute the line-sphere intersection problem
         # Using the projected 2D center pupil landmark, estimate where a line 
         # intersects with the eyeball sphere
+        eX, eY, eZ = 0,0,0
+        left_eyeball_pt = canonical_to_camera(np.array([eX, eY, eZ]).reshape((1,3)), final_transform).flatten()
+        right_eyeball_pt = canonical_to_camera(np.array([eX, eY, eZ]).reshape((1,3)), final_transform).flatten()
         transformed_pts = canonical_to_camera(canonical_pts_3d, final_transform)
-        iris_eyeball_pts = {}
-        canonical_iris_eyeball_pts = {}
-        canonical_eyeball_center_pts = {}
+        camera_iris_pts = {}
+        camera_eyeball_center = {}
         gaze_vectors = {}
         for i in ['left', 'right']:
             # Compute the sphere center in 3D
             eye_landmark = LEFT_EYE_LANDMARKS if i == 'left' else RIGHT_EYE_LANDMARKS
             eyeball_center = transformed_pts[eye_landmark].mean(axis=0)
+            # eyeball_center = left_eyeball_pt if i == 'left' else right_eyeball_pt
 
             # Compute the line direction
             iris_landmarks = LEFT_IRIS_LANDMARKS if i == 'left' else RIGHT_IRIS_LANDMARKS
@@ -592,10 +595,8 @@ def main():
             # distance = np.linalg.norm(iris_eyeball_pt - eyeball_center)
             # assert np.isclose(distance, eyeball_diameter_cm / 2)
 
-            iris_eyeball_pts[i] = iris_eyeball_pt
-            canonical_iris_eyeball_pts[i] = camera_to_canonical(iris_eyeball_pt.reshape((1,3)), final_transform)
-            canonical_eyeball_center_pts[i] = camera_to_canonical(eyeball_center.reshape((1,3)), final_transform)
-            # print(f"CANONICAL: {i} - Iris: {canonical_iris_eyeball_pts[i]} - Eyeball: {canonical_eyeball_center_pts[i]}")
+            camera_iris_pts[i] = iris_eyeball_pt
+            camera_eyeball_center[i] = eyeball_center
 
             # Project the iris 3D point to the image plane and draw it
             iris_2d = np.dot(K, iris_eyeball_pt)
@@ -629,47 +630,23 @@ def main():
             print(f"Gaze vector ({i}): {gaze_vector}")
             gaze_vectors[i] = gaze_vector
 
-        # Update 3D meshes
-        new_final_transform = final_transform.copy()
-        # new_final_transform[:3, :3] = create_rotation_matrix([0, 180, 0])
-        # new_final_transform[0, 2] *= -1
-        # canonical_pts_3d = canonical_pts_3d * np.array([1, 1, -1])
-        # new_final_transform[2, 3] += 50 # Account for the open3d camera position
-        camera_pts_3d = canonical_to_camera(canonical_pts_3d, new_final_transform)
-        iris_camera_pts_3d = {}
-        eyeball_camera_pts_3d = {}
-        for i in ['left', 'right']:
-            if i not in iris_eyeball_pts:
-                continue
-            iris_camera_pts_3d[i] = canonical_to_camera(canonical_iris_eyeball_pts[i].reshape((1,3)), new_final_transform)
-            eyeball_camera_pts_3d[i] = canonical_to_camera(canonical_eyeball_center_pts[i].reshape((1,3)), new_final_transform)
-            # print(f"CAMERA2: {i} - Iris: {iris_camera_pts_3d[i]} - Eyeball: {eyeball_camera_pts_3d[i]}")
-
         # Compute the face mesh
-        face_mesh.vertices = o3d.utility.Vector3dVector(transform_for_3d_scene(camera_pts_3d))
+        face_mesh.vertices = o3d.utility.Vector3dVector(transform_for_3d_scene(transformed_pts))
         new_face_mesh_lines = o3d.geometry.LineSet.create_from_triangle_mesh(face_mesh)
         face_mesh_lines.points = new_face_mesh_lines.points
 
-        # Update the iris 3D points
-        for i in ['left', 'right']:
-            if i not in iris_eyeball_pts:
-                continue
-            iris_scene_pts = transform_for_3d_scene(iris_camera_pts_3d[i].reshape(1,3))
-            # print(f"Iris 3D points ({i}): {iris_scene_pts}")
-            # iris_3d_pt[i].points = o3d.utility.Vector3dVector(iris_scene_pts)
-            # iris_3d_pt[i].paint_uniform_color([1, 0, 0])
-        
         # Compute the eye gaze origin in metric space
         eye_g_o = {
-            'left': camera_pts_3d[LEFT_EYE_LANDMARKS],
-            'right': camera_pts_3d[RIGHT_EYE_LANDMARKS]
+            'left': transformed_pts[LEFT_EYE_LANDMARKS],
+            'right': transformed_pts[RIGHT_EYE_LANDMARKS]
         }
 
         # Compute the 3D eye origin
         for k, v in eye_g_o.items():
             eye_g_o[k] = np.mean(v, axis=0)
+
             # final_position = transform_for_3d_scene(eye_g_o[k].reshape((-1,3))).flatten()
-            final_position = transform_for_3d_scene(eyeball_camera_pts_3d[k].reshape((-1,3))).flatten()
+            final_position = transform_for_3d_scene(camera_eyeball_center[k].reshape((-1,3))).flatten()
             final_position -= np.array([0,0,0.25])
             eyeball_meshes[k].translate(final_position, relative=False)
 
