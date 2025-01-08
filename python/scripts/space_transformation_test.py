@@ -78,7 +78,7 @@ def create_transformation_matrix(scale, translation, rotation):
     
     return transformation_matrix
 
-RT = create_transformation_matrix(1, [0,0,0], [0,0,0])
+RT = create_transformation_matrix(1, [0,0,50], [0,180,180])
 
 def transform_for_3d_scene(pts):
     """
@@ -173,12 +173,12 @@ def refine_depth_by_radial_magnitude(
             # The line is pointing towards the center
             # Draw the line in red
             color = (0, 0, 255)
-            total_distance += v_norm
+            total_distance -= v_norm
         else:
             # The line is pointing away from the center
             # Draw the line in green
             color = (0, 255, 0)
-            total_distance -= v_norm
+            total_distance += v_norm
 
         # cv2.line(draw_frame, tuple(p1.astype(np.int32)), tuple(p2.astype(np.int32)), color, 2)
 
@@ -429,6 +429,7 @@ def main():
         # Center to the nose 
         nose = relative_face_mesh[4]
         relative_face_mesh = relative_face_mesh - nose
+        relative_face_mesh *= np.array([-1, -1, 1])
         
         # make the width of the face length=1
         leftmost = np.min(relative_face_mesh[:, 0])
@@ -445,16 +446,12 @@ def main():
         face_s = scales.mean()  # average scale
         face_r /= face_s
 
-        # Optionally flip the x-axis
-        face_r[0, :] *= -1.0
-
         # ---------------------------------------------------------------
         # (A) Build an initial 4x4 transform that has R, s, and some guess at Z
         #     For example, -60 in front of the camera
         # ---------------------------------------------------------------
-        guess_z = -60.0
+        guess_z = 60.0
         init_transform = np.eye(4, dtype=np.float32)
-        # init_transform[:3, :3] = face_s * face_r
         init_transform[:3, 3]  = np.array([0, 0, guess_z], dtype=np.float32)
 
         # ---------------------------------------------------------------
@@ -504,7 +501,7 @@ def main():
             # Compute the difference of the Z
             new_zs.append(new_z)
             diff_z = new_z - final_transform[2, 3]
-            if np.abs(diff_z) < 0.5:
+            if np.abs(diff_z) < 0.25:
                 break
 
             # Use similar triangles to compute the new x and y
@@ -573,6 +570,8 @@ def main():
                 eyeball_center, 
                 eyeball_diameter_cm / 2
             )
+            if iris_eyeball_pt is None:
+                continue
             iris_eyeball_pts[i] = iris_eyeball_pt
             canonical_iris_eyeball_pts[i] = camera_to_canonical(iris_eyeball_pt.reshape((1,3)), final_transform)
             canonical_eyeball_center_pts[i] = camera_to_canonical(eyeball_center.reshape((1,3)), final_transform)
@@ -597,14 +596,16 @@ def main():
 
         # Update 3D meshes
         new_final_transform = final_transform.copy()
-        new_final_transform[:3, :3] = create_rotation_matrix([0, 180, 0])
-        new_final_transform[0, 3] *= -1
+        # new_final_transform[:3, :3] = create_rotation_matrix([0, 180, 0])
+        # new_final_transform[0, 2] *= -1
         # canonical_pts_3d = canonical_pts_3d * np.array([1, 1, -1])
-        new_final_transform[2, 3] += 50 # Account for the open3d camera position
+        # new_final_transform[2, 3] += 50 # Account for the open3d camera position
         camera_pts_3d = canonical_to_camera(canonical_pts_3d, new_final_transform)
         iris_camera_pts_3d = {}
         eyeball_camera_pts_3d = {}
         for i in ['left', 'right']:
+            if i not in iris_eyeball_pts:
+                continue
             iris_camera_pts_3d[i] = canonical_to_camera(canonical_iris_eyeball_pts[i].reshape((1,3)), new_final_transform)
             eyeball_camera_pts_3d[i] = canonical_to_camera(canonical_eyeball_center_pts[i].reshape((1,3)), new_final_transform)
             print(f"CAMERA2: {i} - Iris: {iris_camera_pts_3d[i]} - Eyeball: {eyeball_camera_pts_3d[i]}")
@@ -616,6 +617,8 @@ def main():
 
         # Update the iris 3D points
         for i in ['left', 'right']:
+            if i not in iris_eyeball_pts:
+                continue
             iris_scene_pts = transform_for_3d_scene(iris_camera_pts_3d[i].reshape(1,3))
             # print(f"Iris 3D points ({i}): {iris_scene_pts}")
             iris_3d_pt[i].points = o3d.utility.Vector3dVector(iris_scene_pts)
