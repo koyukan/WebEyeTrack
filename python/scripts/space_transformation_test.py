@@ -200,6 +200,30 @@ def partial_procrustes_translation_2d(canonical_2d, detected_2d):
     # d_nose = detected_2d[4]
     # return d_nose - c_nose
 
+def line_sphere_intersection(line_origin, line_direction, sphere_center, sphere_radius):
+    # line_origin = np.array([0, 0, 0])
+    
+    # Camera origin and Calculate intersection with the sphere
+    oc = line_origin - sphere_center
+
+    # Solve the quadratic equation ax^2 + bx + c = 0
+    discriminant = np.dot(line_direction, oc) ** 2 - (np.dot(oc, oc) - sphere_radius ** 2)
+
+    if discriminant < 0:
+        return None
+
+    # Calculate the two possible intersection points
+    t1 = np.dot(-line_direction, oc) - np.sqrt(discriminant)
+    t2 = np.dot(-line_direction, oc) + np.sqrt(discriminant)
+
+    # We are interested in the first intersection that is in front of the camera
+    intersection_pt = None
+    if abs(t1) < abs(t2):
+        intersection_pt = line_origin + t1 * line_direction
+    else:
+        intersection_pt = line_origin + t2 * line_direction
+    return intersection_pt
+
 def image_shift_to_3d(shift_2d, depth_z, K):
     fx = K[0, 0]
     fy = K[1, 1]
@@ -265,6 +289,7 @@ def main():
     eyeball_diameter_cm = 2.5
     eyeball_meshes = {}
     eyeball_R = {}
+    iris_3d_pt = {}
     for i in ['left', 'right']:
         eyeball_mesh = o3d.io.read_triangle_mesh(str(eyeball_mesh_fp), True)
         vertices = np.array(eyeball_mesh.vertices)
@@ -278,6 +303,7 @@ def main():
         eyeball_mesh.compute_vertex_normals()
         eyeball_meshes[i] = eyeball_mesh
         eyeball_R[i] = np.eye(3)
+        iris_3d_pt[i] = o3d.geometry.PointCloud()
 
     # 2) Setup MediaPipe
     base_options = python.BaseOptions(
@@ -296,6 +322,7 @@ def main():
     visual.create_window(width=1920, height=1080)
     visual.get_render_option().background_color = [0.1, 0.1, 0.1]
     visual.get_render_option().mesh_show_back_face = True
+    visual.get_render_option().point_size = 10
 
     # Get the cap sizes
     cap = cv2.VideoCapture(0)
@@ -318,6 +345,8 @@ def main():
     visual.add_geometry(face_mesh_lines)
     visual.add_geometry(eyeball_meshes['left'])
     visual.add_geometry(eyeball_meshes['right'])
+    visual.add_geometry(iris_3d_pt['left'])
+    visual.add_geometry(iris_3d_pt['right'])
  
     while cap.isOpened():
         success, frame = cap.read()
@@ -452,12 +481,18 @@ def main():
         # for triangle in canonical_mesh.faces:
         # for triangle in facemesh_triangles:
         for triangle in canonical_mesh.faces:
+            if triangle[0] in IRIS_LANDMARKS or triangle[1] in IRIS_LANDMARKS or triangle[2] in IRIS_LANDMARKS:
+                color = (0, 0, 255)
+                thickness = 2
+            else:
+                color = (0, 255, 0)
+                thickness = 1
             p1 = final_projected_pts[triangle[0]]
             p2 = final_projected_pts[triangle[1]]
             p3 = final_projected_pts[triangle[2]]
-            cv2.line(draw_frame, p1, p2, (0, 255, 0), 1)
-            cv2.line(draw_frame, p2, p3, (0, 255, 0), 1)
-            cv2.line(draw_frame, p3, p1, (0, 255, 0), 1)
+            cv2.line(draw_frame, p1, p2, color, thickness)
+            cv2.line(draw_frame, p2, p3, color, thickness)
+            cv2.line(draw_frame, p3, p1, color, thickness)
 
         # Draw the transformed face vertices only
         # for pt in final_projected_pts:
@@ -470,17 +505,92 @@ def main():
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
 
+        # Compute the line-sphere intersection problem
+        # Using the projected 2D center pupil landmark, estimate where a line 
+        # intersects with the eyeball sphere
+        transformed_pts = canonical_to_camera(canonical_pts_3d, final_transform)
+        iris_eyeball_pts = {}
+        for i in ['left', 'right']:
+            # Compute the sphere center in 3D
+            eye_landmark = LEFT_EYE_LANDMARKS if i == 'left' else RIGHT_EYE_LANDMARKS
+            eyeball_center = transformed_pts[eye_landmark].mean(axis=0)
+
+            # Compute the line direction
+            iris_landmarks = LEFT_IRIS_LANDMARKS if i == 'left' else RIGHT_IRIS_LANDMARKS
+            center_iris = final_projected_pts[iris_landmarks[0]]
+            line_direction = np.dot(np.linalg.inv(K), np.array([center_iris[0], center_iris[1], 1])) * np.array([-1, -1, -1])
+            line_direction = line_direction[:3] / np.linalg.norm(line_direction[:3])
+            line_direction /= np.linalg.norm(line_direction)
+            iris_eyeball_pt = line_sphere_intersection(
+                np.array([0, 0, 0]),
+                line_direction,
+                eyeball_center, 
+                eyeball_diameter_cm / 2
+            )
+            iris_eyeball_pts[i] = iris_eyeball_pt
+
+            # Visualize the line sphere problem using Trimesh
+            scene = trimesh.Scene()
+            eyeball_mesh = trimesh.creation.icosphere(subdivisions=3, radius=eyeball_diameter_cm / 2)
+            eyeball_mesh.apply_translation(eyeball_center)
+            line = np.stack([np.array([0, 0, 0]), line_direction * 100]).reshape((-1, 2, 3))
+            path = trimesh.load_path(line)
+            colors = np.array([[255, 0, 255]])
+            path.colors = colors
+            intersection_pt = trimesh.creation.icosphere(subdivisions=3, radius=eyeball_diameter_cm / 2 * 0.25)
+            intersection_pt.apply_translation(iris_eyeball_pt)
+            intersection_pt.visual.face_colors = [255, 0, 0]
+
+            # Draw the xyz axis with paths
+            length = 1
+            x_line = np.stack([np.array([0, 0, 0]), np.array([length, 0, 0])]).reshape((-1, 2, 3))
+            y_line = np.stack([np.array([0, 0, 0]), np.array([0, length, 0])]).reshape((-1, 2, 3))
+            z_line = np.stack([np.array([0, 0, 0]), np.array([0, 0, length])]).reshape((-1, 2, 3))
+            x_path = trimesh.load_path(x_line)
+            y_path = trimesh.load_path(y_line)
+            z_path = trimesh.load_path(z_line)
+            x_path.colors = np.array([[255, 0, 0]])
+            y_path.colors = np.array([[0, 255, 0]])
+            z_path.colors = np.array([[0, 0, 255]])
+            scene.add_geometry(x_path)
+            scene.add_geometry(y_path)
+            scene.add_geometry(z_path)
+
+            scene.add_geometry(eyeball_mesh)
+            scene.add_geometry(path)
+            scene.add_geometry(intersection_pt)
+            print(f"Eye center ({i}): {eyeball_center}")
+            print(f"Intersection point ({i}): {iris_eyeball_pt}")
+            scene.show()
+            exit(0)
+
+            # Project the iris 3D point to the image plane and draw it
+            iris_2d = np.dot(K, iris_eyeball_pt)
+            iris_2d = iris_2d[:2] / iris_2d[2]
+            print(f"Iris 2D points ({i}): {iris_2d} - {center_iris}")
+            cv2.circle(draw_frame, tuple(iris_2d.astype(np.int32)), 10, (255, 0, 255), -1)
+
         # Update 3D meshes
         new_final_transform = final_transform.copy()
         new_final_transform[:3, :3] = create_rotation_matrix([0, 180, 0])
         new_final_transform[0, 3] *= -1
         new_final_transform[2, 3] += 50 # Account for the open3d camera position
         camera_pts_3d = canonical_to_camera(canonical_pts_3d, new_final_transform)
+        iris_camera_pts_3d = {}
+        for i in ['left', 'right']:
+            iris_camera_pts_3d[i] = canonical_to_camera(iris_eyeball_pts[i].reshape((1,3)), new_final_transform)
 
         # Compute the face mesh
         face_mesh.vertices = o3d.utility.Vector3dVector(transform_for_3d_scene(camera_pts_3d))
         new_face_mesh_lines = o3d.geometry.LineSet.create_from_triangle_mesh(face_mesh)
         face_mesh_lines.points = new_face_mesh_lines.points
+
+        # Update the iris 3D points
+        for i in ['left', 'right']:
+            iris_scene_pts = transform_for_3d_scene(iris_camera_pts_3d[i])
+            print(f"Iris 3D points ({i}): {iris_scene_pts}")
+            iris_3d_pt[i].points = o3d.utility.Vector3dVector(iris_scene_pts)
+            iris_3d_pt[i].paint_uniform_color([1, 0, 0])
         
         # Compute the eye gaze origin in metric space
         eye_g_o = {
@@ -505,6 +615,7 @@ def main():
         visual.update_geometry(face_mesh_lines)
         for i in ['left', 'right']:
             visual.update_geometry(eyeball_meshes[i])
+            visual.update_geometry(iris_3d_pt[i])
 
         # Update visualizer
         visual.poll_events()
