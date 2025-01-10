@@ -332,6 +332,35 @@ def main():
     face_mesh.triangles = o3d.utility.Vector3iVector(canonical_mesh.faces)
     face_mesh_lines = o3d.geometry.LineSet.create_from_triangle_mesh(face_mesh)
 
+    # Define points for the origin and endpoints of the axes
+    points = [
+        [0, 0, 0],  # Origin
+        [1, 0, 0],  # X-axis end
+        [0, 1, 0],  # Y-axis end
+        [0, 0, 1],  # Z-axis end
+    ]
+
+    # Define lines connecting the origin to each axis endpoint
+    lines = [
+        [0, 1],  # X-axis
+        [0, 2],  # Y-axis
+        [0, 3],  # Z-axis
+    ]
+
+    # Define colors for the axes: Red for X, Green for Y, Blue for Z
+    colors = [
+        [1, 0, 0],  # X-axis is red
+        [0, 1, 0],  # Y-axis is green
+        [0, 0, 1],  # Z-axis is blue
+    ]
+
+    # Create the LineSet object
+    line_set = o3d.geometry.LineSet(
+        points=o3d.utility.Vector3dVector(points),
+        lines=o3d.utility.Vector2iVector(lines),
+    )
+    line_set.colors = o3d.utility.Vector3dVector(colors)
+
     # Load eyeball model
     eyeball_mesh_fp = GIT_ROOT / 'python' / 'assets' / 'eyeball' / 'eyeball_model_simplified.obj'
     assert eyeball_mesh_fp.exists()
@@ -408,6 +437,7 @@ def main():
     visual.add_geometry(eyeball_meshes['right'])
     visual.add_geometry(iris_3d_pt['left'])
     visual.add_geometry(iris_3d_pt['right'])
+    visual.add_geometry(line_set)
  
     while cap.isOpened():
         success, frame = cap.read()
@@ -666,6 +696,23 @@ def main():
         #     'left': transformed_pts[LEFT_EYE_LANDMARKS],
         #     'right': transformed_pts[RIGHT_EYE_LANDMARKS]
         # }
+
+        # Draw the canonical face axes by using the final_transform
+        canonical_face_axes = np.array([
+            [0, 0, 0],
+            [1, 0, 0],
+            [0, 1, 0],
+            [0, 0, 1]
+        ]) * 5
+        canonical_face_axes_2d = transform_canonical_mesh(canonical_face_axes, new_final_transform, K)
+        cv2.line(draw_frame, tuple(canonical_face_axes_2d[0]), tuple(canonical_face_axes_2d[1]), (0, 0, 255), 2)
+        cv2.line(draw_frame, tuple(canonical_face_axes_2d[0]), tuple(canonical_face_axes_2d[2]), (0, 255, 0), 2)
+        cv2.line(draw_frame, tuple(canonical_face_axes_2d[0]), tuple(canonical_face_axes_2d[3]), (255, 0, 0), 2)
+
+        # Update the 3d axes in the visualizer as well
+        canonical_face_axes_3d = transform_for_3d_scene(canonical_to_camera(canonical_face_axes, new_final_transform))
+        line_set.points = o3d.utility.Vector3dVector(canonical_face_axes_3d)
+        visual.update_geometry(line_set)
 
         # Compute the 3D eye origin
         # for k, v in eye_g_o.items():
