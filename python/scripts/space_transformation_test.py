@@ -194,12 +194,12 @@ def refine_depth_by_radial_magnitude(
     return new_z, draw_frame
 
 def partial_procrustes_translation_2d(canonical_2d, detected_2d):
-    c_center = canonical_2d.mean(axis=0)
-    d_center = detected_2d.mean(axis=0)
-    return d_center - c_center
-    # c_nose = canonical_2d[4]
-    # d_nose = detected_2d[4]
-    # return d_nose - c_nose
+    # c_center = canonical_2d.mean(axis=0)
+    # d_center = detected_2d.mean(axis=0)
+    # return d_center - c_center
+    c_nose = canonical_2d[4]
+    d_nose = detected_2d[4]
+    return d_nose - c_nose
 
 def line_sphere_intersection(line_origin, line_direction, sphere_center, sphere_radius):
     # line_origin = np.array([0, 0, 0])
@@ -445,14 +445,23 @@ def main():
         relative_face_mesh *= np.array([-1, -1, 1])
         
         # make the width of the face length=1
-        leftmost = np.min(relative_face_mesh[:, 0])
-        rightmost = np.max(relative_face_mesh[:, 0])
-        relative_face_mesh[:, :] /= rightmost - leftmost
+        LEFTMOST_LANDMARK = 356
+        RIGHTMOST_LANDMARK = 127
+        leftmost = relative_face_mesh[LEFTMOST_LANDMARK, 0]
+        rightmost = relative_face_mesh[RIGHTMOST_LANDMARK, 0]
+        leftmost2 = np.min(relative_face_mesh[:, 0])
+        rightmost2 = np.max(relative_face_mesh[:, 0])
+        # import pdb; pdb.set_trace()
+        # relative_face_mesh[:, :] /= rightmost - leftmost
+        relative_face_mesh[:, :] /= leftmost - rightmost
         canonical_pts_3d = relative_face_mesh * face_width_cm
-
+        
         # 3) Extract the face transformation matrix from MediaPipe
         face_rt = detection_results.facial_transformation_matrixes[0]  # shape (4,4)
         face_r = face_rt[:3, :3].copy()
+        
+        # Derotate the face based face transformation matrix
+        # canonical_pts_3d = canonical_pts_3d @ face_r.T
 
         # Scale is embedded in face_r's columns
         scales = np.linalg.norm(face_r, axis=0)
@@ -465,6 +474,7 @@ def main():
         # ---------------------------------------------------------------
         guess_z = 60.0
         init_transform = np.eye(4, dtype=np.float32)
+        # init_transform[:3, :3] = np.linalg.inv(face_r)
         init_transform[:3, 3]  = np.array([0, 0, guess_z], dtype=np.float32)
 
         # ---------------------------------------------------------------
@@ -559,12 +569,16 @@ def main():
         # Draw the depth as text on the top-left corner
         cv2.putText(draw_frame, f"Depth: {final_transform[2,3]:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
+        # Create a new final transform that also includes the rotation matrix
+        new_final_transform = final_transform.copy()
+        new_final_transform[:3, :3] = face_r
+
         # Compute the line-sphere intersection problem
         # Using the projected 2D center pupil landmark, estimate where a line 
         # intersects with the eyeball sphere
-        eX, eY, eZ = 0,0,0
-        left_eyeball_pt = canonical_to_camera(np.array([eX, eY, eZ]).reshape((1,3)), final_transform).flatten()
-        right_eyeball_pt = canonical_to_camera(np.array([eX, eY, eZ]).reshape((1,3)), final_transform).flatten()
+        eX, eY, eZ = 3,-2.8,3
+        left_eyeball_pt = canonical_to_camera(np.array([-eX, eY, eZ]).reshape((1,3)), new_final_transform).flatten()
+        right_eyeball_pt = canonical_to_camera(np.array([eX, eY, eZ]).reshape((1,3)), new_final_transform).flatten()
         transformed_pts = canonical_to_camera(canonical_pts_3d, final_transform)
         camera_iris_pts = {}
         camera_eyeball_center = {}
@@ -572,8 +586,17 @@ def main():
         for i in ['left', 'right']:
             # Compute the sphere center in 3D
             eye_landmark = LEFT_EYE_LANDMARKS if i == 'left' else RIGHT_EYE_LANDMARKS
-            eyeball_center = transformed_pts[eye_landmark].mean(axis=0)
-            # eyeball_center = left_eyeball_pt if i == 'left' else right_eyeball_pt
+            # eye_outline_landmark = [258, 253] if i == 'left' else [28, 23]
+            eyeball_center_from_pts = transformed_pts[eye_landmark].mean(axis=0)
+
+            # Using the eye outline, compute the y mean
+            # eye_outline_center = transformed_pts[eye_outline_landmark].mean(axis=0)
+            # eyeball_center_from_canonical = left_eyeball_pt if i == 'left' else right_eyeball_pt
+
+            # Create an eyeball center using the x and z from the pts and the y from canonical
+            eyeball_center = eyeball_center_from_pts.copy()
+            # eyeball_center[1] = eye_outline_center[1]
+            # eyeball_center[1] = eyeball_center_from_canonical[1]
 
             # Compute the line direction
             iris_landmarks = LEFT_IRIS_LANDMARKS if i == 'left' else RIGHT_IRIS_LANDMARKS
@@ -587,24 +610,22 @@ def main():
                 eyeball_center, 
                 eyeball_diameter_cm / 2
             )
-            if iris_eyeball_pt is None:
-                continue
 
             # Check what is the euclidean distance between the iris_eyeball_pt and the eyeball center, ensure it's the sphere radius
             # import pdb; pdb.set_trace()
             # distance = np.linalg.norm(iris_eyeball_pt - eyeball_center)
             # assert np.isclose(distance, eyeball_diameter_cm / 2)
 
-            camera_iris_pts[i] = iris_eyeball_pt
+            # camera_iris_pts[i] = iris_eyeball_pt
             camera_eyeball_center[i] = eyeball_center
 
             # Project the iris 3D point to the image plane and draw it
-            iris_2d = np.dot(K, iris_eyeball_pt)
-            iris_2d = iris_2d[:2] / iris_2d[2]
-            error = np.linalg.norm(iris_2d - center_iris)
+            # iris_2d = np.dot(K, iris_eyeball_pt)
+            # iris_2d = iris_2d[:2] / iris_2d[2]
+            # error = np.linalg.norm(iris_2d - center_iris)
             # print(f"Iris 2D points ({i}): {iris_2d} - {center_iris} - Error: {error}")
             # print(f"CAMERA1: Iris 3D points ({i}): {iris_eyeball_pt} - {eyeball_center}")
-            cv2.circle(draw_frame, tuple(iris_2d.astype(np.int32)), 5, (255, 0, 255), -1)
+            # cv2.circle(draw_frame, tuple(iris_2d.astype(np.int32)), 5, (255, 0, 255), -1)
 
             # Visualize the line-sphere intersection
             # visualize_line_sphere_intersection(
@@ -614,21 +635,26 @@ def main():
             #     eyeball_diameter_cm / 2,
             #     iris_eyeball_pt
             # )
+            # iris_eyeball_pt = None
 
-            # Estimate a gaze vector
-            gaze_vector = iris_eyeball_pt - eyeball_center
-            gaze_vector /= np.linalg.norm(gaze_vector)
+            if iris_eyeball_pt is None:
+                gaze_vectors[i] = np.array([1e-5, 1e-5, -1.0])
+                gaze_vectors[i] /= np.linalg.norm(gaze_vectors[i]) 
+            else:
+                # Estimate a gaze vector
+                gaze_vector = iris_eyeball_pt - eyeball_center
+                gaze_vector /= np.linalg.norm(gaze_vector)
 
-            # # Convert gaze vector to pitch and yaw to correct
-            pitch, yaw = vector_to_pitch_yaw(gaze_vector)
-            # pitch, yaw = -pitch, yaw
-            pitch, yaw = pitch, -yaw
-            # pitch, yaw = 0, 5
-            gaze_vector = pitch_yaw_to_gaze_vector(pitch, yaw)
+                # # Convert gaze vector to pitch and yaw to correct
+                pitch, yaw = vector_to_pitch_yaw(gaze_vector)
+                # pitch, yaw = -pitch, yaw
+                pitch, yaw = pitch, -yaw
+                # pitch, yaw = 0, 5
+                gaze_vector = pitch_yaw_to_gaze_vector(pitch, yaw)
 
-            # Store
-            print(f"Gaze vector ({i}): {gaze_vector}")
-            gaze_vectors[i] = gaze_vector
+                # Store
+                print(f"Gaze vector ({i}): {gaze_vector}")
+                gaze_vectors[i] = gaze_vector
 
         # Compute the face mesh
         face_mesh.vertices = o3d.utility.Vector3dVector(transform_for_3d_scene(transformed_pts))
@@ -636,34 +662,35 @@ def main():
         face_mesh_lines.points = new_face_mesh_lines.points
 
         # Compute the eye gaze origin in metric space
-        eye_g_o = {
-            'left': transformed_pts[LEFT_EYE_LANDMARKS],
-            'right': transformed_pts[RIGHT_EYE_LANDMARKS]
-        }
+        # eye_g_o = {
+        #     'left': transformed_pts[LEFT_EYE_LANDMARKS],
+        #     'right': transformed_pts[RIGHT_EYE_LANDMARKS]
+        # }
 
         # Compute the 3D eye origin
-        for k, v in eye_g_o.items():
-            eye_g_o[k] = np.mean(v, axis=0)
+        # for k, v in eye_g_o.items():
+        for i in ['left', 'right']:
+            # eye_g_o[k] = np.mean(v, axis=0)
 
             # final_position = transform_for_3d_scene(eye_g_o[k].reshape((-1,3))).flatten()
-            final_position = transform_for_3d_scene(camera_eyeball_center[k].reshape((-1,3))).flatten()
-            final_position -= np.array([0,0,0.25])
-            eyeball_meshes[k].translate(final_position, relative=False)
+            final_position = transform_for_3d_scene(camera_eyeball_center[i].reshape((-1,3))).flatten()
+            # final_position -= np.array([0,0,0.25])
+            eyeball_meshes[i].translate(final_position, relative=False)
 
             # Rotation
-            current_eye_R = eyeball_R[k]
-            eye_R = get_rotation_matrix_from_vector(gaze_vectors[k])
+            current_eye_R = eyeball_R[i]
+            eye_R = get_rotation_matrix_from_vector(gaze_vectors[i])
 
             # Apply the scene transformation to the new eye rotation
             eye_R = np.dot(eye_R, RT[:3, :3])
 
             # Compute the rotation matrix to rotate the current to the target
             new_eye_R = np.dot(eye_R, current_eye_R.T)
-            eyeball_R[k] = eye_R
-            eyeball_meshes[k].rotate(new_eye_R)
+            eyeball_R[i] = eye_R
+            eyeball_meshes[i].rotate(new_eye_R)
 
             # Debug, print out the mean eye gaze origin of the eyeball mesh
-            vertices = np.array(eyeball_meshes[k].vertices)
+            vertices = np.array(eyeball_meshes[i].vertices)
             centroid = vertices.mean(axis=0)
             # print(f"Eye gaze origin ({k}): {centroid}")
 
@@ -671,6 +698,7 @@ def main():
         visual.update_geometry(face_mesh)
         visual.update_geometry(face_mesh_lines)
         for i in ['left', 'right']:
+            # ...
             visual.update_geometry(eyeball_meshes[i])
             # visual.update_geometry(iris_3d_pt[i])
 
