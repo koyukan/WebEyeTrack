@@ -8,7 +8,13 @@ import pathlib
 import trimesh
 
 from webeyetrack.constants import *
-from webeyetrack.model_based import vector_to_pitch_yaw, pitch_yaw_to_gaze_vector, get_rotation_matrix_from_vector
+from webeyetrack.model_based import (
+    vector_to_pitch_yaw, 
+    pitch_yaw_to_gaze_vector, 
+    get_rotation_matrix_from_vector,
+    rotation_matrix_to_euler_angles,
+    euler_angles_to_rotation_matrix
+    )
 from webeyetrack.datasets.utils import draw_landmarks_on_image
 
 import numpy as np
@@ -601,7 +607,11 @@ def main():
 
         # Create a new final transform that also includes the rotation matrix
         new_final_transform = final_transform.copy()
-        new_final_transform[:3, :3] = face_r
+        pitch, yaw, roll = rotation_matrix_to_euler_angles(np.linalg.inv(face_r))
+        pitch, yaw, roll = -yaw, pitch, roll # Flip the pitch and yaw
+        new_r = euler_angles_to_rotation_matrix(pitch, yaw, roll)
+        new_final_transform[:3, :3] = new_r
+        # new_final_transform[:3, :3] = np.linalg.inv(face_r)
 
         # Compute the line-sphere intersection problem
         # Using the projected 2D center pupil landmark, estimate where a line 
