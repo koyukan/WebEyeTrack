@@ -483,21 +483,26 @@ def main():
         # make the width of the face length=1
         LEFTMOST_LANDMARK = 356
         RIGHTMOST_LANDMARK = 127
-        leftmost = relative_face_mesh[LEFTMOST_LANDMARK, 0]
-        rightmost = relative_face_mesh[RIGHTMOST_LANDMARK, 0]
-        leftmost2 = np.min(relative_face_mesh[:, 0])
-        rightmost2 = np.max(relative_face_mesh[:, 0])
-        # import pdb; pdb.set_trace()
-        # relative_face_mesh[:, :] /= rightmost - leftmost
-        relative_face_mesh[:, :] /= leftmost - rightmost
+        euclidean_distance = np.linalg.norm(relative_face_mesh[LEFTMOST_LANDMARK] - relative_face_mesh[RIGHTMOST_LANDMARK])
+        relative_face_mesh[:, :] /= euclidean_distance
         canonical_pts_3d = relative_face_mesh * face_width_cm
+
+        # Compute the bounding box of the canonical face
+        min_x, min_y, min_z = canonical_pts_3d.min(axis=0)
+        max_x, max_y, max_z = canonical_pts_3d.max(axis=0)
+        range_x, range_y, range_z = max_x - min_x, max_y - min_y, max_z - min_z
+        # print(f"X: {min_x:.2f} - {max_x:.2f}, \tY: {min_y:.2f} - {max_y:2f}, \tZ: {min_z:.2f} - {max_z:.2f}")
+        # print(f"X: {range_x:.2f}, \tY: {range_y:.2f}, \tZ: {range_z:.2f}")
         
         # 3) Extract the face transformation matrix from MediaPipe
         face_rt = detection_results.facial_transformation_matrixes[0]  # shape (4,4)
         face_r = face_rt[:3, :3].copy()
+        pitch, yaw, roll = rotation_matrix_to_euler_angles(np.linalg.inv(face_r))
+        pitch, yaw, roll = -yaw, pitch, roll # Flip the pitch and yaw
+        face_r = euler_angles_to_rotation_matrix(pitch, yaw, roll)
         
         # Derotate the face based face transformation matrix
-        # canonical_pts_3d = canonical_pts_3d @ face_r.T
+        canonical_pts_3d = canonical_pts_3d @ np.linalg.inv(face_r).T
 
         # Scale is embedded in face_r's columns
         scales = np.linalg.norm(face_r, axis=0)
@@ -510,6 +515,7 @@ def main():
         # ---------------------------------------------------------------
         guess_z = 60.0
         init_transform = np.eye(4, dtype=np.float32)
+        init_transform[:3, :3] = face_r
         # init_transform[:3, :3] = np.linalg.inv(face_r)
         init_transform[:3, 3]  = np.array([0, 0, guess_z], dtype=np.float32)
 
@@ -605,20 +611,12 @@ def main():
         # Draw the depth as text on the top-left corner
         cv2.putText(draw_frame, f"Depth: {final_transform[2,3]:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-        # Create a new final transform that also includes the rotation matrix
-        new_final_transform = final_transform.copy()
-        pitch, yaw, roll = rotation_matrix_to_euler_angles(np.linalg.inv(face_r))
-        pitch, yaw, roll = -yaw, pitch, roll # Flip the pitch and yaw
-        new_r = euler_angles_to_rotation_matrix(pitch, yaw, roll)
-        new_final_transform[:3, :3] = new_r
-        # new_final_transform[:3, :3] = np.linalg.inv(face_r)
-
         # Compute the line-sphere intersection problem
         # Using the projected 2D center pupil landmark, estimate where a line 
         # intersects with the eyeball sphere
         eX, eY, eZ = 3,-2.8,3
-        left_eyeball_pt = canonical_to_camera(np.array([-eX, eY, eZ]).reshape((1,3)), new_final_transform).flatten()
-        right_eyeball_pt = canonical_to_camera(np.array([eX, eY, eZ]).reshape((1,3)), new_final_transform).flatten()
+        left_eyeball_pt = canonical_to_camera(np.array([-eX, eY, eZ]).reshape((1,3)), final_transform).flatten()
+        right_eyeball_pt = canonical_to_camera(np.array([eX, eY, eZ]).reshape((1,3)), final_transform).flatten()
         transformed_pts = canonical_to_camera(canonical_pts_3d, final_transform)
         camera_iris_pts = {}
         camera_eyeball_center = {}
@@ -637,6 +635,7 @@ def main():
             eyeball_center = eyeball_center_from_pts.copy()
             # eyeball_center[1] = eye_outline_center[1]
             # eyeball_center[1] = eyeball_center_from_canonical[1]
+            # eyeball_center = eyeball_center_from_canonical
 
             # Compute the line direction
             iris_landmarks = LEFT_IRIS_LANDMARKS if i == 'left' else RIGHT_IRIS_LANDMARKS
@@ -714,13 +713,13 @@ def main():
             [0, 1, 0],
             [0, 0, 1]
         ]) * 5
-        canonical_face_axes_2d = transform_canonical_mesh(canonical_face_axes, new_final_transform, K)
+        canonical_face_axes_2d = transform_canonical_mesh(canonical_face_axes, final_transform, K)
         cv2.line(draw_frame, tuple(canonical_face_axes_2d[0]), tuple(canonical_face_axes_2d[1]), (0, 0, 255), 2)
         cv2.line(draw_frame, tuple(canonical_face_axes_2d[0]), tuple(canonical_face_axes_2d[2]), (0, 255, 0), 2)
         cv2.line(draw_frame, tuple(canonical_face_axes_2d[0]), tuple(canonical_face_axes_2d[3]), (255, 0, 0), 2)
 
         # Update the 3d axes in the visualizer as well
-        canonical_face_axes_3d = transform_for_3d_scene(canonical_to_camera(canonical_face_axes, new_final_transform))
+        canonical_face_axes_3d = transform_for_3d_scene(canonical_to_camera(canonical_face_axes, final_transform))
         line_set.points = o3d.utility.Vector3dVector(canonical_face_axes_3d)
         visual.update_geometry(line_set)
 
