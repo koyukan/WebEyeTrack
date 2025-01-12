@@ -279,6 +279,18 @@ def convert_xyz_to_uv_with_intrinsic(intrinsic_matrix, x, y, z):
 
     return np.array([u, v])
 
+def compute_ear(facial_landmarks, side):
+
+    EYE_EAR_LANDMARKS = LEFT_EYE_EAR_LANDMARKS if side == 'left' else RIGHT_EYE_EAR_LANDMARKS
+    p1 = facial_landmarks[EYE_EAR_LANDMARKS[0]]
+    p2 = facial_landmarks[EYE_EAR_LANDMARKS[1]]
+    p3 = facial_landmarks[EYE_EAR_LANDMARKS[2]]
+    p4 = facial_landmarks[EYE_EAR_LANDMARKS[3]]
+    p5 = facial_landmarks[EYE_EAR_LANDMARKS[4]]
+    p6 = facial_landmarks[EYE_EAR_LANDMARKS[5]]
+
+    ear = (np.linalg.norm(p2 - p6) + np.linalg.norm(p3 - p5)) / (2 * np.linalg.norm(p1 - p4))
+    return ear
 
 def estimate_inter_pupillary_distance_2d(facial_landmarks, height, width):
     data_2d_pairs = {
