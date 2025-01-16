@@ -10,7 +10,13 @@ from mediapipe.tasks.python import vision
 from skopt import gp_minimize
 from skopt.space import Real
 
-from .model_based import create_perspective_matrix, estimate_2d_3d_eye_face_origins, estimate_gaze_vector_based_on_model_based, estimate_gaze_vector_based_on_eye_landmarks, estimate_gaze_vector_based_on_eye_blendshapes, compute_pog
+from .model_based import (
+    create_perspective_matrix, 
+    face_reconstruction,
+    estimate_gaze_origins,
+    estimate_gaze_vector_based_on_eye_blendshapes, 
+    compute_pog
+)
 from .data_protocols import GazeResult, EyeResult
 from .constants import *
 
@@ -111,15 +117,7 @@ class WebEyeTrack():
             facial_landmarks, 
             face_rt, 
             face_blendshapes, 
-            eyeball_centers: Optional[Tuple[np.ndarray, np.ndarray]] = None,
-            eyeball_radius: Optional[float] = None,
         ):
-
-        # If we have new eyeball centers and radius, update them
-        if type(eyeball_centers) != type(None):
-            self.eyeball_centers = eyeball_centers
-        if type(eyeball_radius) != type(None):
-            self.eyeball_radius = eyeball_radius
 
         tic = time.perf_counter()
 
@@ -127,41 +125,57 @@ class WebEyeTrack():
         if type(self.perspective_matrix) == type(None):
             self.perspective_matrix = create_perspective_matrix(aspect_ratio=self.frame_width/self.frame_height)
             self.inv_perspective_matrix = np.linalg.inv(self.perspective_matrix)
+
+        # Perform 3D face reconstruction and determine the pose in 3D centimeters
+        metric_transform, metric_face = face_reconstruction(
+            perspective_matrix=self.perspective_matrix,
+            face_landmarks=facial_landmarks,
+            face_width_cm=14.0,
+            face_rt=face_rt,
+            K=self.intrinsics,
+            frame_height=self.frame_height,
+            frame_width=self.frame_width
+        )
+
+        # Obtain the gaze origins based on the metric face pts
+        gaze_origins = estimate_gaze_origins(
+            face_landmarks_3d=metric_face,
+            face_landmarks=facial_landmarks,
+        )
+
+        # Estimate the gaze based on the face blendshapes
+        gaze_vectors = estimate_gaze_vector_based_on_eye_blendshapes(
+            face_blendshapes=face_blendshapes,
+            face_rt=face_rt,
+        )
         
-        # Estimate the 2D and 3D position of the eye-center and the face-center
-        gaze_origins = estimate_2d_3d_eye_face_origins(
-            self.perspective_matrix,
-            facial_landmarks,
-            face_rt,
-            self.frame_height,
-            self.frame_width,
-            self.intrinsics
-        )
-
-        # Compute the gaze vectors
-        gaze_vectors = estimate_gaze_vector_based_on_model_based(
-            self.eyeball_centers,
-            self.eyeball_radius,
-            self.perspective_matrix,
-            self.inv_perspective_matrix,
-            facial_landmarks,
-            face_rt,
-            width=self.frame_width,
-            height=self.frame_height,
-            ear_threshold=self.ear_threshold
-        )
-
         # Compute the PoG
-        pog = compute_pog(
-            gaze_origins,
-            gaze_vectors,
-            self.screen_R,
-            self.screen_t,
-            self.screen_width_mm,
-            self.screen_height_mm,
-            self.screen_width_px,
-            self.screen_height_px
-        )
+        # pog = compute_pog(
+        #     gaze_origins,
+        #     gaze_vectors,
+        #     self.screen_R,
+        #     self.screen_t,
+        #     self.screen_width_mm,
+        #     self.screen_height_mm,
+        #     self.screen_width_px,
+        #     self.screen_height_px
+        # )
+        pog = {
+            'face_pog_mm_c': np.array([0,0,0]),
+            'face_pog_mm_s': np.array([0,0,0]),
+            'face_pog_norm': np.array([0,0]),
+            'face_pog_px': np.array([0,0]),
+            'eye': {
+                'left_pog_mm_c': np.array([0,0,0]),
+                'left_pog_mm_s': np.array([0,0,0]),
+                'left_pog_norm': np.array([0,0]),
+                'left_pog_px': np.array([0,0]) ,
+                'right_pog_mm_c': np.array([0,0,0]),
+                'right_pog_mm_s': np.array([0,0,0]),
+                'right_pog_norm': np.array([0,0]),
+                'right_pog_px': np.array([0,0])
+            }
+        }
 
         toc = time.perf_counter()
 
@@ -169,7 +183,8 @@ class WebEyeTrack():
         return GazeResult(
             # Inputs
             facial_landmarks=facial_landmarks,
-            tf_facial_landmarks=gaze_origins['tf_face_points'],
+            # tf_facial_landmarks=gaze_origins['tf_face_points'],
+            tf_facial_landmarks=metric_face,
             face_rt=face_rt,
             face_blendshapes=face_blendshapes,
 
@@ -223,8 +238,6 @@ class WebEyeTrack():
             self, 
             frame: np.ndarray, 
             sample: Dict[str, Any], 
-            eyeball_centers: Optional[Tuple[np.ndarray, np.ndarray]] = None, 
-            eyeball_radius: Optional[float] = None
         ) -> GazeResult:
 
         # Get the depth and scale
@@ -247,15 +260,11 @@ class WebEyeTrack():
             facial_landmarks,
             face_rt,
             sample['face_blendshapes'],
-            eyeball_centers=eyeball_centers,
-            eyeball_radius=eyeball_radius
         )
  
     def process_frame(
             self, 
             frame: np.ndarray,
-            eyeball_centers: Optional[Tuple[np.ndarray, np.ndarray]] = None,
-            eyeball_radius: Optional[float] = None
         ) -> Optional[GazeResult]:
 
         # Start a timer
@@ -281,6 +290,4 @@ class WebEyeTrack():
             face_landmarks,
             face_rt,
             face_blendshapes,
-            eyeball_centers=eyeball_centers,
-            eyeball_radius=eyeball_radius
         )

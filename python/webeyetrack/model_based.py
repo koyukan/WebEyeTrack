@@ -3,281 +3,11 @@ import math
 import cv2
 
 from .constants import *
+from .utilities import *
 
-def rotation_matrix_to_euler_angles(R):
-    # Ensure the matrix is 3x3
-    assert R.shape == (3, 3)
-    
-    # Extract pitch, yaw, roll from the rotation matrix
-    pitch = np.arcsin(-R[2, 0])  # Pitch around X-axis
-    yaw = np.arctan2(R[2, 1], R[2, 2])  # Yaw around Y-axis
-    roll = np.arctan2(R[1, 0], R[0, 0])  # Roll around Z-axis (optional)
-# 
-    # Convert radians to degrees if necessary
-    pitch = np.degrees(pitch)
-    yaw = np.degrees(yaw)
-    roll = np.degrees(roll)
-
-    return pitch, yaw, roll
-
-def euler_angles_to_rotation_matrix(pitch, yaw, roll):
-
-    # Convert degrees to radians
-    pitch = np.radians(pitch)
-    yaw = np.radians(yaw)
-    roll = np.radians(roll)
-
-    # Compute rotation matrix from Euler angles
-    R_x = np.array([[1, 0, 0],
-                    [0, np.cos(pitch), -np.sin(pitch)],
-                    [0, np.sin(pitch), np.cos(pitch)]])
-    
-    R_y = np.array([[np.cos(yaw), 0, np.sin(yaw)],
-                    [0, 1, 0],
-                    [-np.sin(yaw), 0, np.cos(yaw)]])
-    
-    R_z = np.array([[np.cos(roll), -np.sin(roll), 0],
-                    [np.sin(roll), np.cos(roll), 0],
-                    [0, 0, 1]])
-    
-    R = np.dot(R_z, np.dot(R_y, R_x))
-    
-    return R
-
-# def pitch_yaw_to_gaze_vector(pitch, yaw):
-#     """
-#     Converts pitch and yaw angles into a 3D gaze direction vector (unit vector),
-#     with pitch=0 and yaw=0 corresponding to a gaze direction [0, 0, 1] (forward).
-
-#     Arguments:
-#     pitch -- pitch angle in degrees
-#     yaw -- yaw angle in degrees
-
-#     Returns:
-#     A 3D unit gaze direction vector as a numpy array [x, y, z].
-#     """
-#     # Convert degrees to radians
-#     pitch_rad = np.radians(pitch)
-#     yaw_rad = np.radians(yaw)
-
-#     # Calculate the 3D gaze vector using spherical-to-Cartesian transformation
-#     z = np.cos(pitch_rad) * np.cos(yaw_rad)  # Z becomes the forward direction
-#     x = np.cos(pitch_rad) * np.sin(yaw_rad)  # X is horizontal
-#     y = np.sin(pitch_rad)                    # Y is vertical
-
-#     # Return the 3D gaze vector
-#     return np.array([x, y, z])
-
-def pitch_yaw_to_gaze_vector(pitch, yaw):
-    """
-    Converts pitch and yaw angles into a 3D gaze direction vector (unit vector),
-    with pitch=0 and yaw=0 corresponding to a gaze direction [0, 0, -1] (forward).
-
-    Arguments:
-    pitch -- pitch angle in degrees
-    yaw -- yaw angle in degrees
-
-    Returns:
-    A 3D unit gaze direction vector as a numpy array [x, y, z].
-    """
-    # Convert degrees to radians
-    pitch_rad = np.radians(pitch)
-    yaw_rad = np.radians(yaw)
-
-    # Calculate the 3D gaze vector using spherical-to-Cartesian transformation
-    z = -np.cos(pitch_rad) * np.cos(yaw_rad)  # Z becomes the negative forward direction
-    x = np.cos(pitch_rad) * np.sin(yaw_rad)   # X is horizontal
-    y = np.sin(pitch_rad)                     # Y is vertical
-
-    # Return the 3D gaze vector
-    return np.array([x, y, z])
-
-# def vector_to_pitch_yaw(vector):
-#     """
-#     Converts a 3D gaze direction vector (unit vector) into pitch and yaw angles,
-#     assuming [0, 0, 1] corresponds to pitch=0 and yaw=0 (forward direction).
-
-#     Arguments:
-#     vector -- 3D unit gaze direction vector as a numpy array [x, y, z].
-
-#     Returns:
-#     pitch -- pitch angle in degrees
-#     yaw -- yaw angle in degrees
-#     """
-#     # Ensure the input vector is normalized (unit vector)
-#     vector = vector / np.linalg.norm(vector)
-    
-#     # Extract components
-#     x, y, z = vector
-    
-#     # Yaw (azimuth angle): the angle in the XZ plane from the Z-axis
-#     yaw = np.arctan2(x, z)  # In radians, between -π and π
-    
-#     # Pitch (elevation angle): the angle from the XZ plane
-#     pitch = np.arctan2(y, np.sqrt(x**2 + z**2))  # In radians, between -π/2 and π/2
-
-#     # Convert radians to degrees
-#     yaw_deg = np.degrees(yaw)
-#     pitch_deg = np.degrees(pitch)
-    
-#     return pitch_deg, yaw_deg
-
-def vector_to_pitch_yaw(vector):
-    """
-    Converts a 3D gaze direction vector (unit vector) into pitch and yaw angles,
-    assuming [0, 0, -1] corresponds to pitch=0 and yaw=0 (forward direction).
-
-    Arguments:
-    vector -- 3D unit gaze direction vector as a numpy array [x, y, z].
-
-    Returns:
-    pitch -- pitch angle in degrees
-    yaw -- yaw angle in degrees
-    """
-    # Ensure the input vector is normalized (unit vector)
-    vector = vector / np.linalg.norm(vector)
-    
-    # Extract components
-    x, y, z = vector
-    
-    # Yaw (azimuth angle): the angle in the XZ plane from the Z-axis
-    yaw = np.arctan2(x, -z)  # In radians, between -π and π, Z is negative now
-    
-    # Pitch (elevation angle): the angle from the XZ plane
-    pitch = np.arctan2(y, np.sqrt(x**2 + z**2))  # In radians, between -π/2 and π/2
-
-    # Convert radians to degrees
-    yaw_deg = np.degrees(yaw)
-    pitch_deg = np.degrees(pitch)
-    
-    return pitch_deg, yaw_deg
-
-def get_rotation_matrix_from_vector(vec):
-    """
-    Generates a rotation matrix that aligns the Z-axis with the input 3D unit vector.
-    """
-    # Normalize the input vector to ensure it's a unit vector
-    vec = vec / np.linalg.norm(vec)
-    x, y, z = vec
-    
-    # Default Z-axis vector
-    z_axis = np.array([0, 0, 1])
-    
-    # Cross product to find the axis of rotation
-    axis = np.cross(z_axis, vec)
-    axis_len = np.linalg.norm(axis)
-    
-    if axis_len != 0:
-        axis = axis / axis_len  # Normalize the rotation axis
-    
-    # Angle between the Z-axis and the input vector
-    angle = np.arccos(np.dot(z_axis, vec))
-    
-    # Compute rotation matrix using axis-angle formula (Rodrigues' rotation formula)
-    K = np.array([[0, -axis[2], axis[1]],
-                  [axis[2], 0, -axis[0]],
-                  [-axis[1], axis[0], 0]])
-    
-    R = np.eye(3) + np.sin(angle) * K + (1 - np.cos(angle)) * np.dot(K, K)
-    
-    return R
-
-
-def compute_2d_origin(points):
-    (cx, cy), radius = cv2.minEnclosingCircle(points.astype(np.float32))
-    center = np.array([cx, cy], dtype=np.int32)
-    return center
-
-def create_perspective_matrix(aspect_ratio):
-    k_degrees_to_radians = np.pi / 180.0
-
-    # Initialize a 4x4 matrix filled with zeros
-    perspective_matrix = np.zeros((4, 4), dtype=np.float32)
-
-    # Standard perspective projection matrix calculations
-    f = 1.0 / np.tan(k_degrees_to_radians * VERTICAL_FOV_DEGREES / 2.0)
-    denom = 1.0 / (NEAR - FAR)
-
-    # Populate the matrix values
-    perspective_matrix[0, 0] = f / aspect_ratio
-    perspective_matrix[1, 1] = f
-    perspective_matrix[2, 2] = (NEAR + FAR) * denom
-    perspective_matrix[2, 3] = -1.0
-    perspective_matrix[3, 2] = 2.0 * FAR * NEAR * denom
-
-    # Flip Y-axis if origin point location is top-left corner
-    if ORIGIN_POINT_LOCATION == 'TOP_LEFT_CORNER':
-        perspective_matrix[1, 1] *= -1.0
-
-    return perspective_matrix
-
-def convert_uv_to_xyz(perspective_matrix, u, v, z_relative):
-    # Step 1: Convert normalized (u, v) to Normalized Device Coordinates (NDC)
-    ndc_x = 2 * u - 1
-    ndc_y = 1 - 2 * v
-
-    # Step 2: Create the NDC point in homogeneous coordinates
-    ndc_point = np.array([ndc_x, ndc_y, -1.0, 1.0])
-
-    # Step 3: Invert the perspective matrix to go from NDC to world space
-    inv_perspective_matrix = np.linalg.inv(perspective_matrix)
-
-    # Step 4: Compute the point in world space (in homogeneous coordinates)
-    world_point_homogeneous = np.dot(inv_perspective_matrix, ndc_point)
-
-    # Step 5: Dehomogenize (convert from homogeneous to Cartesian coordinates)
-    x = world_point_homogeneous[0] / world_point_homogeneous[3]
-    y = world_point_homogeneous[1] / world_point_homogeneous[3]
-    z = world_point_homogeneous[2] / world_point_homogeneous[3]
-
-    # Step 6: Scale using the relative depth
-    # Option A
-    x_relative = -x #* z_relative
-    y_relative = y #* z_relative
-    # z_relative = z * z_relative
-
-    # Option B
-    # x_relative = x * z_relative
-    # y_relative = y * z_relative
-    # z_relative = z * z_relative
-
-    return np.array([x_relative, y_relative, z_relative])
-
-def convert_xyz_to_uv(perspective_matrix, x, y, z):
-    # Step 1: Convert (x, y, z) to homogeneous coordinates (x, y, z, 1)
-    world_point = np.array([x, -y, z, 1.0])
-    # world_point = np.array([x, y, z, 1.0])
-
-    # Step 2: Apply the perspective projection matrix
-    ndc_point_homogeneous = np.dot(perspective_matrix, world_point)
-
-    # Step 3: Dehomogenize to convert from homogeneous to Cartesian coordinates
-    u_ndc = ndc_point_homogeneous[0] / ndc_point_homogeneous[3]
-    v_ndc = ndc_point_homogeneous[1] / ndc_point_homogeneous[3]
-    z_ndc = ndc_point_homogeneous[2] / ndc_point_homogeneous[3]
-
-    # Step 4: Convert from NDC to normalized coordinates (u, v) in the range [0, 1]
-    u = (u_ndc + 1) / 2
-    v = (1 - v_ndc) / 2
-
-    return u, v
-
-def convert_xyz_to_uv_with_intrinsic(intrinsic_matrix, x, y, z):
-    # Step 1: Create the 3D point in homogeneous coordinates
-    point_3d = np.array([-x, -y, z, 1.0])
-
-    # Step 2: Project the 3D point to the image plane using the intrinsic matrix
-    # Remove the homogeneous component before applying K
-    point_3d_camera = point_3d[:3]  # Only use x, y, z
-
-    # Apply the intrinsic matrix to project to 2D
-    projected_point_homogeneous = np.dot(intrinsic_matrix, point_3d_camera)
-
-    # Step 3: Dehomogenize to convert to Cartesian coordinates (u, v)
-    u = projected_point_homogeneous[0] / projected_point_homogeneous[2]
-    v = projected_point_homogeneous[1] / projected_point_homogeneous[2]
-
-    return np.array([u, v])
+########################################################################################
+# Blink Detection
+########################################################################################
 
 def compute_ear(facial_landmarks, side):
 
@@ -291,6 +21,10 @@ def compute_ear(facial_landmarks, side):
 
     ear = (np.linalg.norm(p2 - p6) + np.linalg.norm(p3 - p5)) / (2 * np.linalg.norm(p1 - p4))
     return ear
+
+########################################################################################
+# 3D Face Reconstruction
+########################################################################################
 
 def estimate_inter_pupillary_distance_2d(facial_landmarks, height, width):
     data_2d_pairs = {
@@ -429,6 +163,141 @@ def estimate_2d_3d_eye_face_origins(perspective_matrix, facial_landmarks, face_r
         # 'eye_origins_3d': {'left': np.array([0,0,100]), 'right': np.array([0,0,100])},
         'eye_origins_2d': positions['eye_origins_2d']
     }
+
+def face_reconstruction(perspective_matrix, face_landmarks, face_width_cm, face_rt, K, frame_width, frame_height, initial_z_guess=60):
+    
+    # 1) Convert uvz to xyz
+    relative_face_mesh = np.array([convert_uv_to_xyz(perspective_matrix, x[0], x[1], x[2]) for x in face_landmarks[:, :3]])
+    
+    # 2) Center to the nose 
+    nose = relative_face_mesh[4]
+    relative_face_mesh = relative_face_mesh - nose
+    relative_face_mesh *= np.array([-1, -1, 1])
+    
+    # 3) make the width of the face length=1
+    euclidean_distance = np.linalg.norm(relative_face_mesh[LEFTMOST_LANDMARK] - relative_face_mesh[RIGHTMOST_LANDMARK])
+    relative_face_mesh[:, :] /= euclidean_distance
+    canonical_pts_3d = relative_face_mesh * face_width_cm
+
+    # 4) Extract the face transformation matrix from MediaPipe
+    face_r = face_rt[:3, :3].copy()
+    pitch, yaw, roll = rotation_matrix_to_euler_angles(np.linalg.inv(face_r))
+    pitch, yaw, roll = -yaw, pitch, roll # Flip the pitch and yaw
+    face_r = euler_angles_to_rotation_matrix(pitch, yaw, roll)
+
+    # 5) Derotate the face based face transformation matrix
+    canonical_pts_3d = canonical_pts_3d @ np.linalg.inv(face_r).T
+
+    # 6) Scale is embedded in face_r's columns
+    scales = np.linalg.norm(face_r, axis=0)
+    face_s = scales.mean()  # average scale
+    face_r /= face_s
+
+    # 7) Now we need to estimate the 3D position of the face
+    # ---------------------------------------------------------------
+    # (A) Build an initial 4x4 transform that has R, s, and some guess at Z
+    #     For example, -60 in front of the camera
+    # ---------------------------------------------------------------
+    guess_z = 60.0
+    init_transform = np.eye(4, dtype=np.float32)
+    init_transform[:3, :3] = face_r
+    init_transform[:3, 3]  = np.array([0, 0, guess_z], dtype=np.float32)
+
+    # ---------------------------------------------------------------
+    # (B) Project canonical mesh using this initial transform
+    #     We'll get a set of 2D points in pixel space
+    # ---------------------------------------------------------------
+    canonical_proj_2d = transform_canonical_mesh(
+        canonical_pts_3d, init_transform, K 
+    ).astype(np.float32)  # shape (N, 2)
+
+    # ---------------------------------------------------------------
+    # (C) Get the DETECTED 2D landmarks from MediaPipe
+    #     They are in normalized [0..1], so multiply by width/height
+    # ---------------------------------------------------------------
+    detected_2d = face_landmarks[:, :2] * np.array([frame_width, frame_height])
+
+    # ---------------------------------------------------------------
+    # (D) Do partial Procrustes in 2D: translation only
+    #     shift_2d = (mean(detected) - mean(canonical_proj))
+    # ---------------------------------------------------------------
+    shift_2d = partial_procrustes_translation_2d(canonical_proj_2d, detected_2d)
+
+    # ---------------------------------------------------------------
+    # (E) Convert that 2D shift to a 3D offset at depth guess_z
+    #     Then add it to the transform's translation
+    # ---------------------------------------------------------------
+    # Estimate the fx and fy based on the frame size
+    shift_3d = image_shift_to_3d(shift_2d, depth_z=guess_z, K=K)
+    final_transform = init_transform.copy()
+    final_transform[:3, 3] += shift_3d
+    first_final_transform = final_transform.copy()
+
+    # ---------------------------------------------------------------
+    # (F) Refine the depth by projecting the canonical mesh
+    #     and then adjusting the Z to minimize the radial error
+    # ---------------------------------------------------------------
+    new_zs = [guess_z]
+    for i in range(10):
+        # Now do the final projection
+        final_projected_pts = transform_canonical_mesh(
+            canonical_pts_3d, final_transform, K
+        )
+        
+        new_z, _ = refine_depth_by_radial_magnitude(
+            final_projected_pts, detected_2d, old_z=final_transform[2, 3], alpha=0.5
+        )
+
+        # Compute the difference of the Z
+        new_zs.append(new_z)
+        diff_z = new_z - final_transform[2, 3]
+        if np.abs(diff_z) < 0.25:
+            break
+
+        # Use similar triangles to compute the new x and y
+        prior_x = first_final_transform[0, 3]
+        prior_y = first_final_transform[1, 3]
+        new_x = prior_x * (new_z / guess_z)
+        new_y = prior_y * (new_z / guess_z)
+
+        # Compute the new xy shift
+        final_transform[0, 3] = new_x
+        final_transform[1, 3] = new_y
+        final_transform[2, 3] = new_z
+
+    # ---------------------------------------------------------------
+    # (G) Apply the final transform to the canonical mesh to obtain
+    #     the final 3D face mesh    
+    # ---------------------------------------------------------------
+    final_face_pts = canonical_to_camera(canonical_pts_3d, final_transform)
+
+    return final_transform, final_face_pts
+
+def estimate_gaze_origins(face_landmarks_3d, face_landmarks):
+
+    eye_origins_2d = {'left': None, 'right': None}
+    eye_origins_3d = {'left': None, 'right': None}
+    for i in ['left', 'right']:
+        eye_landmark = LEFT_EYE_HORIZONTAL_LANDMARKS if i == 'left' else RIGHT_EYE_HORIZONTAL_LANDMARKS
+        eyeball_center_3d = face_landmarks_3d[eye_landmark].mean(axis=0)
+        eyeball_center_2d = face_landmarks[eye_landmark].mean(axis=0)
+        eye_origins_3d[i] = eyeball_center_3d
+        eye_origins_2d[i] = eyeball_center_2d
+
+    # Compute face gaze origin
+    face_origin_3d = (eye_origins_3d['left'] + eye_origins_3d['right']) / 2
+    face_origin_2d = (eye_origins_2d['left'] + eye_origins_2d['right']) / 2
+
+    return {
+        'face_origin_3d': face_origin_3d,
+        'face_origin_2d': face_origin_2d,
+        'eye_origins_3d': eye_origins_3d,
+        'eye_origins_2d': eye_origins_2d
+    }
+
+########################################################################################
+# Gaze Estimation
+########################################################################################
 
 def estimate_gaze_vector_based_on_model_based(
         eyeball_centers, 
@@ -834,6 +703,10 @@ def estimate_gaze_vector_based_on_eye_blendshapes(face_blendshapes, face_rt):
             }
         }            
     }
+
+########################################################################################
+# Screen Plane Intersection
+########################################################################################
 
 def screen_plane_intersection(o, d, screen_R, screen_t):
     """

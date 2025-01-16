@@ -1,3 +1,5 @@
+from typing import Optional
+
 import cv2
 import numpy as np
 import mediapipe as mp
@@ -134,11 +136,11 @@ def estimate_camera_intrinsics(frame, fov_x=None):
     return K
 
 def refine_depth_by_radial_magnitude(
-    frame: np.ndarray,
     final_projected_pts: np.ndarray,
     detected_2d: np.ndarray,
     old_z: float,
     alpha: float = 0.5,
+    frame: Optional[np.ndarray] = None,
 ) -> float:
     """
     Refines the face depth (Z) by comparing the radial 2D magnitude
@@ -156,7 +158,8 @@ def refine_depth_by_radial_magnitude(
       new_z: float, the updated depth
     """
     # Make a copy of the frame
-    draw_frame = frame.copy()
+    if frame is not None:
+        draw_frame = frame.copy()
 
     # Compute the centroid of the detected 2D points
     detected_center = detected_2d.mean(axis=0)
@@ -199,7 +202,9 @@ def refine_depth_by_radial_magnitude(
     safe_delta = max(-MAX_STEP_CM, min(MAX_STEP_CM, delta))
     new_z = old_z + safe_delta
 
-    return new_z, draw_frame
+    if frame is not None:
+        return new_z, draw_frame
+    return new_z, None
 
 def partial_procrustes_translation_2d(canonical_2d, detected_2d):
     # c_center = canonical_2d.mean(axis=0)

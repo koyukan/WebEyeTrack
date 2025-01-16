@@ -42,6 +42,10 @@ IRIS_LANDMARKS = RIGHT_IRIS_LANDMARKS + LEFT_IRIS_LANDMARKS
 EYE_PADDING_WIDTH = 0.3
 EYE_HEIGHT_RATIO = 0.7
 
+# Used to determine the width of the face
+LEFTMOST_LANDMARK = 356
+RIGHTMOST_LANDMARK = 127
+
 # Position of eyeball center based on canonical coordinate system
 # LEFT_EYEBALL_CENTER = np.array([3.0278, -2.7526, 2.7234]) * 10 # X, Y, Z
 # RIGHT_EYEBALL_CENTER = np.array([-3.0278, -2.7526, 2.7234]) * 10 # X, Y, Z
