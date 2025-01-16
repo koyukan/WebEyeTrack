@@ -16,7 +16,11 @@ from webeyetrack.utilities import (
     estimate_camera_intrinsics, 
     transform_for_3d_scene,
     transform_3d_to_3d,
-    transform_3d_to_2d
+    transform_3d_to_2d,
+    get_rotation_matrix_from_vector,
+    rotation_matrix_to_euler_angles,
+    euler_angles_to_rotation_matrix,
+    OPEN3D_RT
 )
 
 import numpy as np
@@ -147,7 +151,7 @@ def main():
 
     face_mesh, face_mesh_lines = load_canonical_mesh(visual)
     line_set = load_3d_axis(visual)
-    eyeball_meshes, iris_3d_pt, eyeball_R = load_eyeball_model(visual)
+    eyeball_meshes, eyeball_R = load_eyeball_model(visual)
 
     # Pipeline
     pipeline = WebEyeTrack(
@@ -208,38 +212,35 @@ def main():
         visual.update_geometry(line_set)
 
         # Compute the 3D eye origin
-        # for i in ['left', 'right']:
+        for i in ['left', 'right']:
+            eye_result = result.left if i == 'left' else result.right
+            origin = eye_result.origin
+            direction = eye_result.direction
 
-        #     # final_position = transform_for_3d_scene(eye_g_o[k].reshape((-1,3))).flatten()
-        #     final_position = transform_for_3d_scene(camera_eyeball_center[i].reshape((-1,3))).flatten()
-        #     eyeball_meshes[i].translate(final_position, relative=False)
+            # final_position = transform_for_3d_scene(eye_g_o[k].reshape((-1,3))).flatten()
+            final_position = transform_for_3d_scene(origin.reshape((-1,3))).flatten()
+            eyeball_meshes[i].translate(final_position, relative=False)
 
-        #     # Rotation
-        #     current_eye_R = eyeball_R[i]
-        #     eye_R = get_rotation_matrix_from_vector(gaze_vectors[i])
-        #     pitch, yaw, roll = rotation_matrix_to_euler_angles(eye_R)
-        #     pitch, yaw, roll = yaw, -pitch, roll # Flip the pitch and yaw
-        #     eye_R = euler_angles_to_rotation_matrix(pitch, yaw, 0)
+            # Rotation
+            current_eye_R = eyeball_R[i]
+            eye_R = get_rotation_matrix_from_vector(direction)
+            pitch, yaw, roll = rotation_matrix_to_euler_angles(eye_R)
+            pitch, yaw, roll = yaw, -pitch, roll # Flip the pitch and yaw
+            eye_R = euler_angles_to_rotation_matrix(pitch, yaw, 0)
 
-        #     # Apply the scene transformation to the new eye rotation
-        #     eye_R = np.dot(eye_R, RT[:3, :3])
+            # Apply the scene transformation to the new eye rotation
+            eye_R = np.dot(eye_R, OPEN3D_RT[:3, :3])
 
-        #     # Compute the rotation matrix to rotate the current to the target
-        #     new_eye_R = np.dot(eye_R, current_eye_R.T)
-        #     eyeball_R[i] = eye_R
-        #     eyeball_meshes[i].rotate(new_eye_R)
-
-        #     # Debug, print out the mean eye gaze origin of the eyeball mesh
-        #     vertices = np.array(eyeball_meshes[i].vertices)
-        #     centroid = vertices.mean(axis=0)
-        #     # print(f"Eye gaze origin ({k}): {centroid}")
+            # Compute the rotation matrix to rotate the current to the target
+            new_eye_R = np.dot(eye_R, current_eye_R.T)
+            eyeball_R[i] = eye_R
+            eyeball_meshes[i].rotate(new_eye_R)
 
         # Update the geometry
         visual.update_geometry(face_mesh)
         visual.update_geometry(face_mesh_lines)
-        # for i in ['left', 'right']:
-        #     visual.update_geometry(eyeball_meshes[i])
-            # visual.update_geometry(iris_3d_pt[i])
+        for i in ['left', 'right']:
+            visual.update_geometry(eyeball_meshes[i])
 
         # Update visualizer
         visual.poll_events()
