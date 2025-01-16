@@ -12,7 +12,12 @@ import trimesh
 from webeyetrack import WebEyeTrack
 from webeyetrack.constants import *
 from webeyetrack.datasets.utils import draw_landmarks_on_image
-from webeyetrack.utilities import estimate_camera_intrinsics, transform_for_3d_scene
+from webeyetrack.utilities import (
+    estimate_camera_intrinsics, 
+    transform_for_3d_scene,
+    transform_3d_to_3d,
+    transform_3d_to_2d
+)
 
 import numpy as np
 
@@ -73,8 +78,9 @@ def load_3d_axis(visual):
         lines=o3d.utility.Vector2iVector(lines),
     )
     line_set.colors = o3d.utility.Vector3dVector(colors)
-    
     visual.add_geometry(line_set)
+
+    return line_set
 
 def load_eyeball_model(visual):
     
@@ -140,7 +146,7 @@ def main():
     vis.convert_from_pinhole_camera_parameters(parameter=params)
 
     face_mesh, face_mesh_lines = load_canonical_mesh(visual)
-    load_3d_axis(visual)
+    line_set = load_3d_axis(visual)
     eyeball_meshes, iris_3d_pt, eyeball_R = load_eyeball_model(visual)
 
     # Pipeline
@@ -164,7 +170,7 @@ def main():
 
         frame = cv2.flip(frame, 1)
 
-        result = pipeline.process_frame(frame)
+        result, detection_results = pipeline.process_frame(frame)
         if not result:
             cv2.imshow("Face Mesh", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
@@ -174,32 +180,32 @@ def main():
         draw_frame = frame.copy()
 
         # Draw the landmarks
-        # frame = draw_landmarks_on_image(frame, detection_results)
+        draw_frame = draw_landmarks_on_image(draw_frame, detection_results)
 
         # Draw the depth as text on the top-left corner
-        # cv2.putText(draw_frame, f"Depth: {final_transform[2,3]:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        cv2.putText(draw_frame, f"Depth: {result.metric_transform[2,3]:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
         # Compute the face mesh
-        # face_mesh.vertices = o3d.utility.Vector3dVector(transform_for_3d_scene(transformed_pts))
-        # new_face_mesh_lines = o3d.geometry.LineSet.create_from_triangle_mesh(face_mesh)
-        # face_mesh_lines.points = new_face_mesh_lines.points
+        face_mesh.vertices = o3d.utility.Vector3dVector(transform_for_3d_scene(result.metric_face))
+        new_face_mesh_lines = o3d.geometry.LineSet.create_from_triangle_mesh(face_mesh)
+        face_mesh_lines.points = new_face_mesh_lines.points
 
         # Draw the canonical face axes by using the final_transform
-        # canonical_face_axes = np.array([
-        #     [0, 0, 0],
-        #     [1, 0, 0],
-        #     [0, 1, 0],
-        #     [0, 0, 1]
-        # ]) * 5
-        # canonical_face_axes_2d = transform_canonical_mesh(canonical_face_axes, final_transform, K)
-        # cv2.line(draw_frame, tuple(canonical_face_axes_2d[0]), tuple(canonical_face_axes_2d[1]), (0, 0, 255), 2)
-        # cv2.line(draw_frame, tuple(canonical_face_axes_2d[0]), tuple(canonical_face_axes_2d[2]), (0, 255, 0), 2)
-        # cv2.line(draw_frame, tuple(canonical_face_axes_2d[0]), tuple(canonical_face_axes_2d[3]), (255, 0, 0), 2)
+        canonical_face_axes = np.array([
+            [0, 0, 0],
+            [1, 0, 0],
+            [0, 1, 0],
+            [0, 0, 1]
+        ]) * 5
+        camera_pts_3d = transform_3d_to_3d(canonical_face_axes, result.metric_transform)
+        canonical_face_axes_2d = transform_3d_to_2d(camera_pts_3d, K)
+        cv2.line(draw_frame, tuple(canonical_face_axes_2d[0]), tuple(canonical_face_axes_2d[1]), (0, 0, 255), 2)
+        cv2.line(draw_frame, tuple(canonical_face_axes_2d[0]), tuple(canonical_face_axes_2d[2]), (0, 255, 0), 2)
+        cv2.line(draw_frame, tuple(canonical_face_axes_2d[0]), tuple(canonical_face_axes_2d[3]), (255, 0, 0), 2)
 
         # Update the 3d axes in the visualizer as well
-        # canonical_face_axes_3d = transform_for_3d_scene(canonical_to_camera(canonical_face_axes, final_transform))
-        # line_set.points = o3d.utility.Vector3dVector(canonical_face_axes_3d)
-        # visual.update_geometry(line_set)
+        line_set.points = o3d.utility.Vector3dVector(camera_pts_3d)
+        visual.update_geometry(line_set)
 
         # Compute the 3D eye origin
         # for i in ['left', 'right']:
@@ -229,16 +235,15 @@ def main():
         #     # print(f"Eye gaze origin ({k}): {centroid}")
 
         # Update the geometry
-        # visual.update_geometry(face_mesh)
-        # visual.update_geometry(face_mesh_lines)
+        visual.update_geometry(face_mesh)
+        visual.update_geometry(face_mesh_lines)
         # for i in ['left', 'right']:
-        #     # ...
         #     visual.update_geometry(eyeball_meshes[i])
             # visual.update_geometry(iris_3d_pt[i])
 
         # Update visualizer
-        # visual.poll_events()
-        # visual.update_renderer()
+        visual.poll_events()
+        visual.update_renderer()
 
         cv2.imshow("Face Mesh", draw_frame)
         if cv2.waitKey(1) & 0xFF == ord("q"):

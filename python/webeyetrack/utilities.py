@@ -491,39 +491,19 @@ def load_canonical_mesh(mesh_path):
     mesh.triangles = o3d.utility.Vector3iVector(np.array(mesh.triangles))
     return mesh
 
-def canonical_to_camera(canonical_points, rt_matrix):
+def transform_3d_to_3d(pts_3d, rt_matrix):
     # same as you had before, with perspective divide...
-    num_points = len(canonical_points)
-    canonical_points_h = np.hstack([
-        canonical_points, 
+    num_points = len(pts_3d)
+    pts_3d_h= np.hstack([
+        pts_3d, 
         np.ones((num_points, 1), dtype=np.float32)
     ])
-    transformed_points_h = (rt_matrix @ canonical_points_h.T).T
+    transformed_points_h = (rt_matrix @ pts_3d_h.T).T
     transformed_xyz = transformed_points_h[:, :3]
     return transformed_xyz
 
-def camera_to_canonical(camera_points, rt_matrix):
-    # same as you had before, with perspective divide...
-    num_points = len(camera_points)
-    camera_points_h = np.hstack([
-        camera_points, 
-        np.ones((num_points, 1), dtype=np.float32)
-    ])
-    inv_rt_matrix = np.linalg.inv(rt_matrix)
-    transformed_points_h = (inv_rt_matrix @ camera_points_h.T).T
-    transformed_xyz = transformed_points_h[:, :3]
-    return transformed_xyz
-
-def transform_canonical_mesh(canonical_points, rt_matrix, K):
-    # same as you had before, with perspective divide...
-    num_points = len(canonical_points)
-    canonical_points_h = np.hstack([
-        canonical_points, 
-        np.ones((num_points, 1), dtype=np.float32)
-    ])
-    transformed_points_h = (rt_matrix @ canonical_points_h.T).T
-    transformed_xyz = transformed_points_h[:, :3]
-    camera_space = (K @ transformed_xyz.T).T
+def transform_3d_to_2d(camera_pts_3d, K):
+    camera_space = (K @ camera_pts_3d.T).T
 
     eps = 1e-6
     zs = np.where(np.abs(camera_space[:, 2]) < eps, eps, camera_space[:, 2])

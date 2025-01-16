@@ -207,8 +207,9 @@ def face_reconstruction(perspective_matrix, face_landmarks, face_width_cm, face_
     # (B) Project canonical mesh using this initial transform
     #     We'll get a set of 2D points in pixel space
     # ---------------------------------------------------------------
-    canonical_proj_2d = transform_canonical_mesh(
-        canonical_pts_3d, init_transform, K 
+    camera_pts_3d = transform_3d_to_3d(canonical_pts_3d, init_transform)
+    canonical_proj_2d = transform_3d_to_2d(
+        camera_pts_3d, K 
     ).astype(np.float32)  # shape (N, 2)
 
     # ---------------------------------------------------------------
@@ -239,9 +240,13 @@ def face_reconstruction(perspective_matrix, face_landmarks, face_width_cm, face_
     # ---------------------------------------------------------------
     new_zs = [guess_z]
     for i in range(10):
+
+        # First convert canonical pts to camera points
+        camera_pts_3d = transform_3d_to_3d(canonical_pts_3d, final_transform)
+
         # Now do the final projection
-        final_projected_pts = transform_canonical_mesh(
-            canonical_pts_3d, final_transform, K
+        final_projected_pts = transform_3d_to_2d(
+            camera_pts_3d, K
         )
         
         new_z, _ = refine_depth_by_radial_magnitude(
@@ -269,7 +274,7 @@ def face_reconstruction(perspective_matrix, face_landmarks, face_width_cm, face_
     # (G) Apply the final transform to the canonical mesh to obtain
     #     the final 3D face mesh    
     # ---------------------------------------------------------------
-    final_face_pts = canonical_to_camera(canonical_pts_3d, final_transform)
+    final_face_pts = transform_3d_to_3d(canonical_pts_3d, final_transform)
 
     return final_transform, final_face_pts
 

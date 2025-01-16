@@ -183,26 +183,28 @@ class WebEyeTrack():
         return GazeResult(
             # Inputs
             facial_landmarks=facial_landmarks,
-            # tf_facial_landmarks=gaze_origins['tf_face_points'],
-            tf_facial_landmarks=metric_face,
             face_rt=face_rt,
             face_blendshapes=face_blendshapes,
 
-            # Face results
+            # Face Reconstruction
+            metric_face=metric_face,
+            metric_transform=metric_transform,
+
+            # Face Gaze
             face_origin=gaze_origins['face_origin_3d'],
             face_origin_2d=gaze_origins['face_origin_2d'],
             face_gaze=gaze_vectors['face'],
 
-            # Eye results
+            # Eye Gaze
             left=EyeResult(
                 is_closed=gaze_vectors['eyes']['is_closed']['left'],
                 origin=gaze_origins['eye_origins_3d']['left'],
                 origin_2d=gaze_origins['eye_origins_2d']['left'],
                 direction=gaze_vectors['eyes']['vector']['left'],
-                pog_mm_c=pog['eye']['left_pog_mm_c'],
-                pog_mm_s=pog['eye']['left_pog_mm_s'],
-                pog_norm=pog['eye']['left_pog_norm'],
-                pog_px=pog['eye']['left_pog_px'],
+                # pog_mm_c=pog['eye']['left_pog_mm_c'],
+                # pog_mm_s=pog['eye']['left_pog_mm_s'],
+                # pog_norm=pog['eye']['left_pog_norm'],
+                # pog_px=pog['eye']['left_pog_px'],
                 meta_data={
                     **gaze_vectors['eyes']['meta_data']['left']
                 }
@@ -212,20 +214,20 @@ class WebEyeTrack():
                 origin=gaze_origins['eye_origins_3d']['right'],
                 origin_2d=gaze_origins['eye_origins_2d']['right'],
                 direction=gaze_vectors['eyes']['vector']['right'],
-                pog_mm_c=pog['eye']['right_pog_mm_c'],
-                pog_mm_s=pog['eye']['right_pog_mm_s'],
-                pog_norm=pog['eye']['right_pog_norm'],
-                pog_px=pog['eye']['right_pog_px'],
+                # pog_mm_c=pog['eye']['right_pog_mm_c'],
+                # pog_mm_s=pog['eye']['right_pog_mm_s'],
+                # pog_norm=pog['eye']['right_pog_norm'],
+                # pog_px=pog['eye']['right_pog_px'],
                 meta_data={
                     **gaze_vectors['eyes']['meta_data']['right']
                 }
             ),
 
             # PoG information
-            pog_mm_c=pog['face_pog_mm_c'],
-            pog_mm_s=pog['face_pog_mm_s'],
-            pog_norm=pog['face_pog_norm'],
-            pog_px=pog['face_pog_px'],
+            # pog_mm_c=pog['face_pog_mm_c'],
+            # pog_mm_s=pog['face_pog_mm_s'],
+            # pog_norm=pog['face_pog_norm'],
+            # pog_px=pog['face_pog_px'],
 
             # Meta data
             duration=toc - tic,
@@ -290,4 +292,4 @@ class WebEyeTrack():
             face_landmarks,
             face_rt,
             face_blendshapes,
-        )
+        ), detection_results

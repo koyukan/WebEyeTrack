@@ -1,4 +1,4 @@
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, Optional
 from dataclasses import dataclass, field
 import numpy as np
 import pathlib
@@ -63,6 +63,12 @@ class Sample:
     image_fp: pathlib.Path
     annotations: Annotations
 
+@dataclass
+class PoGResult:
+    pog_mm_c: np.ndarray # X, Y, Z in Camera Coordinate System
+    pog_mm_s: np.ndarray # X, Y, Z in Screen Coordinate System
+    pog_norm: np.ndarray # Normalized uv coordinates in Screen Plane
+    pog_px: np.ndarray # Quantized norm to match screen pixel resolution
 
 @dataclass
 class EyeResult:
@@ -70,19 +76,19 @@ class EyeResult:
     origin: np.ndarray # X, Y, Z
     origin_2d: np.ndarray # u, v
     direction: np.ndarray # X, Y, Z
-    pog_mm_c: np.ndarray
-    pog_mm_s: np.ndarray
-    pog_norm: np.ndarray
-    pog_px: np.ndarray
+    pog: Optional[PoGResult] = None
     meta_data: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class GazeResult:
     # Inputs
-    facial_landmarks: np.ndarray
-    tf_facial_landmarks: np.ndarray
-    face_rt: np.ndarray
-    face_blendshapes: np.ndarray
+    facial_landmarks: np.ndarray # [N, 5]
+    face_rt: np.ndarray # [4, 4]
+    face_blendshapes: np.ndarray # [N, 1]
+
+    # Face Reconstruction
+    metric_face: np.ndarray # [N, 486]
+    metric_transform: np.ndarray # [4, 4]
 
     # Face Gaze
     face_origin: np.ndarray # X, Y, Z
@@ -93,14 +99,11 @@ class GazeResult:
     left: EyeResult
     right: EyeResult
 
-    # PoG
-    pog_mm_c: np.ndarray # (2,)
-    pog_mm_s: np.ndarray # (2,)
-    pog_norm: np.ndarray # (2,)
-    pog_px: np.ndarray
-
     # Meta data
     duration: float # seconds
     eyeball_radius: float
     eyeball_centers: Tuple[np.ndarray, np.ndarray]
     perspective_matrix: np.ndarray
+
+    # PoG
+    pog: Optional[PoGResult] = None
