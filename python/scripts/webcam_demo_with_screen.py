@@ -59,7 +59,8 @@ elif platform.system() == 'Darwin':
     SCREEN_HEIGHT_PX = height_px
     SCREEN_WIDTH_PX = width_px
 
-SCALE = 2e-3
+# SCALE = 2e-3
+SCALE = 1
 print(f"Screen Height: {SCREEN_HEIGHT_MM} mm, Screen Width: {SCREEN_WIDTH_MM} mm")
 
 if __name__ == '__main__':
@@ -82,13 +83,22 @@ if __name__ == '__main__':
     intrinsics = np.array([[width, 0, width // 2], [0, height, height // 2], [0, 0, 1]])
 
     face_mesh, face_mesh_lines = load_canonical_mesh(visual)
-    line_set = load_3d_axis(visual)
+    face_coordinate_axes = load_3d_axis(visual)
     eyeball_meshes, _, eyeball_R = load_eyeball_model(visual)
-    # load_screen_rect(visual, SCREEN_WIDTH_MM, SCREEN_HEIGHT_MM, SCALE)
-    # load_camera_frustrum(w_ratio, h_ratio, visual)
+    load_screen_rect(visual, SCREEN_WIDTH_MM, SCREEN_HEIGHT_MM)
+    load_camera_frustrum(w_ratio, h_ratio, visual)
     # left_pog, right_pog = load_pog_balls(visual, SCALE)
     # left_gaze_vector, right_gaze_vector = load_gaze_vectors(visual)
-
+    
+    camera_coordinate_axes = load_3d_axis(visual)
+    points = [
+        [0, 0, 0],  # Origin
+        [1, 0, 0],  # X-axis end
+        [0, 1, 0],  # Y-axis end
+        [0, 0, 1],  # Z-axis end
+    ]
+    camera_coordinate_axes.points = o3d.utility.Vector3dVector(transform_for_3d_scene(np.array(points) * 5))
+    visual.update_geometry(camera_coordinate_axes)
     
     # Pipeline
     pipeline = WebEyeTrack(
@@ -110,8 +120,6 @@ if __name__ == '__main__':
         ret, frame = cap.read()
         if not ret:
             break
-
-        frame = cv2.flip(frame, 1)
 
         result, detection_results = pipeline.process_frame(frame)
         if not result:
@@ -146,8 +154,8 @@ if __name__ == '__main__':
         cv2.line(draw_frame, tuple(canonical_face_axes_2d[0]), tuple(canonical_face_axes_2d[3]), (255, 0, 0), 2)
 
         # Update the 3d axes in the visualizer as well
-        line_set.points = o3d.utility.Vector3dVector(transform_for_3d_scene(camera_pts_3d))
-        visual.update_geometry(line_set)
+        face_coordinate_axes.points = o3d.utility.Vector3dVector(transform_for_3d_scene(camera_pts_3d))
+        visual.update_geometry(face_coordinate_axes)
 
         # Draw the 3D eyeball and gaze vector
         # Compute the 3D eye origin

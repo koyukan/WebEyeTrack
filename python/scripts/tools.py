@@ -3,6 +3,7 @@ import trimesh
 import numpy as np
 
 from webeyetrack.constants import *
+from webeyetrack.utilities import transform_for_3d_scene
 
 def load_canonical_mesh(visual):
     # 1) Load canonical mesh
@@ -26,7 +27,7 @@ def load_canonical_mesh(visual):
 
     return face_mesh, face_mesh_lines
 
-def load_3d_axis(visual, scale=1):
+def load_3d_axis(visual):
     
     # Define points for the origin and endpoints of the axes
     points = [
@@ -34,7 +35,7 @@ def load_3d_axis(visual, scale=1):
         [1, 0, 0],  # X-axis end
         [0, 1, 0],  # Y-axis end
         [0, 0, 1],  # Z-axis end
-    ] * scale
+    ]
 
     # Define lines connecting the origin to each axis endpoint
     lines = [
@@ -115,6 +116,7 @@ def load_camera_frustrum(w_ratio, h_ratio, visual):
         [-frustum_width, -frustum_height, far_plane_dist], # Bottom-left
         [frustum_width, -frustum_height, far_plane_dist]   # Bottom-right
     ])
+    transformed_pts = transform_for_3d_scene(points)
 
     # Define lines to form the frustum
     lines = [
@@ -133,24 +135,23 @@ def load_camera_frustrum(w_ratio, h_ratio, visual):
 
     # Create the LineSet object
     frustum = o3d.geometry.LineSet()
-    frustum.points = o3d.utility.Vector3dVector(points)
+    frustum.points = o3d.utility.Vector3dVector(transformed_pts)
     frustum.lines = o3d.utility.Vector2iVector(lines)
     frustum.colors = o3d.utility.Vector3dVector(colors)
 
     # Add the frustum to the visualizer
     visual.add_geometry(frustum)
 
-def load_screen_rect(visual, screen_width_mm, screen_height_mm, scale):
+def load_screen_rect(visual, screen_width_mm, screen_height_mm):
     
     # Screen Display
-    rw, rh = screen_width_mm, screen_height_mm
+    rw, rh = screen_width_mm / 10, screen_height_mm / 10
     rectangle_points = np.array([
-        [-rw/2,-rh,0],
-        [rw/2,-rh,0],
-        [rw/2,0,0],
-        [-rw/2,0,0]
+        [-rw/2, 0, 0],
+        [rw/2, 0, 0],
+        [rw/2, rh, 0],
+        [-rw/2, rh, 0]
     ]).astype(np.float32)
-    print(rectangle_points)
 
     # Define triangles using indices to the points (two triangles to form a rectangle)
     triangles = np.array([
@@ -158,9 +159,12 @@ def load_screen_rect(visual, screen_width_mm, screen_height_mm, scale):
         [0, 2, 3]   # Triangle 2
     ])
 
+    # Apply the Open3D transformation
+    transformed_pts = transform_for_3d_scene(rectangle_points)
+
     # Create the TriangleMesh object
     rectangle_mesh = o3d.geometry.TriangleMesh()
-    rectangle_mesh.vertices = o3d.utility.Vector3dVector(rectangle_points * scale)
+    rectangle_mesh.vertices = o3d.utility.Vector3dVector(transformed_pts)
     rectangle_mesh.triangles = o3d.utility.Vector3iVector(triangles)
 
     # Set the color for each vertex

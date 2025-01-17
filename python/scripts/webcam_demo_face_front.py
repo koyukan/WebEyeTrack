@@ -45,7 +45,7 @@ def main():
     vis.convert_from_pinhole_camera_parameters(parameter=params)
 
     face_mesh, face_mesh_lines = load_canonical_mesh(visual)
-    line_set = load_3d_axis(visual)
+    face_coordinate_axes = load_3d_axis(visual)
     eyeball_meshes, _, eyeball_R = load_eyeball_model(visual)
 
     # Pipeline
@@ -105,8 +105,8 @@ def main():
         cv2.line(draw_frame, tuple(canonical_face_axes_2d[0]), tuple(canonical_face_axes_2d[3]), (255, 0, 0), 2)
 
         # Update the 3d axes in the visualizer as well
-        line_set.points = o3d.utility.Vector3dVector(transform_for_3d_scene(camera_pts_3d))
-        visual.update_geometry(line_set)
+        face_coordinate_axes.points = o3d.utility.Vector3dVector(transform_for_3d_scene(camera_pts_3d))
+        visual.update_geometry(face_coordinate_axes)
 
         # Compute the 3D eye origin
         for i in ['left', 'right']:
