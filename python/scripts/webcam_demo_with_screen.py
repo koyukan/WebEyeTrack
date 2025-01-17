@@ -1,16 +1,8 @@
-import pathlib
-import time
 import platform
-import json
 
 import open3d as o3d
 import cv2
 import numpy as np
-import mediapipe as mp
-from mediapipe.tasks import python
-from mediapipe.tasks.python import vision
-import imutils
-import math
 
 from webeyetrack import WebEyeTrack
 from webeyetrack.model_based import get_rotation_matrix_from_vector
@@ -24,10 +16,7 @@ from webeyetrack.utilities import (
     get_rotation_matrix_from_vector,
     rotation_matrix_to_euler_angles,
     euler_angles_to_rotation_matrix,
-    OPEN3D_RT
-)
-
-from tools import (
+    OPEN3D_RT,
     load_3d_axis, 
     load_canonical_mesh, 
     load_eyeball_model,

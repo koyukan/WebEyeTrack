@@ -13,12 +13,11 @@ from webeyetrack.utilities import (
     get_rotation_matrix_from_vector,
     rotation_matrix_to_euler_angles,
     euler_angles_to_rotation_matrix,
-    OPEN3D_RT
+    OPEN3D_RT,
+    load_3d_axis,
+    load_canonical_mesh,
+    load_eyeball_model
 )
-
-import numpy as np
-
-from tools import load_3d_axis, load_canonical_mesh, load_eyeball_model
 
 def main():
 
