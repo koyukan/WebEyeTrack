@@ -267,7 +267,7 @@ class WebEyeTrack():
     def process_frame(
             self, 
             frame: np.ndarray,
-        ) -> Optional[GazeResult]:
+        ) -> Tuple[Optional[GazeResult], Any]:
 
         # Start a timer
         tic = time.perf_counter()
@@ -280,7 +280,7 @@ class WebEyeTrack():
         try:
             face_landmarks_proto = detection_results.face_landmarks[0]
         except:
-            return None
+            return None, detection_results
         
         # Extract information fro the results
         face_landmarks = np.array([[lm.x, lm.y, lm.z, lm.visibility, lm.presence] for lm in face_landmarks_proto])

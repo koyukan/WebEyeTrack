@@ -1,9 +1,20 @@
+import pathlib
+import time
+import platform
+import json
+
+import open3d as o3d
 import cv2
 import numpy as np
-import open3d as o3d
+import mediapipe as mp
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+import imutils
+import math
 
 from webeyetrack import WebEyeTrack
-from webeyetrack.constants import *
+from webeyetrack.model_based import get_rotation_matrix_from_vector
+from webeyetrack.constants import GIT_ROOT
 from webeyetrack.datasets.utils import draw_landmarks_on_image
 from webeyetrack.utilities import (
     estimate_camera_intrinsics, 
@@ -16,55 +27,88 @@ from webeyetrack.utilities import (
     OPEN3D_RT
 )
 
-import numpy as np
+from tools import (
+    load_3d_axis, 
+    load_canonical_mesh, 
+    load_eyeball_model,
+    load_camera_frustrum,
+    load_pog_balls,
+    load_gaze_vectors,
+    load_screen_rect
+)
 
-from tools import load_3d_axis, load_canonical_mesh, load_eyeball_model
+# Screen dimensions
 
-def main():
+# Based on platform, use different approaches for determining size
+# For Windows and Linux, use the screeninfo library
+# For MacOS, use the Quartz library
+if platform.system() == 'Windows' or platform.system() == 'Linux':
+    from screeninfo import get_monitors
+    m = get_monitors()[0]
+    SCREEN_HEIGHT_MM = m.height_mm
+    SCREEN_WIDTH_MM = m.width_mm
+    SCREEN_HEIGHT_PX = m.height
+    SCREEN_WIDTH_PX = m.width
+elif platform.system() == 'Darwin':
+    import Quartz
+    main_display_id = Quartz.CGMainDisplayID()
+    width_mm, height_mm = Quartz.CGDisplayScreenSize(main_display_id)
+    width_px, height_px = Quartz.CGDisplayPixelsWide(main_display_id), Quartz.CGDisplayPixelsHigh(main_display_id)
+    SCREEN_HEIGHT_MM = height_mm
+    SCREEN_WIDTH_MM = width_mm
+    SCREEN_HEIGHT_PX = height_px
+    SCREEN_WIDTH_PX = width_px
+
+SCALE = 2e-3
+print(f"Screen Height: {SCREEN_HEIGHT_MM} mm, Screen Width: {SCREEN_WIDTH_MM} mm")
+
+if __name__ == '__main__':
 
     # Initialize Open3D Visualizer
     visual = o3d.visualization.Visualizer()
     visual.create_window(width=1920, height=1080)
     visual.get_render_option().background_color = [0.1, 0.1, 0.1]
     visual.get_render_option().mesh_show_back_face = True
-    visual.get_render_option().point_size = 10
-
-    # Get the cap sizes
+    
+    # Load the webcam 
     cap = cv2.VideoCapture(0)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    max_size = max(width, height)
+    w_ratio, h_ratio = width/max_size, height/max_size
     K = estimate_camera_intrinsics(np.zeros((height, width, 3)))
 
-    # Change the z far to 1000
-    vis = visual.get_view_control()
-    vis.set_constant_z_far(1000)
-    params = o3d.camera.PinholeCameraParameters()
-    intrinsic = o3d.camera.PinholeCameraIntrinsic(intrinsic_matrix=K, width=width, height=height)
-    params.extrinsic = np.eye(4)
-    params.intrinsic = intrinsic
-    vis.convert_from_pinhole_camera_parameters(parameter=params)
+    # Define intrinsics based on the frame
+    intrinsics = np.array([[width, 0, width // 2], [0, height, height // 2], [0, 0, 1]])
 
     face_mesh, face_mesh_lines = load_canonical_mesh(visual)
     line_set = load_3d_axis(visual)
     eyeball_meshes, _, eyeball_R = load_eyeball_model(visual)
+    # load_screen_rect(visual, SCREEN_WIDTH_MM, SCREEN_HEIGHT_MM, SCALE)
+    # load_camera_frustrum(w_ratio, h_ratio, visual)
+    # left_pog, right_pog = load_pog_balls(visual, SCALE)
+    # left_gaze_vector, right_gaze_vector = load_gaze_vectors(visual)
 
+    
     # Pipeline
     pipeline = WebEyeTrack(
         model_asset_path=str(GIT_ROOT / 'python'/ 'weights' / 'face_landmarker_v2_with_blendshapes.task'), 
         frame_height=height,
         frame_width=width,
-        intrinsics=K,
+        intrinsics=intrinsics,
         screen_R=np.deg2rad(np.array([0, 0, 0]).astype(np.float32)),
         screen_t=np.array([0, 0, 0]).astype(np.float32),
-        # screen_width_mm=SCREEN_WIDTH_MM,
-        # screen_height_mm=SCREEN_HEIGHT_MM,
-        # screen_width_px=SCREEN_WIDTH_PX,
-        # screen_height_px=SCREEN_HEIGHT_PX
+        screen_width_mm=SCREEN_WIDTH_MM,
+        screen_height_mm=SCREEN_HEIGHT_MM,
+        screen_width_px=SCREEN_WIDTH_PX,
+        screen_height_px=SCREEN_HEIGHT_PX
     )
- 
-    while cap.isOpened():
-        success, frame = cap.read()
-        if not success:
+
+    # Load the frames and draw the landmarks
+    while True:
+
+        ret, frame = cap.read()
+        if not ret:
             break
 
         frame = cv2.flip(frame, 1)
@@ -80,9 +124,6 @@ def main():
 
         # Draw the landmarks
         draw_frame = draw_landmarks_on_image(draw_frame, detection_results)
-
-        # Draw the depth as text on the top-left corner
-        cv2.putText(draw_frame, f"Depth: {result.metric_transform[2,3]:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
         # Compute the face mesh
         face_mesh.vertices = o3d.utility.Vector3dVector(transform_for_3d_scene(result.metric_face))
@@ -108,6 +149,7 @@ def main():
         line_set.points = o3d.utility.Vector3dVector(transform_for_3d_scene(camera_pts_3d))
         visual.update_geometry(line_set)
 
+        # Draw the 3D eyeball and gaze vector
         # Compute the 3D eye origin
         for i in ['left', 'right']:
             eye_result = result.left if i == 'left' else result.right
@@ -137,14 +179,17 @@ def main():
         # Update visualizer
         visual.poll_events()
         visual.update_renderer()
+        
+        # Render the PoG
+        # screen = np.zeros((m.height, m.width, 3), dtype=np.uint8)
+        # result.pog_px[1] = m.height/2
+        # screen = vis.draw_pog(screen, result.pog_px, size=100)
+        # cv2.imshow('screen', screen)
 
         cv2.imshow("Face Mesh", draw_frame)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
 
-    cap.release()
     cv2.destroyAllWindows()
+    cap.release()
     visual.destroy_window()
-
-if __name__ == "__main__":
-    main()
