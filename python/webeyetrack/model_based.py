@@ -1,9 +1,11 @@
+from typing import Tuple, Dict
 import numpy as np
 import math
 import cv2
 
 from .constants import *
 from .utilities import *
+from .data_protocols import PoGResult
 
 ########################################################################################
 # Blink Detection
@@ -672,7 +674,7 @@ def estimate_gaze_vector_based_on_eye_blendshapes(face_blendshapes, face_rt):
         ry = vfov * 0.5 * (look_in - look_out) * (1 if option == 'left' else -1)
 
         # Create euler angle
-        euler_angles = np.array([rx, ry, 0])
+        euler_angles = np.array([rx, -ry, 0])
 
         # # Convert to rotation matrix
         rotation_matrix = cv2.Rodrigues(euler_angles)[0]
@@ -777,16 +779,28 @@ def screen_plane_intersection_2(o, d):
 
     return pog_mm
 
-def compute_pog(gaze_origins, gaze_vectors, screen_R, screen_t, screen_width_mm, screen_height_mm, screen_width_px, screen_height_px):
+def compute_pog(
+        gaze_origins, 
+        gaze_vectors, 
+        screen_R, 
+        screen_t, 
+        screen_width_mm, 
+        screen_height_mm, 
+        screen_width_px, 
+        screen_height_px) -> Tuple[PoGResult, Dict[str, PoGResult]]:
+    
+    # Convert the gaze origins from cm to mm
+    left_gaze_origin = gaze_origins['eye_origins_3d']['left'] * 10
+    right_gaze_origin = gaze_origins['eye_origins_3d']['right'] * 10
     
     # Perform intersection with plane using gaze origin and vector
     # c for camera, s for screen
     left_pog_mm_c = screen_plane_intersection_2(
-        gaze_origins['eye_origins_3d']['left'],
+        left_gaze_origin,
         gaze_vectors['eyes']['vector']['left'],
     )
     right_pog_mm_c = screen_plane_intersection_2(
-        gaze_origins['eye_origins_3d']['right'],
+        right_gaze_origin,
         gaze_vectors['eyes']['vector']['right'],
     )
 
@@ -796,16 +810,12 @@ def compute_pog(gaze_origins, gaze_vectors, screen_R, screen_t, screen_width_mm,
     inv_R_matrix = np.linalg.inv(R_matrix)  # Inverse of the rotation matrix
 
     # Pad the points from 2 to 3 dimensions
-    pad_left_pog_mm_c = np.append(left_pog_mm_c, 0)
-    pad_right_pog_mm_c = np.append(right_pog_mm_c, 0)
+    left_pog_mm_c = np.append(left_pog_mm_c, 0)
+    right_pog_mm_c = np.append(right_pog_mm_c, 0)
 
     # Transform gaze origin and direction to screen coordinates
-    left_pog_mm_s = np.dot(inv_R_matrix, (pad_right_pog_mm_c - screen_t.T[0]))
-    right_pog_mm_s = np.dot(inv_R_matrix, (pad_left_pog_mm_c - screen_t.T[0]))
-
-    # Remove the z-axis
-    left_pog_mm_s = left_pog_mm_s[:2]
-    right_pog_mm_s = right_pog_mm_s[:2]
+    left_pog_mm_s = np.dot(inv_R_matrix, (right_pog_mm_c - screen_t.T[0]))
+    right_pog_mm_s = np.dot(inv_R_matrix, (left_pog_mm_c - screen_t.T[0]))
 
     # Convert mm to normalized coordinates
     left_pog_norm = np.array([left_pog_mm_s[0] / screen_width_mm, left_pog_mm_s[1] / screen_height_mm])
@@ -815,19 +825,25 @@ def compute_pog(gaze_origins, gaze_vectors, screen_R, screen_t, screen_width_mm,
     left_pog_px = np.array([left_pog_norm[0] * screen_width_px, left_pog_norm[1] * screen_height_px])
     right_pog_px = np.array([right_pog_norm[0] * screen_width_px, right_pog_norm[1] * screen_height_mm])
 
-    return {
-        'face_pog_mm_c': (left_pog_mm_c + right_pog_mm_c) / 2,
-        'face_pog_mm_s': (left_pog_mm_s + right_pog_mm_s) / 2,
-        'face_pog_norm': (left_pog_norm + right_pog_norm) / 2,
-        'face_pog_px': (left_pog_px + right_pog_px) / 2,
-        'eye': {
-            'left_pog_mm_c': left_pog_mm_c,
-            'left_pog_mm_s': left_pog_mm_s,
-            'left_pog_norm': left_pog_norm,
-            'left_pog_px': left_pog_px,
-            'right_pog_mm_c': right_pog_mm_c,
-            'right_pog_mm_s': right_pog_mm_s,
-            'right_pog_norm': right_pog_norm,
-            'right_pog_px': right_pog_px
+    return (
+        PoGResult(
+            pog_mm_c=(left_pog_mm_c + right_pog_mm_c) / 2,
+            pog_mm_s=(left_pog_mm_s + right_pog_mm_s) / 2,
+            pog_norm=(left_pog_norm + right_pog_norm) / 2,
+            pog_px=(left_pog_px + right_pog_px) / 2
+        ),
+        {
+            'left': PoGResult(
+                pog_mm_c=left_pog_mm_c,
+                pog_mm_s=left_pog_mm_s,
+                pog_norm=left_pog_norm,
+                pog_px=left_pog_px
+            ),
+            'right': PoGResult(
+                pog_mm_c=right_pog_mm_c,
+                pog_mm_s=right_pog_mm_s,
+                pog_norm=right_pog_norm,
+                pog_px=right_pog_px
+            )
         }
-    }
+    )

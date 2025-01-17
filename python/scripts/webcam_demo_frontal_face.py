@@ -122,7 +122,7 @@ def main():
             current_eye_R = eyeball_R[i]
             eye_R = get_rotation_matrix_from_vector(direction)
             pitch, yaw, roll = rotation_matrix_to_euler_angles(eye_R)
-            pitch, yaw, roll = yaw, -pitch, roll # Flip the pitch and yaw
+            pitch, yaw, roll = yaw, pitch, roll # Flip the pitch and yaw
             eye_R = euler_angles_to_rotation_matrix(pitch, yaw, 0)
 
             # Apply the scene transformation to the new eye rotation

@@ -87,8 +87,8 @@ if __name__ == '__main__':
     eyeball_meshes, _, eyeball_R = load_eyeball_model(visual)
     load_screen_rect(visual, SCREEN_WIDTH_MM, SCREEN_HEIGHT_MM)
     load_camera_frustrum(w_ratio, h_ratio, visual)
-    # left_pog, right_pog = load_pog_balls(visual, SCALE)
-    # left_gaze_vector, right_gaze_vector = load_gaze_vectors(visual)
+    left_pog, right_pog = load_pog_balls(visual)
+    left_gaze_vector, right_gaze_vector = load_gaze_vectors(visual)
     
     camera_coordinate_axes = load_3d_axis(visual)
     points = [
@@ -158,11 +158,12 @@ if __name__ == '__main__':
         visual.update_geometry(face_coordinate_axes)
 
         # Draw the 3D eyeball and gaze vector
-        # Compute the 3D eye origin
         for i in ['left', 'right']:
             eye_result = result.left if i == 'left' else result.right
             origin = eye_result.origin
             direction = eye_result.direction
+            pog_ball = left_pog if i == 'left' else right_pog
+            gaze_vector = left_gaze_vector if i == 'left' else right_gaze_vector
 
             # final_position = transform_for_3d_scene(eye_g_o[k].reshape((-1,3))).flatten()
             final_position = transform_for_3d_scene(origin.reshape((-1,3))).flatten()
@@ -172,7 +173,7 @@ if __name__ == '__main__':
             current_eye_R = eyeball_R[i]
             eye_R = get_rotation_matrix_from_vector(direction)
             pitch, yaw, roll = rotation_matrix_to_euler_angles(eye_R)
-            pitch, yaw, roll = yaw, -pitch, roll # Flip the pitch and yaw
+            pitch, yaw, roll = yaw, pitch, roll # Flip the pitch and yaw
             eye_R = euler_angles_to_rotation_matrix(pitch, yaw, 0)
 
             # Apply the scene transformation to the new eye rotation
@@ -184,16 +185,26 @@ if __name__ == '__main__':
             eyeball_meshes[i].rotate(new_eye_R)
             visual.update_geometry(eyeball_meshes[i])
 
+            # Draw the gaze vectors
+            pts = np.array([origin, origin + direction * 100])
+            transform_pts = transform_for_3d_scene(pts)
+            gaze_vector.points = o3d.utility.Vector3dVector(transform_pts)
+            gaze_vector.lines = o3d.utility.Vector2iVector([[0, 1]])
+            if i == 'left':
+                gaze_vector.colors = o3d.utility.Vector3dVector(np.array([[1, 0, 0]]))
+            else:
+                gaze_vector.colors = o3d.utility.Vector3dVector(np.array([[0, 1, 0]]))
+            visual.update_geometry(gaze_vector)
+
+            # Position the PoG balls
+            pog_position = transform_for_3d_scene(eye_result.pog.pog_mm_c.reshape((-1,3))/10).flatten()
+            pog_ball.translate(pog_position, relative=False)
+            visual.update_geometry(pog_ball)
+
         # Update visualizer
         visual.poll_events()
         visual.update_renderer()
         
-        # Render the PoG
-        # screen = np.zeros((m.height, m.width, 3), dtype=np.uint8)
-        # result.pog_px[1] = m.height/2
-        # screen = vis.draw_pog(screen, result.pog_px, size=100)
-        # cv2.imshow('screen', screen)
-
         cv2.imshow("Face Mesh", draw_frame)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break

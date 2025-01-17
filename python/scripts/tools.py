@@ -172,11 +172,11 @@ def load_screen_rect(visual, screen_width_mm, screen_height_mm):
 
     visual.add_geometry(rectangle_mesh)
 
-def load_pog_balls(visual, scale):
+def load_pog_balls(visual):
     
     # PoG
-    left_pog = o3d.geometry.TriangleMesh.create_sphere(radius=12 * scale)
-    right_pog = o3d.geometry.TriangleMesh.create_sphere(radius=12 * scale)
+    left_pog = o3d.geometry.TriangleMesh.create_sphere(radius=0.5)
+    right_pog = o3d.geometry.TriangleMesh.create_sphere(radius=0.5)
     left_pog.paint_uniform_color([0, 1, 0])
     right_pog.paint_uniform_color([0, 0, 1])
     visual.add_geometry(left_pog)

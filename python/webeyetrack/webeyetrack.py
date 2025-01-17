@@ -149,33 +149,24 @@ class WebEyeTrack():
             face_rt=face_rt,
         )
         
-        # Compute the PoG
-        # pog = compute_pog(
-        #     gaze_origins,
-        #     gaze_vectors,
-        #     self.screen_R,
-        #     self.screen_t,
-        #     self.screen_width_mm,
-        #     self.screen_height_mm,
-        #     self.screen_width_px,
-        #     self.screen_height_px
-        # )
-        pog = {
-            'face_pog_mm_c': np.array([0,0,0]),
-            'face_pog_mm_s': np.array([0,0,0]),
-            'face_pog_norm': np.array([0,0]),
-            'face_pog_px': np.array([0,0]),
-            'eye': {
-                'left_pog_mm_c': np.array([0,0,0]),
-                'left_pog_mm_s': np.array([0,0,0]),
-                'left_pog_norm': np.array([0,0]),
-                'left_pog_px': np.array([0,0]) ,
-                'right_pog_mm_c': np.array([0,0,0]),
-                'right_pog_mm_s': np.array([0,0,0]),
-                'right_pog_norm': np.array([0,0]),
-                'right_pog_px': np.array([0,0])
-            }
-        }
+        # If screen's dimensions and relation to the camera are known, compute the PoG
+        if (self.screen_R is not None 
+            and self.screen_t is not None 
+            and self.screen_height_mm is not None 
+            and self.screen_width_mm is not None):
+
+            face_pog, eyes_pog = compute_pog(
+                gaze_origins,
+                gaze_vectors,
+                self.screen_R,
+                self.screen_t,
+                self.screen_width_mm,
+                self.screen_height_mm,
+                self.screen_width_px,
+                self.screen_height_px
+            )
+        else:
+            face_pog, eyes_pog = None, {'left': None, 'right': None}
 
         toc = time.perf_counter()
 
@@ -201,10 +192,7 @@ class WebEyeTrack():
                 origin=gaze_origins['eye_origins_3d']['left'],
                 origin_2d=gaze_origins['eye_origins_2d']['left'],
                 direction=gaze_vectors['eyes']['vector']['left'],
-                # pog_mm_c=pog['eye']['left_pog_mm_c'],
-                # pog_mm_s=pog['eye']['left_pog_mm_s'],
-                # pog_norm=pog['eye']['left_pog_norm'],
-                # pog_px=pog['eye']['left_pog_px'],
+                pog=eyes_pog['left'],
                 meta_data={
                     **gaze_vectors['eyes']['meta_data']['left']
                 }
@@ -214,20 +202,14 @@ class WebEyeTrack():
                 origin=gaze_origins['eye_origins_3d']['right'],
                 origin_2d=gaze_origins['eye_origins_2d']['right'],
                 direction=gaze_vectors['eyes']['vector']['right'],
-                # pog_mm_c=pog['eye']['right_pog_mm_c'],
-                # pog_mm_s=pog['eye']['right_pog_mm_s'],
-                # pog_norm=pog['eye']['right_pog_norm'],
-                # pog_px=pog['eye']['right_pog_px'],
+                pog=eyes_pog['right'],
                 meta_data={
                     **gaze_vectors['eyes']['meta_data']['right']
                 }
             ),
 
             # PoG information
-            # pog_mm_c=pog['face_pog_mm_c'],
-            # pog_mm_s=pog['face_pog_mm_s'],
-            # pog_norm=pog['face_pog_norm'],
-            # pog_px=pog['face_pog_px'],
+            pog=face_pog,
 
             # Meta data
             duration=toc - tic,
