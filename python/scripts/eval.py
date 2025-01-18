@@ -23,8 +23,9 @@ from webeyetrack.model_based import vector_to_pitch_yaw
 CWD = pathlib.Path(__file__).parent
 FILE_DIR = pathlib.Path(__file__).parent
 OUTPUTS_DIR = CWD / 'outputs'
-SKIP_COUNT = 10
-
+SKIP_COUNT = 2
+                # drawn_img = vis.model_based_gaze_render(img.copy(), results)
+                # cv2.imwrite(str(RUN_DIR/ 'imgs' / f'{group_name}_gaze_vis_{i}.png'), drawn_img)
 CALIBRATION_POINTS = np.array([ # 9 points
     [0.5, 0.5],
     [0.1, 0.1],
@@ -84,11 +85,11 @@ def eval(args):
         dataset = MPIIFaceGazeDataset(
             GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
             # participants=config['datasets']['MPIIFaceGaze']['val_subjects'] + config['datasets']['MPIIFaceGaze']['train_subjects'],
-            participants=[0, 1, 2],
+            participants=[5, 6, 7, 8, 9],
             # img_size=[244,244],
             # face_size=[244,244],
             # dataset_size=100,
-            per_participant_size=50
+            per_participant_size=8
         )
     elif (args.dataset == 'EyeDiap'):
         dataset = EyeDiapDataset(
@@ -135,21 +136,22 @@ def eval(args):
 
         # For each participant, perform calibration first by selecting 9 samples
         # by finding the closet point to the calibration points
-        calib_samples = []
-        for calib_point in CALIBRATION_POINTS:
-            # Find the closest point to the calibration point
-            distances = group.apply(lambda x: np.linalg.norm(x['pog_norm'].reshape(2) - calib_point), axis=1)
-            idx = np.argmin(distances)
-            sample = group.iloc[idx]
-            calib_samples.append(sample)
+        # calib_samples = []
+        # for calib_point in CALIBRATION_POINTS:
+        #     # Find the closest point to the calibration point
+        #     distances = group.apply(lambda x: np.linalg.norm(x['pog_norm'].reshape(2) - calib_point), axis=1)
+        #     idx = np.argmin(distances)
+        #     sample = group.iloc[idx]
+        #     calib_samples.append(sample)
 
         # Perform calibration
         # algo.calibrate(calib_samples)
 
-        for i in tqdm(range(len(group))):
+        # for i in tqdm(range(len(group))):
+        for i, sample in group.iterrows():
 
             # Get sample and load the image
-            sample = df.iloc[i]
+            # sample = df.iloc[i]
             img = np.moveaxis(sample['image'], 0, -1) * 255
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
@@ -159,44 +161,50 @@ def eval(args):
             # Process the sample
             results = algo.process_sample(img, sample)
 
-            output = {
-                'face_origin': results.face_origin,
-                'face_origin_2d': results.face_origin_2d,
-                'face_origin-x': results.face_origin[1],
-                'face_origin-y': results.face_origin[0],
-                'face_origin-z': results.face_origin[2],
-                'face_gaze_vector': results.face_gaze,
-                'results': results,
-            }
+            # output = {
+            #     'face_origin': results.face_origin,
+            #     'face_origin_2d': results.face_origin_2d,
+            #     'face_origin-x': results.face_origin[1],
+            #     'face_origin-y': results.face_origin[0],
+            #     'face_origin-z': results.face_origin[2],
+            #     'face_gaze_vector': results.face_gaze,
+            #     'results': results,
+            # }
 
             # Compute the error
-            actual = {
-                'face_origin': sample['face_origin_3d'],
-                'face_origin_2d': sample['face_origin_2d'],
-                'face_origin-x': sample['face_origin_3d'][1],
-                'face_origin-y': sample['face_origin_3d'][0],
-                'face_origin-z': sample['face_origin_3d'][2],
-                'face_gaze_vector': sample['face_gaze_vector'],
-                'pog_px': sample['pog_px'],
-                # 'pog_mm': sample['pog_mm']
-            }
+            # actual = {
+            #     'face_origin': sample['face_origin_3d'],
+            #     'face_origin_2d': sample['face_origin_2d'],
+            #     'face_origin-x': sample['face_origin_3d'][1],
+            #     'face_origin-y': sample['face_origin_3d'][0],
+            #     'face_origin-z': sample['face_origin_3d'][2],
+            #     'face_gaze_vector': sample['face_gaze_vector'],
+            #     'pog_px': sample['pog_px'],
+            #     # 'pog_mm': sample['pog_mm']
+            # }
             
-            for name, function in metric_functions.items():
-                if name not in output or name not in actual:
-                    continue
-                metrics[name].append(function(actual[name], output[name]))
+            # for name, function in metric_functions.items():
+            #     if name not in output or name not in actual:
+            #         continue
+            #     metrics[name].append(function(actual[name], output[name]))
 
             if i % SKIP_COUNT == 0:
                 # Write to the output directory
-                drawn_img = visualize_differences(img.copy(), sample, output)
-                cv2.imwrite(str(RUN_DIR/ 'imgs' / f'{group_name}_gaze_diff_{i}.png'), drawn_img)
+                # drawn_img = visualize_differences(img.copy(), sample, output)
+                # cv2.imwrite(str(RUN_DIR/ 'imgs' / f'{group_name}_gaze_diff_{i}.png'), drawn_img)
 
                 # drawn_img = vis.landmark_gaze_render(img.copy(), results)
-                drawn_img = vis.model_based_gaze_render(img.copy(), results)
-                cv2.imwrite(str(RUN_DIR/ 'imgs' / f'{group_name}_gaze_vis_{i}.png'), drawn_img)
+                # drawn_img = vis.model_based_gaze_render(img.copy(), results)
+                # cv2.imwrite(str(RUN_DIR/ 'imgs' / f'{group_name}_gaze_vis_{i}.png'), drawn_img)
+                output_fp = RUN_DIR / 'imgs' / f'{group_name}_gaze_render_{i}.png'
+                drawn_img = vis.render_3d_gaze_with_frame(img.copy(), results, output_fp)
+                cv2.imwrite(str(output_fp), drawn_img)
 
     # Generate box plots for the metrics
     df = pd.DataFrame(metrics)
+
+    if df.empty:
+        return
 
     # Remove outliers via IQR for all metrics 
     for name in metrics.keys():

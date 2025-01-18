@@ -25,20 +25,24 @@ from .utilities import (
 
 EYE_IMAGE_WIDTH = 400
 
+def render_3d_gaze_with_frame(frame: np.ndarray, result: GazeResult, output_path: pathlib.Path):
+    render_3d_gaze(frame, result, output_path)
+    render_img = cv2.imread(str(output_path))
+    combined_frame = np.hstack([frame, render_img])
+    return combined_frame
+
 def render_3d_gaze(frame: np.ndarray, result: GazeResult, output_path: pathlib.Path) -> np.ndarray:
+
+    # Get the frame size 
+    height, width = frame.shape[:2]
+    K = estimate_camera_intrinsics(np.zeros((height, width, 3)))
     
     # Initialize Open3D visual
     visual = o3d.visualization.Visualizer()
-    visual.create_window(width=1920, height=1080)
+    visual.create_window(width=width, height=height)
     visual.get_render_option().background_color = [0.1, 0.1, 0.1]
     visual.get_render_option().mesh_show_back_face = True
     visual.get_render_option().point_size = 10
-
-    # Get the cap sizes
-    cap = cv2.VideoCapture(0)
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    K = estimate_camera_intrinsics(np.zeros((height, width, 3)))
 
     # Change the z far to 1000
     vis = visual.get_view_control()
@@ -85,6 +89,7 @@ def render_3d_gaze(frame: np.ndarray, result: GazeResult, output_path: pathlib.P
         eye_R = get_rotation_matrix_from_vector(direction)
         pitch, yaw, roll = rotation_matrix_to_euler_angles(eye_R)
         pitch, yaw, roll = yaw, pitch, roll  # Flip pitch and yaw
+        # pitch, yaw, roll = -yaw, pitch, roll  # Flip pitch and yaw
         eye_R = euler_angles_to_rotation_matrix(pitch, yaw, 0)
         eye_R = np.dot(eye_R, OPEN3D_RT[:3, :3])
 
