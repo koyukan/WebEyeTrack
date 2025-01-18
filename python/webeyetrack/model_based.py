@@ -28,6 +28,38 @@ def compute_ear(facial_landmarks, side):
 # 3D Face Reconstruction
 ########################################################################################
 
+def estimate_face_width(facial_landmarks, frame_height, frame_width, face_rt) -> float:
+
+    # If the face is not facing near front, then we cannot estimate the face width
+    # if face_rt[2, 2] < 0.9:
+    #     return None
+
+    # Convert norm uv to pixel space
+    facial_landmarks_px = facial_landmarks[:, :2] * np.array([frame_width, frame_height])
+
+    # Compute the iris size in pixel
+    iris_dist = []
+    for side in ['left', 'right']:
+        eye_iris_landmarks = LEFT_IRIS_LANDMARKS if side == 'left' else RIGHT_IRIS_LANDMARKS
+        leftmost = facial_landmarks_px[eye_iris_landmarks[4], :2] 
+        rightmost = facial_landmarks_px[eye_iris_landmarks[2], :2] 
+        horizontal_dist = np.linalg.norm(leftmost - rightmost)
+        # topmost = facial_landmarks_px[eye_iris_landmarks[1], :2]
+        # bottommost = facial_landmarks_px[eye_iris_landmarks[3], :2]
+        # vertical_dist = np.linalg.norm(topmost - bottommost)
+        # avg_dist = (horizontal_dist + vertical_dist) / 2
+        avg_dist = horizontal_dist
+        iris_dist.append(avg_dist)
+
+    # Use the iris size to estimate the face width
+    avg_iris_dist = np.mean(iris_dist)
+    face_width_px = np.linalg.norm(facial_landmarks_px[LEFTMOST_LANDMARK] - facial_landmarks_px[RIGHTMOST_LANDMARK])
+    face_iris_ratio = avg_iris_dist / face_width_px
+
+    # Estimate the face width
+    face_width_cm = AVERAGE_IRIS_SIZE_CM / face_iris_ratio
+    return face_width_cm
+
 def estimate_inter_pupillary_distance_2d(facial_landmarks, height, width):
     data_2d_pairs = {
         'left': facial_landmarks[LEFT_EYE_LANDMARKS][:, :2] * np.array([width, height]),

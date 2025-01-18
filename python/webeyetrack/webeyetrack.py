@@ -13,12 +13,26 @@ from skopt.space import Real
 from .model_based import (
     create_perspective_matrix, 
     face_reconstruction,
+    estimate_face_width,
     estimate_gaze_origins,
     estimate_gaze_vector_based_on_eye_blendshapes, 
     compute_pog
 )
 from .data_protocols import GazeResult, EyeResult
 from .constants import *
+
+PARAMETER_LIST = Literal[
+    'frame_height',
+    'frame_width',
+    'face_width_cm',
+    'intrinsics',
+    'screen_R',
+    'screen_t',
+    'screen_width_mm',
+    'screen_height_mm',
+    'screen_width_px',
+    'screen_height_px',
+]
 
 class WebEyeTrack():
 
@@ -28,6 +42,7 @@ class WebEyeTrack():
             frame_height: Optional[int] = None,
             frame_width: Optional[int] = None,
             intrinsics: Optional[np.ndarray] = None,
+            face_width_cm: Optional[float] = None,
             screen_R: Optional[np.ndarray] = None,
             screen_t: Optional[np.ndarray] = None,
             screen_width_mm: Optional[float] = None,
@@ -57,6 +72,7 @@ class WebEyeTrack():
         self.eyeball_centers = eyeball_centers
         self.eyeball_radius = eyeball_radius
         self.ear_threshold = ear_threshold
+        self.face_width_cm = face_width_cm
         self.intrinsics = intrinsics
         self.screen_R = screen_R
         self.screen_t = screen_t
@@ -65,9 +81,12 @@ class WebEyeTrack():
         self.screen_width_px = screen_width_px
         self.screen_height_px = screen_height_px
 
-        # Gaze filter
+        # State variables
         self.prior_gaze = None
         self.prior_depth = None
+
+    def set_parameter(self, parameter: PARAMETER_LIST, value: Any):
+        setattr(self, parameter, value)
 
     def calibrate(self, samples):
 
@@ -121,6 +140,9 @@ class WebEyeTrack():
 
         tic = time.perf_counter()
 
+        if self.face_width_cm is None:
+            self.face_width_cm = estimate_face_width(facial_landmarks, self.frame_height, self.frame_width, face_rt)
+
         # If we don't have a perspective matrix, create it
         if type(self.perspective_matrix) == type(None):
             self.perspective_matrix = create_perspective_matrix(aspect_ratio=self.frame_width/self.frame_height)
@@ -130,7 +152,7 @@ class WebEyeTrack():
         metric_transform, metric_face = face_reconstruction(
             perspective_matrix=self.perspective_matrix,
             face_landmarks=facial_landmarks,
-            face_width_cm=14.0,
+            face_width_cm=self.face_width_cm,
             face_rt=face_rt,
             K=self.intrinsics,
             frame_height=self.frame_height,
