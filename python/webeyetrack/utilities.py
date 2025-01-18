@@ -520,7 +520,8 @@ def transform_3d_to_2d(camera_pts_3d, K):
 
 def load_canonical_mesh(visual=None):
     # 1) Load canonical mesh
-    mesh_path = str(GIT_ROOT / 'python' / 'assets' / 'face_model_with_iris.obj')
+    # mesh_path = str(GIT_ROOT / 'python' / 'assets' / 'face_model_with_iris.obj')
+    mesh_path = str(GIT_ROOT / 'python' / 'assets' / 'canonical_face_model.obj')
     canonical_mesh = trimesh.load(mesh_path, force='mesh')
     face_width_cm = 14
     canonical_norm_pts_3d = np.asarray(canonical_mesh.vertices, dtype=np.float32) * face_width_cm * np.array([-1, 1, -1])
@@ -530,9 +531,9 @@ def load_canonical_mesh(visual=None):
     face_mesh_lines = o3d.geometry.LineSet.create_from_triangle_mesh(face_mesh)
 
     # Generate colors for the face mesh, with all being default color except for the iris
-    colors = np.array([[3/256, 161/256, 252/256] for _ in range(len(canonical_mesh.vertices))])
+    # colors = np.array([[3/256, 161/256, 252/256, 1] for _ in range(len(canonical_mesh.vertices))])
     # for i in IRIS_LANDMARKS:
-    #     colors[i] = [1, 0, 0]
+    #     colors[i] = [0, 0, 0, 0]
     # face_mesh.vertex_colors = o3d.utility.Vector3dVector(colors)
 
     if visual is not None:
