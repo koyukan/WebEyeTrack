@@ -67,15 +67,12 @@ class MPIIFaceGazeDataset(Dataset):
         participant_dirs = [self.dataset_dir / f'p{p:02d}' for p in self.participants]
 
         # Saving information
-        self.samples: List[Sample] = []
+        self.samples = defaultdict(list)
         self.participant_calibration_data: Dict[CalibrationData] = {}
-
-        # Tracking the number of loaded samples
-        num_samples = 0
 
         for participant_dir in tqdm(participant_dirs, total=len(participant_dirs)):
 
-            if self.dataset_size is not None and num_samples >= self.dataset_size:
+            if self.dataset_size is not None and len(self.samples['id']) >= self.dataset_size:
                 break
 
             participant_id = participant_dir.name
@@ -84,41 +81,63 @@ class MPIIFaceGazeDataset(Dataset):
 
             # Load the calibration data
             cal_dir = participant_dir / 'Calibration'
-            camera_mat = scipy.io.loadmat(cal_dir / 'Camera.mat')
-            monitor_pose_mat = scipy.io.loadmat(cal_dir / 'monitorPose.mat')
-            screen_size_mat = scipy.io.loadmat(cal_dir / 'screenSize.mat')
+            new_cal_file = cal_dir / 'calibration.pkl'
+            if new_cal_file.is_file():
+                with open(new_cal_file, 'rb') as f:
+                    calibration_data = pickle.load(f)
+            else:
+                camera_mat = scipy.io.loadmat(cal_dir / 'Camera.mat')
+                monitor_pose_mat = scipy.io.loadmat(cal_dir / 'monitorPose.mat')
+                screen_size_mat = scipy.io.loadmat(cal_dir / 'screenSize.mat')
 
-            # Save the calibration information
-            calibration_data = CalibrationData(
-                camera_matrix=camera_mat['cameraMatrix'],
-                dist_coeffs=camera_mat['distCoeffs'],
-                camera_retval=camera_mat['retval'],
-                camera_rvecs=camera_mat['rvecs'],
-                camera_tvecs=camera_mat['tvecs'],
-                monitor_rvecs=monitor_pose_mat['rvects'],
-                monitor_tvecs=monitor_pose_mat['tvecs'],
-                monitor_height_mm=screen_size_mat['height_mm'],
-                monitor_height_px=screen_size_mat['height_pixel'],
-                monitor_width_mm=screen_size_mat['width_mm'],
-                monitor_width_px=screen_size_mat['width_pixel']
-            )
+                # Save the calibration information
+                calibration_data = CalibrationData(
+                    camera_matrix=camera_mat['cameraMatrix'],
+                    dist_coeffs=camera_mat['distCoeffs'],
+                    camera_retval=camera_mat['retval'],
+                    camera_rvecs=camera_mat['rvecs'],
+                    camera_tvecs=camera_mat['tvecs'],
+                    monitor_rvecs=monitor_pose_mat['rvects'],
+                    monitor_tvecs=monitor_pose_mat['tvecs'],
+                    monitor_height_mm=screen_size_mat['height_mm'],
+                    monitor_height_px=screen_size_mat['height_pixel'],
+                    monitor_width_mm=screen_size_mat['width_mm'],
+                    monitor_width_px=screen_size_mat['width_pixel']
+                )
+
+                # Save the calibration data
+                with open(new_cal_file, 'wb') as f:
+                    pickle.dump(calibration_data, f)
+
             self.participant_calibration_data[participant_id] = calibration_data
             per_participant_samples = 0
 
             # Load the meta data
-            annotations = {} 
+            annotations_dir = participant_dir / 'annotations'
+            os.makedirs(annotations_dir, exist_ok=True)
             with open(txt_file_fp, 'r') as f:
                 lines = f.readlines()
                 for line in tqdm(lines, total=len(lines), desc="Loading annotations"):
 
-                    if self.dataset_size is not None and num_samples >= self.dataset_size:
+                    if self.dataset_size is not None and len(self.samples['id']) >= self.dataset_size:
                         break
 
                     if self.per_participant_size is not None and per_participant_samples >= self.per_participant_size:
                         break
 
                     items = line.split(' ')
-                    data_id = items[0].replace("/", "_").replace(".jpg", "")
+                    data_complete_id = items[0].split(' ')[0].replace('.jpg', '')
+                    day_id, img_id = data_complete_id.split('/')
+                    data_id = f"{day_id}_{img_id}"
+
+                    # If the annotation exists, store the path instead
+                    if (annotations_dir / f"{data_id}.pkl").is_file():
+                        self.samples['id'].append(data_id)
+                        self.samples['participant_id'].append(participant_id)
+                        self.samples['image_fp'].append(participant_dir / day_id / f"{img_id}.jpg")
+                        self.samples['annotation_fp'].append(annotations_dir / f"{data_id}.pkl")
+                        per_participant_samples += 1
+                        continue
 
                     face_origin_3d = np.array(items[21:24], dtype=np.float32)
                     gaze_target_3d = np.array(items[24:27], dtype=np.float32)
@@ -220,14 +239,6 @@ class MPIIFaceGazeDataset(Dataset):
                         int(np.max(face_landmarks[:, 0]))
                     ])
 
-                    # Load the texture if it exists, if not compute it
-                    texture_dir = participant_dir / 'textures'
-                    os.makedirs(texture_dir, exist_ok=True)
-                    texture_path = texture_dir / f"{data_id}.jpg"
-                    if not texture_path.is_file():
-                        texture = compute_uv_texture(face_landmarks[0:468], image_np)
-                        cv2.imwrite(str(texture_path), texture)
-
                     # Convert face_blendshapes to a proper numpy array
                     np_face_blendshapes = np.array([x.score for x in face_blendshapes])
 
@@ -277,47 +288,27 @@ class MPIIFaceGazeDataset(Dataset):
                         # Gaze State Information
                         is_closed=np.array([False])
                     )
-            
-                    annotations[items[0]] = annotation
-                    num_samples += 1
+                    
+                    # Save the annotation
+                    with open(annotations_dir / f"{data_id}.pkl", 'wb') as f:
+                        pickle.dump(annotation, f)
+
+                    self.samples['id'].append(data_id)
+                    self.samples['participant_id'].append(participant_id)
+                    self.samples['image_fp'].append(pathlib.Path(image_fp))
+                    self.samples['annotation_fp'].append(annotations_dir / f"{data_id}.pkl")
                     per_participant_samples += 1
- 
-            day_folders = [d for d in participant_dir.glob('day*') if d.is_dir()]
-            for day_folder in day_folders:
+                    
+        # Convert the samples to a DataFrame
+        self.samples = pd.DataFrame(self.samples)
 
-                # Load the images
-                images = [f for f in day_folder.glob('*.jpg') if f.is_file()]
-                for image in images:
-                    complete_name = f"{day_folder.name}/{image.name}"
-
-                    if complete_name in annotations:
-                        self.samples.append(
-                            Sample(
-                                participant_id=participant_id,
-                                image_fp=image,
-                                annotations=annotations[complete_name]
-                            )
-                        )
-
-        # Compute the mean and standard deviation for the following information (gaze origin depth, and PoG)
-        gaze_origin_depths = []
-        pog_pxs = []
-        for s in self.samples:
-            gaze_origin_depths.append(s.annotations.face_origin_3d[2])
-            pog_pxs.append(s.annotations.pog_px)
-
-        self.gaze_origin_depth_mean = np.mean(gaze_origin_depths)
-        self.gaze_origin_depth_std = np.std(gaze_origin_depths)
-        self.pog_px_mean = np.mean(pog_pxs, axis=0)
-        self.pog_px_std = np.std(pog_pxs, axis=0)
-
+    def get_samples_meta_df(self):
+        return self.samples
             
     def __getitem__(self, index: int):
         # Make a copy of the sample
-        sample = copy.deepcopy(self.samples[index])
-
-        # Recreate the data id
-        data_id = f'{sample.image_fp.parent.name}_{sample.image_fp.name.replace(".jpg", "")}'
+        # sample = copy.deepcopy(self.samples[index])
+        sample = self.samples.iloc[index]
 
         # Create torch-compatible data
         image = Image.open(sample.image_fp)
@@ -325,6 +316,10 @@ class MPIIFaceGazeDataset(Dataset):
 
         # Get the calibration
         calibration_data = self.participant_calibration_data[sample.participant_id]
+
+        # Load the annotations
+        with open(sample.annotation_fp, 'rb') as f:
+            annotations = pickle.load(f)
  
         # Convert from uint8 to float32
         image_np = image_np.astype(np.float32) / 255.0
@@ -336,7 +331,7 @@ class MPIIFaceGazeDataset(Dataset):
         # cv2.destroyAllWindows()
 
         # Crop out the face image and resize to have standard size
-        face_bbox = sample.annotations.face_bbox
+        face_bbox = annotations.face_bbox
         
         # Clip the face bounding box to the image size and avoid negative indexing
         face_bbox[0] = np.clip(face_bbox[0], 0, image.size[1] - 1)
@@ -348,17 +343,17 @@ class MPIIFaceGazeDataset(Dataset):
             face_image_np = cv2.resize(face_image_np, self.face_size, interpolation=cv2.INTER_LINEAR)
 
         # Load the texture
-        texture_dir = self.dataset_dir / sample.participant_id / 'textures'
-        texture_fp = texture_dir / f"{data_id}.jpg"
-        texture = cv2.imread(str(texture_fp))
-        texture = texture.astype(np.float32) / 255.0
+        # texture_dir = self.dataset_dir / sample.participant_id / 'textures'
+        # texture_fp = texture_dir / f"{data_id}.jpg"
+        # texture = cv2.imread(str(texture_fp))
+        # texture = texture.astype(np.float32) / 255.0
 
         # Compute the relative gaze direction based on the facial landmarks
-        facelandmark_rt = np.load(self.dataset_dir / sample.participant_id / 'face_landmarks' / f"{data_id}_rt.npy")
+        facelandmark_rt = np.load(self.dataset_dir / sample.participant_id / 'face_landmarks' / f"{sample.id}_rt.npy")
         head_direction_rotation = facelandmark_rt[0:3, 0:3]
         head_direction_xyz = Rotation.from_matrix(head_direction_rotation).as_rotvec()
         head_direction_xyz = head_direction_xyz / np.linalg.norm(head_direction_xyz)
-        relative_gaze_vector = sample.annotations.face_gaze_vector - head_direction_xyz
+        relative_gaze_vector = annotations.face_gaze_vector - head_direction_xyz
         relative_gaze_vector = relative_gaze_vector / np.linalg.norm(relative_gaze_vector)
 
         # Visualize the face image
@@ -369,7 +364,7 @@ class MPIIFaceGazeDataset(Dataset):
         # Resize the raw input image if needed
         if self.img_size is not None:
             image_np = cv2.resize(image_np, self.img_size, interpolation=cv2.INTER_LINEAR)
-            sample.annotations = resize_annotations(sample.annotations, image.size, self.img_size)
+            annotations = resize_annotations(annotations, image.size, self.img_size)
             intrinsics = resize_intrinsics(calibration_data.camera_matrix, image.size, self.img_size)
         else:
             intrinsics = calibration_data.camera_matrix
@@ -377,9 +372,9 @@ class MPIIFaceGazeDataset(Dataset):
         # Revert the image to the correct format
         image_np = np.moveaxis(image_np, -1, 0)
         face_image_np = np.moveaxis(face_image_np, -1, 0)
-        texture = np.moveaxis(texture, -1, 0)
+        # texture = np.moveaxis(texture, -1, 0)
 
-        sample_dict = {
+        item_dict = {
             'participant_id': sample.participant_id,
             'image': image_np,
             'face_image': face_image_np,
@@ -392,28 +387,28 @@ class MPIIFaceGazeDataset(Dataset):
             'screen_height_px': calibration_data.monitor_height_px.astype(np.float32),
             'screen_width_mm': calibration_data.monitor_width_mm.astype(np.float32),
             'screen_width_px': calibration_data.monitor_width_px.astype(np.float32),
-            'gaze_origin_depth_mean': self.gaze_origin_depth_mean,
-            'gaze_origin_depth_std': self.gaze_origin_depth_std,
-            'pog_px_mean': self.pog_px_mean,
-            'pog_px_std': self.pog_px_std,
-            'mediapipe_head_vector': head_direction_xyz.astype(np.float32),
-            'relative_gaze_vector': relative_gaze_vector.astype(np.float32)
+            # 'gaze_origin_depth_mean': self.gaze_origin_depth_mean,
+            # 'gaze_origin_depth_std': self.gaze_origin_depth_std,
+            # 'pog_px_mean': self.pog_px_mean,
+            # 'pog_px_std': self.pog_px_std,
+            # 'mediapipe_head_vector': head_direction_xyz.astype(np.float32),
+            # 'relative_gaze_vector': relative_gaze_vector.astype(np.float32)
         }
-        sample_dict.update(asdict(sample.annotations))
-        return sample_dict
+        item_dict.update(asdict(annotations))
+        return item_dict
 
     def __len__(self):
         return len(self.samples)
 
-    def to_df(self):
+    # def to_df(self):
 
-        data = defaultdict(list)
-        for i in range(len(self.samples)):
-            sample = self[i]
-            for k, v in sample.items():
-                data[k].append(v)
+    #     data = defaultdict(list)
+    #     for i in range(len(self.samples)):
+    #         sample = self[i]
+    #         for k, v in sample.items():
+    #             data[k].append(v)
 
-        return pd.DataFrame(data)
+    #     return pd.DataFrame(data)
 
 if __name__ == '__main__':
 
@@ -429,4 +424,6 @@ if __name__ == '__main__':
     print(len(dataset))
 
     sample = dataset[0]
-    print(json.dumps({k: str(v.dtype) for k, v in sample.items()}, indent=4))
+    # print(json.dumps({k: str(v.dtype) for k, v in sample.items()}, indent=4))
+    # print(sample.keys())
+    print(json.dumps({k: str(v) for k, v in sample.items()}, indent=4))

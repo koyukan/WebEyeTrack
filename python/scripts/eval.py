@@ -24,9 +24,7 @@ from webeyetrack.data_protocols import GazeResult
 CWD = pathlib.Path(__file__).parent
 FILE_DIR = pathlib.Path(__file__).parent
 OUTPUTS_DIR = CWD / 'outputs'
-SKIP_COUNT = 50
-                # drawn_img = vis.model_based_gaze_render(img.copy(), results)
-                # cv2.imwrite(str(RUN_DIR/ 'imgs' / f'{group_name}_gaze_vis_{i}.png'), drawn_img)
+SKIP_COUNT = 100
 CALIBRATION_POINTS = np.array([ # 9 points
     [0.5, 0.5],
     [0.1, 0.1],
@@ -89,7 +87,8 @@ def eval(args):
             # img_size=[244,244],
             # face_size=[244,244],
             # dataset_size=100,
-            per_participant_size=100
+            # per_participant_size=500
+            # per_participant_size=5
         )
     elif (args.dataset == 'EyeDiap'):
         dataset = EyeDiapDataset(
@@ -119,12 +118,14 @@ def eval(args):
 
     metrics = defaultdict(list)
 
-    df = dataset.to_df()
+    # Obtain the sample dataframe
+    meta_df = dataset.get_samples_meta_df()
 
     # Group data by participant
-    for group_name, group in tqdm(df.groupby('participant_id')):
+    for group_name, group in tqdm(meta_df.groupby('participant_id')):
 
-        first_sample = group.iloc[0]
+        first_sample_meta_df = group.iloc[0]
+        first_sample = dataset.__getitem__(first_sample_meta_df.name)
 
         # Update the configurations
         algo.config(
@@ -152,14 +153,18 @@ def eval(args):
         # algo.calibrate(calib_samples)
 
         # for i in tqdm(range(len(group))):
-        for i, sample in group.iterrows():
+        for i, meta_data in tqdm(group.iterrows(), total=len(group)):
+
+            # Obtain the sample
+            sample = dataset.__getitem__(meta_data.name)
 
             # Get sample and load the image
             img = np.moveaxis(sample['image'], 0, -1) * 255
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
             if type(img) == type(None):
-                import pdb; pdb.set_trace()
+                print(f"Image is None for {sample['image_fp']}")
+                continue
 
             # Update the last configs
             algo.config(
@@ -247,7 +252,6 @@ def eval(args):
 
     print(df.describe())
     df.to_excel(str(RUN_DIR / 'metrics.xlsx'))
-    # print(df)
 
 if __name__ == '__main__':
     # Parse arguments
