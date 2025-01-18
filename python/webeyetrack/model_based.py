@@ -28,14 +28,11 @@ def compute_ear(facial_landmarks, side):
 # 3D Face Reconstruction
 ########################################################################################
 
-def estimate_face_width(facial_landmarks, frame_height, frame_width, face_rt) -> float:
+def estimate_face_width(facial_landmarks_px, face_rt) -> float:
 
     # If the face is not facing near front, then we cannot estimate the face width
     # if face_rt[2, 2] < 0.9:
     #     return None
-
-    # Convert norm uv to pixel space
-    facial_landmarks_px = facial_landmarks[:, :2] * np.array([frame_width, frame_height])
 
     # Compute the iris size in pixel
     iris_dist = []

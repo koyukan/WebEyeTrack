@@ -19,6 +19,7 @@ from webeyetrack.constants import GIT_ROOT
 from webeyetrack.datasets import MPIIFaceGazeDataset, GazeCaptureDataset, EyeDiapDataset
 import webeyetrack.vis as vis
 from webeyetrack.model_based import vector_to_pitch_yaw
+from webeyetrack.data_protocols import GazeResult
 
 CWD = pathlib.Path(__file__).parent
 FILE_DIR = pathlib.Path(__file__).parent
@@ -50,22 +51,20 @@ def scale(y, y_hat):
 def angle(y, y_hat):
     return np.degrees(np.arccos(np.clip(np.dot(y, y_hat), -1.0, 1.0)))
 
-def visualize_differences(img, sample, output):
+def visualize_differences(img, sample, results: GazeResult):
 
     # Draw the facial_landmarks
-    height, width = img.shape[:2]
-
     pitch, yaw = vector_to_pitch_yaw(sample['face_gaze_vector'])
     cv2.circle(img, (int(sample['face_origin_2d'][0]), int(sample['face_origin_2d'][1])), 5, (0, 0, 255), -1)
     img = vis.draw_axis(img, pitch, yaw, 0, tdx=sample['face_origin_2d'][0], tdy=sample['face_origin_2d'][1], size=100)
 
-    pitch, yaw = vector_to_pitch_yaw(output['face_gaze_vector'])
-    cv2.circle(img, (int(output['face_origin_2d'][0]), int(output['face_origin_2d'][1])), 5, (255, 0, 0), -1)
-    img = vis.draw_axis(img, pitch, yaw, 0, tdx=output['face_origin_2d'][0], tdy=output['face_origin_2d'][1], size=100)
+    pitch, yaw = vector_to_pitch_yaw(results.face_gaze)
+    cv2.circle(img, (int(results.face_origin_2d[0]), int(results.face_origin_2d[1])), 5, (255, 0, 0), -1)
+    img = vis.draw_axis(img, pitch, yaw, 0, tdx=results.face_origin_2d[0], tdy=results.face_origin_2d[1], size=100)
 
     # Draw the centers 
     for eye in ['left', 'right']:
-        eye_result = output['results'].left if eye == 'left' else output['results'].right
+        eye_result = results.left if eye == 'left' else results.right
         centroid = eye_result.origin_2d
         cv2.circle(img, (int(centroid[0]), int(centroid[1])), 5, (255, 0, 0), -1)
 
@@ -134,6 +133,20 @@ def eval(args):
     # Group data by participant
     for group_name, group in tqdm(df.groupby('participant_id')):
 
+        first_sample = group.iloc[0]
+
+        # Update the configurations
+        algo.config(
+            face_width_cm=None, # Reset the head scale estimation
+            intrinsics=first_sample['intrinsics'],
+            screen_R=first_sample['screen_R'],
+            screen_t=first_sample['screen_t'],
+            screen_width_mm=first_sample['screen_width_mm'],
+            screen_height_mm=first_sample['screen_height_mm'],
+            screen_width_px=first_sample['screen_width_px'],
+            screen_height_px=first_sample['screen_height_px'],
+        )
+
         # For each participant, perform calibration first by selecting 9 samples
         # by finding the closet point to the calibration points
         # calib_samples = []
@@ -151,15 +164,25 @@ def eval(args):
         for i, sample in group.iterrows():
 
             # Get sample and load the image
-            # sample = df.iloc[i]
             img = np.moveaxis(sample['image'], 0, -1) * 255
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
             if type(img) == type(None):
                 import pdb; pdb.set_trace()
 
+            # Update the last configs
+            algo.config(
+                frame_height=img.shape[0],
+                frame_width=img.shape[1],
+            )
+
+            # Extract the necessary input for the algo
+            facial_landmarks = sample['facial_landmarks']
+            face_rt = sample['facial_rt']
+            face_blendshapes = sample['face_blendshapes']
+
             # Process the sample
-            results = algo.process_sample(img, sample)
+            results = algo.step(facial_landmarks, face_rt, face_blendshapes)
 
             # output = {
             #     'face_origin': results.face_origin,
@@ -190,12 +213,9 @@ def eval(args):
 
             if i % SKIP_COUNT == 0:
                 # Write to the output directory
-                # drawn_img = visualize_differences(img.copy(), sample, output)
-                # cv2.imwrite(str(RUN_DIR/ 'imgs' / f'{group_name}_gaze_diff_{i}.png'), drawn_img)
+                drawn_img = visualize_differences(img.copy(), sample, results)
+                cv2.imwrite(str(RUN_DIR/ 'imgs' / f'{group_name}_gaze_diff_{i}.png'), drawn_img)
 
-                # drawn_img = vis.landmark_gaze_render(img.copy(), results)
-                # drawn_img = vis.model_based_gaze_render(img.copy(), results)
-                # cv2.imwrite(str(RUN_DIR/ 'imgs' / f'{group_name}_gaze_vis_{i}.png'), drawn_img)
                 output_fp = RUN_DIR / 'imgs' / f'{group_name}_gaze_render_{i}.png'
                 drawn_img = vis.render_3d_gaze_with_frame(img.copy(), results, output_fp)
                 cv2.imwrite(str(output_fp), drawn_img)
