@@ -24,7 +24,7 @@ from webeyetrack.data_protocols import GazeResult
 CWD = pathlib.Path(__file__).parent
 FILE_DIR = pathlib.Path(__file__).parent
 OUTPUTS_DIR = CWD / 'outputs'
-SKIP_COUNT = 2
+SKIP_COUNT = 50
                 # drawn_img = vis.model_based_gaze_render(img.copy(), results)
                 # cv2.imwrite(str(RUN_DIR/ 'imgs' / f'{group_name}_gaze_vis_{i}.png'), drawn_img)
 CALIBRATION_POINTS = np.array([ # 9 points
@@ -51,6 +51,9 @@ def scale(y, y_hat):
 def angle(y, y_hat):
     return np.degrees(np.arccos(np.clip(np.dot(y, y_hat), -1.0, 1.0)))
 
+def euclidean_distance(y, y_hat):
+    return np.linalg.norm(y - y_hat)
+
 def visualize_differences(img, sample, results: GazeResult):
 
     # Draw the facial_landmarks
@@ -74,21 +77,19 @@ def visualize_differences(img, sample, results: GazeResult):
 
     return img
 
-def euclidean_distance(y, y_hat):
-    return np.linalg.norm(y - y_hat)
-
 def eval(args):
  
     # Create a dataset object
     if (args.dataset == 'MPIIFaceGaze'):
         dataset = MPIIFaceGazeDataset(
             GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
-            # participants=config['datasets']['MPIIFaceGaze']['val_subjects'] + config['datasets']['MPIIFaceGaze']['train_subjects'],
-            participants=[5, 6, 7, 8, 9],
+            participants=config['datasets']['MPIIFaceGaze']['val_subjects'] + config['datasets']['MPIIFaceGaze']['train_subjects'],
+            # participants=[5, 6, 7, 8, 9],
+            # participants=[5],
             # img_size=[244,244],
             # face_size=[244,244],
             # dataset_size=100,
-            per_participant_size=8
+            per_participant_size=100
         )
     elif (args.dataset == 'EyeDiap'):
         dataset = EyeDiapDataset(
@@ -116,16 +117,6 @@ def eval(args):
     # Load the eyediap dataset
     print("FINISHED LOADING DATASET")
 
-    metric_functions = {
-        # 'depth': distance, 
-        'face_gaze_vector': angle, 
-        'gaze_origin': euclidean_distance, 
-        'gaze_origin-x': euclidean_distance, 
-        'gaze_origin-y': euclidean_distance, 
-        'gaze_origin-z': euclidean_distance,
-        'pog_px': euclidean_distance,
-        'pog_mm': euclidean_distance
-    }
     metrics = defaultdict(list)
 
     df = dataset.to_df()
@@ -184,32 +175,18 @@ def eval(args):
             # Process the sample
             results = algo.step(facial_landmarks, face_rt, face_blendshapes)
 
-            # output = {
-            #     'face_origin': results.face_origin,
-            #     'face_origin_2d': results.face_origin_2d,
-            #     'face_origin-x': results.face_origin[1],
-            #     'face_origin-y': results.face_origin[0],
-            #     'face_origin-z': results.face_origin[2],
-            #     'face_gaze_vector': results.face_gaze,
-            #     'results': results,
-            # }
+            # Convert face_origin_3d from mm to cm
+            sample['face_origin_3d'] = sample['face_origin_3d'] / 10
 
             # Compute the error
-            # actual = {
-            #     'face_origin': sample['face_origin_3d'],
-            #     'face_origin_2d': sample['face_origin_2d'],
-            #     'face_origin-x': sample['face_origin_3d'][1],
-            #     'face_origin-y': sample['face_origin_3d'][0],
-            #     'face_origin-z': sample['face_origin_3d'][2],
-            #     'face_gaze_vector': sample['face_gaze_vector'],
-            #     'pog_px': sample['pog_px'],
-            #     # 'pog_mm': sample['pog_mm']
-            # }
-            
-            # for name, function in metric_functions.items():
-            #     if name not in output or name not in actual:
-            #         continue
-            #     metrics[name].append(function(actual[name], output[name]))
+            metrics['face_gaze_vector'].append(angle(sample['face_gaze_vector'], results.face_gaze))
+            metrics['face_origin'].append(euclidean_distance(sample['face_origin_3d'], results.face_origin))
+            metrics['face_origin_2d'].append(euclidean_distance(sample['face_origin_2d'], results.face_origin_2d))
+            metrics['face_origin_x'].append(euclidean_distance(sample['face_origin_3d'][1], results.face_origin[1]))
+            metrics['face_origin_y'].append(euclidean_distance(sample['face_origin_3d'][0], results.face_origin[0]))
+            metrics['face_origin_z'].append(euclidean_distance(sample['face_origin_3d'][2], results.face_origin[2]))
+            metrics['pog_px'].append(euclidean_distance(sample['pog_px'], results.pog.pog_px))
+            metrics['pog_mm'].append(euclidean_distance(sample['pog_mm'], results.pog.pog_mm_s))
 
             if i % SKIP_COUNT == 0:
                 # Write to the output directory
@@ -222,7 +199,6 @@ def eval(args):
 
     # Generate box plots for the metrics
     df = pd.DataFrame(metrics)
-
     if df.empty:
         return
 
@@ -270,6 +246,7 @@ def eval(args):
     plt.savefig(str(RUN_DIR / 'metrics.png'))
 
     print(df.describe())
+    df.to_excel(str(RUN_DIR / 'metrics.xlsx'))
     # print(df)
 
 if __name__ == '__main__':
