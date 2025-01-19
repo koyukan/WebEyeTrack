@@ -59,9 +59,10 @@ class CalibrationData:
 
 @dataclass
 class Sample:
+    id: str
     participant_id: str
     image_fp: pathlib.Path
-    annotations: Annotations
+    annotation_fp: pathlib.Path
 
 @dataclass
 class PoGResult:

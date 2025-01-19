@@ -3,7 +3,6 @@ from typing import Dict, Any, Literal, Optional, Tuple
 from collections import deque
 
 import numpy as np
-import cv2
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
@@ -23,7 +22,7 @@ from .vis import TimeSeriesOscilloscope
 from .data_protocols import GazeResult, EyeResult
 from .constants import *
 
-PARAMETER_LIST = Literal[
+PARAMETER_LIST = [
     'frame_height',
     'frame_width',
     'face_width_cm',
@@ -87,8 +86,12 @@ class WebEyeTrack():
         self.prior_gaze = None
         self.prior_depth = None
 
-    def set_parameter(self, parameter: PARAMETER_LIST, value: Any):
-        setattr(self, parameter, value)
+    def config(self, **kwargs):
+        for key, value in kwargs.items():
+            if key in PARAMETER_LIST:
+                setattr(self, key, value)
+            else:
+                raise ValueError(f'Invalid key: {key} in {PARAMETER_LIST}')
 
     def calibrate(self, samples):
 
@@ -142,8 +145,11 @@ class WebEyeTrack():
 
         tic = time.perf_counter()
 
+        # Convert norm uv to pixel space
+        facial_landmarks_px = facial_landmarks[:, :2] * np.array([self.frame_width, self.frame_height])
+
         if self.face_width_cm is None:
-            self.face_width_cm = estimate_face_width(facial_landmarks, self.frame_height, self.frame_width, face_rt)
+            self.face_width_cm = estimate_face_width(facial_landmarks, face_rt)
 
         # If we don't have a perspective matrix, create it
         if type(self.perspective_matrix) == type(None):
@@ -164,7 +170,7 @@ class WebEyeTrack():
         # Obtain the gaze origins based on the metric face pts
         gaze_origins = estimate_gaze_origins(
             face_landmarks_3d=metric_face,
-            face_landmarks=facial_landmarks,
+            face_landmarks=facial_landmarks_px,
         )
 
         # Estimate the gaze based on the face blendshapes
@@ -246,34 +252,6 @@ class WebEyeTrack():
             eyeball_radius=self.eyeball_radius,
             eyeball_centers=self.eyeball_centers,
             perspective_matrix=self.perspective_matrix
-        )
-    
-    def process_sample(
-            self, 
-            frame: np.ndarray, 
-            sample: Dict[str, Any], 
-        ) -> GazeResult:
-
-        # Get the depth and scale
-        # frame = cv2.cvtColor(np.moveaxis(sample['image'], 0, -1) * 255, cv2.COLOR_RGB2BGR)
-        facial_landmarks = sample['facial_landmarks']
-        face_rt = sample['facial_rt']
-
-        # Update the attributes
-        self.frame_height = frame.shape[0]
-        self.frame_width = frame.shape[1]
-        self.intrinsics = sample['intrinsics']
-        self.screen_R = sample['screen_R']
-        self.screen_t = sample['screen_t']
-        self.screen_width_mm = sample['screen_width_mm']
-        self.screen_height_mm = sample['screen_height_mm']
-        self.screen_width_px = sample['screen_width_px']
-        self.screen_height_px = sample['screen_height_px']
-
-        return self.step(
-            facial_landmarks,
-            face_rt,
-            sample['face_blendshapes'],
         )
  
     def process_frame(

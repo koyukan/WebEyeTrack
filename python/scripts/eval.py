@@ -19,13 +19,12 @@ from webeyetrack.constants import GIT_ROOT
 from webeyetrack.datasets import MPIIFaceGazeDataset, GazeCaptureDataset, EyeDiapDataset
 import webeyetrack.vis as vis
 from webeyetrack.model_based import vector_to_pitch_yaw
+from webeyetrack.data_protocols import GazeResult
 
 CWD = pathlib.Path(__file__).parent
 FILE_DIR = pathlib.Path(__file__).parent
 OUTPUTS_DIR = CWD / 'outputs'
-SKIP_COUNT = 2
-                # drawn_img = vis.model_based_gaze_render(img.copy(), results)
-                # cv2.imwrite(str(RUN_DIR/ 'imgs' / f'{group_name}_gaze_vis_{i}.png'), drawn_img)
+SKIP_COUNT = 100
 CALIBRATION_POINTS = np.array([ # 9 points
     [0.5, 0.5],
     [0.1, 0.1],
@@ -50,22 +49,23 @@ def scale(y, y_hat):
 def angle(y, y_hat):
     return np.degrees(np.arccos(np.clip(np.dot(y, y_hat), -1.0, 1.0)))
 
-def visualize_differences(img, sample, output):
+def euclidean_distance(y, y_hat):
+    return np.linalg.norm(y - y_hat)
+
+def visualize_differences(img, sample, results: GazeResult):
 
     # Draw the facial_landmarks
-    height, width = img.shape[:2]
-
     pitch, yaw = vector_to_pitch_yaw(sample['face_gaze_vector'])
     cv2.circle(img, (int(sample['face_origin_2d'][0]), int(sample['face_origin_2d'][1])), 5, (0, 0, 255), -1)
     img = vis.draw_axis(img, pitch, yaw, 0, tdx=sample['face_origin_2d'][0], tdy=sample['face_origin_2d'][1], size=100)
 
-    pitch, yaw = vector_to_pitch_yaw(output['face_gaze_vector'])
-    cv2.circle(img, (int(output['face_origin_2d'][0]), int(output['face_origin_2d'][1])), 5, (255, 0, 0), -1)
-    img = vis.draw_axis(img, pitch, yaw, 0, tdx=output['face_origin_2d'][0], tdy=output['face_origin_2d'][1], size=100)
+    pitch, yaw = vector_to_pitch_yaw(results.face_gaze)
+    cv2.circle(img, (int(results.face_origin_2d[0]), int(results.face_origin_2d[1])), 5, (255, 0, 0), -1)
+    img = vis.draw_axis(img, pitch, yaw, 0, tdx=results.face_origin_2d[0], tdy=results.face_origin_2d[1], size=100)
 
     # Draw the centers 
     for eye in ['left', 'right']:
-        eye_result = output['results'].left if eye == 'left' else output['results'].right
+        eye_result = results.left if eye == 'left' else results.right
         centroid = eye_result.origin_2d
         cv2.circle(img, (int(centroid[0]), int(centroid[1])), 5, (255, 0, 0), -1)
 
@@ -75,21 +75,20 @@ def visualize_differences(img, sample, output):
 
     return img
 
-def euclidean_distance(y, y_hat):
-    return np.linalg.norm(y - y_hat)
-
 def eval(args):
  
     # Create a dataset object
     if (args.dataset == 'MPIIFaceGaze'):
         dataset = MPIIFaceGazeDataset(
             GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
-            # participants=config['datasets']['MPIIFaceGaze']['val_subjects'] + config['datasets']['MPIIFaceGaze']['train_subjects'],
-            participants=[5, 6, 7, 8, 9],
+            participants=config['datasets']['MPIIFaceGaze']['val_subjects'] + config['datasets']['MPIIFaceGaze']['train_subjects'],
+            # participants=[5, 6, 7, 8, 9],
+            # participants=[5],
             # img_size=[244,244],
             # face_size=[244,244],
             # dataset_size=100,
-            per_participant_size=8
+            # per_participant_size=500
+            # per_participant_size=5
         )
     elif (args.dataset == 'EyeDiap'):
         dataset = EyeDiapDataset(
@@ -117,22 +116,28 @@ def eval(args):
     # Load the eyediap dataset
     print("FINISHED LOADING DATASET")
 
-    metric_functions = {
-        # 'depth': distance, 
-        'face_gaze_vector': angle, 
-        'gaze_origin': euclidean_distance, 
-        'gaze_origin-x': euclidean_distance, 
-        'gaze_origin-y': euclidean_distance, 
-        'gaze_origin-z': euclidean_distance,
-        'pog_px': euclidean_distance,
-        'pog_mm': euclidean_distance
-    }
     metrics = defaultdict(list)
 
-    df = dataset.to_df()
+    # Obtain the sample dataframe
+    meta_df = dataset.get_samples_meta_df()
 
     # Group data by participant
-    for group_name, group in tqdm(df.groupby('participant_id')):
+    for group_name, group in tqdm(meta_df.groupby('participant_id')):
+
+        first_sample_meta_df = group.iloc[0]
+        first_sample = dataset.__getitem__(first_sample_meta_df.name)
+
+        # Update the configurations
+        algo.config(
+            face_width_cm=None, # Reset the head scale estimation
+            intrinsics=first_sample['intrinsics'],
+            screen_R=first_sample['screen_R'],
+            screen_t=first_sample['screen_t'],
+            screen_width_mm=first_sample['screen_width_mm'],
+            screen_height_mm=first_sample['screen_height_mm'],
+            screen_width_px=first_sample['screen_width_px'],
+            screen_height_px=first_sample['screen_height_px'],
+        )
 
         # For each participant, perform calibration first by selecting 9 samples
         # by finding the closet point to the calibration points
@@ -148,61 +153,57 @@ def eval(args):
         # algo.calibrate(calib_samples)
 
         # for i in tqdm(range(len(group))):
-        for i, sample in group.iterrows():
+        for i, meta_data in tqdm(group.iterrows(), total=len(group)):
+
+            # Obtain the sample
+            sample = dataset.__getitem__(meta_data.name)
 
             # Get sample and load the image
-            # sample = df.iloc[i]
             img = np.moveaxis(sample['image'], 0, -1) * 255
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
             if type(img) == type(None):
-                import pdb; pdb.set_trace()
+                print(f"Image is None for {sample['image_fp']}")
+                continue
+
+            # Update the last configs
+            algo.config(
+                frame_height=img.shape[0],
+                frame_width=img.shape[1],
+            )
+
+            # Extract the necessary input for the algo
+            facial_landmarks = sample['facial_landmarks']
+            face_rt = sample['facial_rt']
+            face_blendshapes = sample['face_blendshapes']
 
             # Process the sample
-            results = algo.process_sample(img, sample)
+            results = algo.step(facial_landmarks, face_rt, face_blendshapes)
 
-            # output = {
-            #     'face_origin': results.face_origin,
-            #     'face_origin_2d': results.face_origin_2d,
-            #     'face_origin-x': results.face_origin[1],
-            #     'face_origin-y': results.face_origin[0],
-            #     'face_origin-z': results.face_origin[2],
-            #     'face_gaze_vector': results.face_gaze,
-            #     'results': results,
-            # }
+            # Convert face_origin_3d from mm to cm
+            sample['face_origin_3d'] = sample['face_origin_3d'] / 10
 
             # Compute the error
-            # actual = {
-            #     'face_origin': sample['face_origin_3d'],
-            #     'face_origin_2d': sample['face_origin_2d'],
-            #     'face_origin-x': sample['face_origin_3d'][1],
-            #     'face_origin-y': sample['face_origin_3d'][0],
-            #     'face_origin-z': sample['face_origin_3d'][2],
-            #     'face_gaze_vector': sample['face_gaze_vector'],
-            #     'pog_px': sample['pog_px'],
-            #     # 'pog_mm': sample['pog_mm']
-            # }
-            
-            # for name, function in metric_functions.items():
-            #     if name not in output or name not in actual:
-            #         continue
-            #     metrics[name].append(function(actual[name], output[name]))
+            metrics['face_gaze_vector'].append(angle(sample['face_gaze_vector'], results.face_gaze))
+            metrics['face_origin'].append(euclidean_distance(sample['face_origin_3d'], results.face_origin))
+            metrics['face_origin_2d'].append(euclidean_distance(sample['face_origin_2d'], results.face_origin_2d))
+            metrics['face_origin_x'].append(euclidean_distance(sample['face_origin_3d'][1], results.face_origin[1]))
+            metrics['face_origin_y'].append(euclidean_distance(sample['face_origin_3d'][0], results.face_origin[0]))
+            metrics['face_origin_z'].append(euclidean_distance(sample['face_origin_3d'][2], results.face_origin[2]))
+            metrics['pog_px'].append(euclidean_distance(sample['pog_px'], results.pog.pog_px))
+            metrics['pog_mm'].append(euclidean_distance(sample['pog_mm'], results.pog.pog_mm_s))
 
             if i % SKIP_COUNT == 0:
                 # Write to the output directory
-                # drawn_img = visualize_differences(img.copy(), sample, output)
-                # cv2.imwrite(str(RUN_DIR/ 'imgs' / f'{group_name}_gaze_diff_{i}.png'), drawn_img)
+                drawn_img = visualize_differences(img.copy(), sample, results)
+                cv2.imwrite(str(RUN_DIR/ 'imgs' / f'{group_name}_gaze_diff_{i}.png'), drawn_img)
 
-                # drawn_img = vis.landmark_gaze_render(img.copy(), results)
-                # drawn_img = vis.model_based_gaze_render(img.copy(), results)
-                # cv2.imwrite(str(RUN_DIR/ 'imgs' / f'{group_name}_gaze_vis_{i}.png'), drawn_img)
                 output_fp = RUN_DIR / 'imgs' / f'{group_name}_gaze_render_{i}.png'
                 drawn_img = vis.render_3d_gaze_with_frame(img.copy(), results, output_fp)
                 cv2.imwrite(str(output_fp), drawn_img)
 
     # Generate box plots for the metrics
     df = pd.DataFrame(metrics)
-
     if df.empty:
         return
 
@@ -250,7 +251,7 @@ def eval(args):
     plt.savefig(str(RUN_DIR / 'metrics.png'))
 
     print(df.describe())
-    # print(df)
+    df.to_excel(str(RUN_DIR / 'metrics.xlsx'))
 
 if __name__ == '__main__':
     # Parse arguments
