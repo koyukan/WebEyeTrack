@@ -7,7 +7,6 @@ import trimesh
 import imutils
 import open3d as o3d
 
-from .webeyetrack import WebEyeTrack
 from .data_protocols import GazeResult, EyeResult
 from .model_based import vector_to_pitch_yaw, rotation_matrix_to_euler_angles
 from .constants import *
@@ -24,6 +23,33 @@ from .utilities import (
 )
 
 EYE_IMAGE_WIDTH = 400
+
+class TimeSeriesOscilloscope:
+
+    def __init__(self, name: str, min_value: float, max_value: float, num_points: int, px_height: int = 400, pxs_per_point: int = 10):
+        self.name = name
+        self.min_value = min_value
+        self.max_value = max_value
+        self.num_points = num_points
+        self.px_height = px_height
+        self.pxs_per_point = pxs_per_point
+
+        # self.img = np.zeros((num_points, px_height, 3), dtype=np.uint8)
+        self.img = np.zeros((px_height, num_points * self.pxs_per_point, 3), dtype=np.uint8)
+
+    def update(self, value: float) -> np.ndarray:
+        norm_value = (value - self.min_value) / (self.max_value - self.min_value)
+        norm_value = np.clip(norm_value, 0, 1)
+        px_value = int(norm_value * self.px_height)
+
+        # Shift the image by pxs_per_point along the width
+        self.img[:, :-self.pxs_per_point] = self.img[:, self.pxs_per_point:]
+
+        # Draw the new value
+        self.img[:, -self.pxs_per_point:] = 0
+        self.img[-px_value:, -self.pxs_per_point:] = 255
+
+        return self.img
 
 def render_3d_gaze_with_frame(frame: np.ndarray, result: GazeResult, output_path: pathlib.Path):
     render_3d_gaze(frame, result, output_path)

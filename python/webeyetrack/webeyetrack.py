@@ -1,6 +1,6 @@
 import time
 from typing import Dict, Any, Literal, Optional, Tuple
-import math
+from collections import deque
 
 import numpy as np
 import cv2
@@ -13,11 +13,13 @@ from skopt.space import Real
 from .model_based import (
     create_perspective_matrix, 
     face_reconstruction,
+    compute_ear,
     estimate_face_width,
     estimate_gaze_origins,
     estimate_gaze_vector_based_on_eye_blendshapes, 
     compute_pog
 )
+from .vis import TimeSeriesOscilloscope
 from .data_protocols import GazeResult, EyeResult
 from .constants import *
 
@@ -51,7 +53,7 @@ class WebEyeTrack():
             screen_height_px: Optional[int] = None,
             eyeball_centers: Tuple[np.ndarray, np.ndarray] = EYEBALL_DEFAULT,
             eyeball_radius: float = EYEBALL_RADIUS,
-            ear_threshold: float = 0.1,
+            ear_threshold: float = 0.2,
         ):
 
         # Setup MediaPipe Face Facial Landmark model
@@ -170,6 +172,12 @@ class WebEyeTrack():
             face_blendshapes=face_blendshapes,
             face_rt=face_rt,
         )
+
+        # Determine the gaze state based on the EAR threshold
+        for eye in ['left', 'right']:
+            ear_value = compute_ear(facial_landmarks, eye)
+            if ear_value < self.ear_threshold:
+                gaze_vectors['eyes']['is_closed'][eye] = True
         
         # If screen's dimensions and relation to the camera are known, compute the PoG
         if (self.screen_R is not None 

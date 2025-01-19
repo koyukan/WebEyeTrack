@@ -83,6 +83,10 @@ def main():
         # Draw the depth as text on the top-left corner
         cv2.putText(draw_frame, f"Depth: {result.metric_transform[2,3]:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
+        # Draw the gaze state (open or closed)
+        cv2.putText(draw_frame, f"Gaze State (left): {'Closed' if result.left.is_closed else 'Open'}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        cv2.putText(draw_frame, f"Gaze State (right): {'Closed' if result.right.is_closed else 'Open'}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
         # Compute the face mesh
         face_mesh.vertices = o3d.utility.Vector3dVector(transform_for_3d_scene(result.metric_face))
         new_face_mesh_lines = o3d.geometry.LineSet.create_from_triangle_mesh(face_mesh)

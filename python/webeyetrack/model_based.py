@@ -697,6 +697,7 @@ def estimate_gaze_vector_based_on_eye_blendshapes(face_blendshapes, face_rt):
     # Compute the iris direction
     gaze_directions = {}
     for option, value in {'left': LEFT_BLENDSHAPES, 'right': RIGHT_BLENDSHAPES}.items():
+        
         blendshapes = face_blendshapes
         look_in, look_out, look_up, look_down = ([blendshapes[i] for i in value])
         hfov = np.deg2rad(HFOV)
