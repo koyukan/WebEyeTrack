@@ -17,39 +17,18 @@ from webeyetrack.utilities import (
     rotation_matrix_to_euler_angles,
     euler_angles_to_rotation_matrix,
     OPEN3D_RT,
+    OPEN3D_RT_SCREEN,
     load_3d_axis, 
     load_canonical_mesh, 
     load_eyeball_model,
     load_camera_frustrum,
     load_pog_balls,
     load_gaze_vectors,
-    load_screen_rect
+    load_screen_rect,
+    get_screen_attributes
 )
 
-# Screen dimensions
-
-# Based on platform, use different approaches for determining size
-# For Windows and Linux, use the screeninfo library
-# For MacOS, use the Quartz library
-if platform.system() == 'Windows' or platform.system() == 'Linux':
-    from screeninfo import get_monitors
-    m = get_monitors()[0]
-    SCREEN_HEIGHT_MM = m.height_mm
-    SCREEN_WIDTH_MM = m.width_mm
-    SCREEN_HEIGHT_PX = m.height
-    SCREEN_WIDTH_PX = m.width
-elif platform.system() == 'Darwin':
-    import Quartz
-    main_display_id = Quartz.CGMainDisplayID()
-    width_mm, height_mm = Quartz.CGDisplayScreenSize(main_display_id)
-    width_px, height_px = Quartz.CGDisplayPixelsWide(main_display_id), Quartz.CGDisplayPixelsHigh(main_display_id)
-    SCREEN_HEIGHT_MM = height_mm
-    SCREEN_WIDTH_MM = width_mm
-    SCREEN_HEIGHT_PX = height_px
-    SCREEN_WIDTH_PX = width_px
-
-# SCALE = 2e-3
-SCALE = 1
+SCREEN_HEIGHT_MM, SCREEN_WIDTH_MM, SCREEN_HEIGHT_PX, SCREEN_WIDTH_PX = get_screen_attributes()
 print(f"Screen Height: {SCREEN_HEIGHT_MM} mm, Screen Width: {SCREEN_WIDTH_MM} mm")
 
 if __name__ == '__main__':
@@ -74,8 +53,8 @@ if __name__ == '__main__':
     face_mesh, face_mesh_lines = load_canonical_mesh(visual)
     face_coordinate_axes = load_3d_axis(visual)
     eyeball_meshes, _, eyeball_R = load_eyeball_model(visual)
-    load_screen_rect(visual, SCREEN_WIDTH_MM, SCREEN_HEIGHT_MM)
-    load_camera_frustrum(w_ratio, h_ratio, visual)
+    load_screen_rect(visual, SCREEN_WIDTH_MM, SCREEN_HEIGHT_MM, rt=OPEN3D_RT_SCREEN)
+    load_camera_frustrum(w_ratio, h_ratio, visual, rt=OPEN3D_RT_SCREEN)
     left_pog, right_pog = load_pog_balls(visual)
     left_gaze_vector, right_gaze_vector = load_gaze_vectors(visual)
     
@@ -86,7 +65,7 @@ if __name__ == '__main__':
         [0, 1, 0],  # Y-axis end
         [0, 0, 1],  # Z-axis end
     ]
-    camera_coordinate_axes.points = o3d.utility.Vector3dVector(transform_for_3d_scene(np.array(points) * 5))
+    camera_coordinate_axes.points = o3d.utility.Vector3dVector(transform_for_3d_scene(np.array(points) * 5, OPEN3D_RT_SCREEN))
     visual.update_geometry(camera_coordinate_axes)
     
     # Pipeline
@@ -123,7 +102,7 @@ if __name__ == '__main__':
         draw_frame = draw_landmarks_on_image(draw_frame, detection_results)
 
         # Compute the face mesh
-        face_mesh.vertices = o3d.utility.Vector3dVector(transform_for_3d_scene(result.metric_face))
+        face_mesh.vertices = o3d.utility.Vector3dVector(transform_for_3d_scene(result.metric_face, OPEN3D_RT_SCREEN))
         new_face_mesh_lines = o3d.geometry.LineSet.create_from_triangle_mesh(face_mesh)
         face_mesh_lines.points = new_face_mesh_lines.points
         visual.update_geometry(face_mesh)
@@ -143,7 +122,7 @@ if __name__ == '__main__':
         cv2.line(draw_frame, tuple(canonical_face_axes_2d[0]), tuple(canonical_face_axes_2d[3]), (255, 0, 0), 2)
 
         # Update the 3d axes in the visualizer as well
-        face_coordinate_axes.points = o3d.utility.Vector3dVector(transform_for_3d_scene(camera_pts_3d))
+        face_coordinate_axes.points = o3d.utility.Vector3dVector(transform_for_3d_scene(camera_pts_3d, OPEN3D_RT_SCREEN))
         visual.update_geometry(face_coordinate_axes)
 
         # Draw the 3D eyeball and gaze vector
@@ -155,7 +134,7 @@ if __name__ == '__main__':
             gaze_vector = left_gaze_vector if i == 'left' else right_gaze_vector
 
             # final_position = transform_for_3d_scene(eye_g_o[k].reshape((-1,3))).flatten()
-            final_position = transform_for_3d_scene(origin.reshape((-1,3))).flatten()
+            final_position = transform_for_3d_scene(origin.reshape((-1,3)), OPEN3D_RT_SCREEN).flatten()
             eyeball_meshes[i].translate(final_position, relative=False)
 
             # Rotation
@@ -166,7 +145,7 @@ if __name__ == '__main__':
             eye_R = euler_angles_to_rotation_matrix(pitch, yaw, 0)
 
             # Apply the scene transformation to the new eye rotation
-            eye_R = np.dot(eye_R, OPEN3D_RT[:3, :3])
+            eye_R = np.dot(eye_R, OPEN3D_RT_SCREEN[:3, :3])
 
             # Compute the rotation matrix to rotate the current to the target
             new_eye_R = np.dot(eye_R, current_eye_R.T)
@@ -176,7 +155,7 @@ if __name__ == '__main__':
 
             # Draw the gaze vectors
             pts = np.array([origin, origin + direction * 100])
-            transform_pts = transform_for_3d_scene(pts)
+            transform_pts = transform_for_3d_scene(pts, OPEN3D_RT_SCREEN)
             gaze_vector.points = o3d.utility.Vector3dVector(transform_pts)
             gaze_vector.lines = o3d.utility.Vector2iVector([[0, 1]])
             if i == 'left':
@@ -186,7 +165,7 @@ if __name__ == '__main__':
             visual.update_geometry(gaze_vector)
 
             # Position the PoG balls
-            pog_position = transform_for_3d_scene(eye_result.pog.pog_mm_c.reshape((-1,3))/10).flatten()
+            pog_position = transform_for_3d_scene(eye_result.pog.pog_mm_c.reshape((-1,3))/10, OPEN3D_RT_SCREEN).flatten()
             pog_ball.translate(pog_position, relative=False)
             visual.update_geometry(pog_ball)
 

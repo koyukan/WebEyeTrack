@@ -1,12 +1,19 @@
 import cv2
 import numpy as np
 
-from webeyetrack.utilities import estimate_camera_intrinsics
 from webeyetrack import WebEyeTrack
 from webeyetrack.constants import *
-from webeyetrack.vis import render_3d_gaze
+from webeyetrack.vis import (
+    render_3d_gaze,
+    render_3d_gaze_with_screen
+)
+from webeyetrack.utilities import (
+    estimate_camera_intrinsics,
+    get_screen_attributes
+)
 
 CWD = pathlib.Path(__file__).parent
+SCREEN_HEIGHT_MM, SCREEN_WIDTH_MM, SCREEN_HEIGHT_PX, SCREEN_WIDTH_PX = get_screen_attributes()
 
 if __name__ == '__main__':
     
@@ -24,10 +31,10 @@ if __name__ == '__main__':
         intrinsics=K,
         screen_R=np.deg2rad(np.array([0, 0, 0]).astype(np.float32)),
         screen_t=np.array([0, 0, 0]).astype(np.float32),
-        # screen_width_mm=SCREEN_WIDTH_MM,
-        # screen_height_mm=SCREEN_HEIGHT_MM,
-        # screen_width_px=SCREEN_WIDTH_PX,
-        # screen_height_px=SCREEN_HEIGHT_PX
+        screen_width_mm=SCREEN_WIDTH_MM,
+        screen_height_mm=SCREEN_HEIGHT_MM,
+        screen_width_px=SCREEN_WIDTH_PX,
+        screen_height_px=SCREEN_HEIGHT_PX
     )
 
     while cap.isOpened():
@@ -43,7 +50,10 @@ if __name__ == '__main__':
             continue
 
         # Render the gaze in 3D
-        render_3d_gaze(frame, result, CWD/'test.png')
+        # render_3d_gaze(frame, result, CWD/'test.png')
+
+        # Render the gaze with screen
+        render_3d_gaze_with_screen(frame, result, CWD/'test_screen.png', SCREEN_WIDTH_MM, SCREEN_HEIGHT_MM)
 
         draw_frame = frame.copy()
         cv2.imshow("Face Mesh", draw_frame)

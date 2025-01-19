@@ -15,11 +15,17 @@ from .utilities import (
     load_canonical_mesh, 
     load_3d_axis, 
     load_eyeball_model,
+    load_camera_frustrum,
+    load_screen_rect,
+    load_pog_balls,
+    load_gaze_vectors,
     transform_for_3d_scene,
     get_rotation_matrix_from_vector,
     euler_angles_to_rotation_matrix,
     transform_3d_to_3d,
-    OPEN3D_RT
+    transform_3d_to_2d,
+    OPEN3D_RT,
+    OPEN3D_RT_SCREEN,
 )
 
 EYE_IMAGE_WIDTH = 400
@@ -50,92 +56,7 @@ class TimeSeriesOscilloscope:
         self.img[-px_value:, -self.pxs_per_point:] = 255
 
         return self.img
-
-def render_3d_gaze_with_frame(frame: np.ndarray, result: GazeResult, output_path: pathlib.Path):
-    render_3d_gaze(frame, result, output_path)
-    render_img = cv2.imread(str(output_path))
-    combined_frame = np.hstack([frame, render_img])
-    return combined_frame
-
-def render_3d_gaze(frame: np.ndarray, result: GazeResult, output_path: pathlib.Path) -> np.ndarray:
-
-    # Get the frame size 
-    height, width = frame.shape[:2]
-    K = estimate_camera_intrinsics(np.zeros((height, width, 3)))
     
-    # Initialize Open3D visual
-    visual = o3d.visualization.Visualizer()
-    visual.create_window(width=width, height=height)
-    visual.get_render_option().background_color = [0.1, 0.1, 0.1]
-    visual.get_render_option().mesh_show_back_face = True
-    visual.get_render_option().point_size = 10
-
-    # Change the z far to 1000
-    vis = visual.get_view_control()
-    vis.set_constant_z_far(1000)
-    params = o3d.camera.PinholeCameraParameters()
-    intrinsic = o3d.camera.PinholeCameraIntrinsic(intrinsic_matrix=K, width=width, height=height)
-    params.extrinsic = np.eye(4)
-    params.intrinsic = intrinsic
-    vis.convert_from_pinhole_camera_parameters(parameter=params)
-
-    face_mesh, face_mesh_lines = load_canonical_mesh(visual)
-    face_coordinate_axes = load_3d_axis(visual)
-    eyeball_meshes, _, eyeball_R = load_eyeball_model(visual)
-
-        # Compute face mesh
-    face_mesh.vertices = o3d.utility.Vector3dVector(transform_for_3d_scene(result.metric_face))
-    new_face_mesh_lines = o3d.geometry.LineSet.create_from_triangle_mesh(face_mesh)
-    face_mesh_lines.points = new_face_mesh_lines.points
-    visual.update_geometry(face_mesh)
-    visual.update_geometry(face_mesh_lines)
-
-    # Draw canonical face axes
-    canonical_face_axes = np.array([
-        [0, 0, 0],
-        [1, 0, 0],
-        [0, 1, 0],
-        [0, 0, 1]
-    ]) * 5
-    camera_pts_3d = transform_3d_to_3d(canonical_face_axes, result.metric_transform)
-    face_coordinate_axes.points = o3d.utility.Vector3dVector(transform_for_3d_scene(camera_pts_3d))
-    visual.update_geometry(face_coordinate_axes)
-
-    # Compute the 3D eye origin
-    for i in ['left', 'right']:
-        eye_result = result.left if i == 'left' else result.right
-        origin = eye_result.origin
-        direction = eye_result.direction
-
-        final_position = transform_for_3d_scene(origin.reshape((-1, 3))).flatten()
-        eyeball_meshes[i].translate(final_position, relative=False)
-
-        # Rotation
-        current_eye_R = eyeball_R[i]
-        eye_R = get_rotation_matrix_from_vector(direction)
-        pitch, yaw, roll = rotation_matrix_to_euler_angles(eye_R)
-        pitch, yaw, roll = yaw, pitch, roll  # Flip pitch and yaw
-        # pitch, yaw, roll = -yaw, pitch, roll  # Flip pitch and yaw
-        eye_R = euler_angles_to_rotation_matrix(pitch, yaw, 0)
-        eye_R = np.dot(eye_R, OPEN3D_RT[:3, :3])
-
-        # Compute the rotation matrix to rotate the current to the target
-        new_eye_R = np.dot(eye_R, current_eye_R.T)
-        eyeball_R[i] = eye_R
-        eyeball_meshes[i].rotate(new_eye_R)
-        visual.update_geometry(eyeball_meshes[i])
-
-    # Render the scene
-    visual.poll_events()
-    visual.update_renderer()
-
-    # Save the image
-    visual.capture_screen_image(str(output_path))
-
-    # Cleanup
-    visual.destroy_window()
-    print(f"3D render saved to {output_path}")
-
 def pad_and_concat_images(image1, image2):
     # Get dimensions of both images
     h1, w1 = image1.shape[:2]
@@ -743,3 +664,216 @@ def draw_pog(img, pog, color=(0,0,255), size=10):
     x, y = pog
     cv2.circle(img, (int(x), int(y)), size, color, -1)
     return img
+
+####################################################################################################
+# 3D Rendering
+####################################################################################################
+
+def render_3d_gaze_with_screen(
+        frame: np.ndarray, 
+        result: GazeResult, 
+        output_path: pathlib.Path,
+        screen_width_mm: float,
+        screen_height_mm: float,
+    ):
+
+    # Get the frame size 
+    height, width = frame.shape[:2]
+    max_size = max(height, width)
+    w_ratio, h_ratio = width/max_size, height/max_size
+    K = estimate_camera_intrinsics(np.zeros((height, width, 3)))
+
+    # Initialize Open3D Visualizer
+    visual = o3d.visualization.Visualizer()
+    visual.create_window(width=width, height=height)
+    visual.get_render_option().background_color = [1, 1, 1]
+    visual.get_render_option().mesh_show_back_face = True
+
+    # Change the z far to 1000
+    vis = visual.get_view_control()
+    vis.set_constant_z_far(1000)
+    params = o3d.camera.PinholeCameraParameters()
+    intrinsic = o3d.camera.PinholeCameraIntrinsic(intrinsic_matrix=K, width=width, height=height)
+    params.extrinsic = np.eye(4)
+    params.intrinsic = intrinsic
+    vis.convert_from_pinhole_camera_parameters(parameter=params)
+    
+    # Define intrinsics based on the frame
+    intrinsics = np.array([[width, 0, width // 2], [0, height, height // 2], [0, 0, 1]])
+
+    face_mesh, face_mesh_lines = load_canonical_mesh(visual)
+    face_coordinate_axes = load_3d_axis(visual)
+    eyeball_meshes, _, eyeball_R = load_eyeball_model(visual)
+    load_screen_rect(visual, screen_width_mm, screen_height_mm, rt=OPEN3D_RT_SCREEN)
+    load_camera_frustrum(w_ratio, h_ratio, visual, rt=OPEN3D_RT_SCREEN)
+    left_pog, right_pog = load_pog_balls(visual)
+    left_gaze_vector, right_gaze_vector = load_gaze_vectors(visual)
+    
+    camera_coordinate_axes = load_3d_axis(visual)
+    points = [
+        [0, 0, 0],  # Origin
+        [1, 0, 0],  # X-axis end
+        [0, 1, 0],  # Y-axis end
+        [0, 0, 1],  # Z-axis end
+    ]
+    camera_coordinate_axes.points = o3d.utility.Vector3dVector(transform_for_3d_scene(np.array(points) * 5, OPEN3D_RT_SCREEN))
+    visual.update_geometry(camera_coordinate_axes)
+
+    # Compute face mesh
+    face_mesh.vertices = o3d.utility.Vector3dVector(transform_for_3d_scene(result.metric_face, OPEN3D_RT_SCREEN))
+    new_face_mesh_lines = o3d.geometry.LineSet.create_from_triangle_mesh(face_mesh)
+    face_mesh_lines.points = new_face_mesh_lines.points
+    visual.update_geometry(face_mesh)
+    visual.update_geometry(face_mesh_lines)
+
+    # Update the 3d axes in the visualizer as well
+    # Draw the canonical face axes by using the final_transform
+    canonical_face_axes = np.array([
+        [0, 0, 0],
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1]
+    ]) * 5
+    camera_pts_3d = transform_3d_to_3d(canonical_face_axes, result.metric_transform)
+    face_coordinate_axes.points = o3d.utility.Vector3dVector(transform_for_3d_scene(camera_pts_3d, OPEN3D_RT_SCREEN))
+    visual.update_geometry(face_coordinate_axes)
+
+    # Draw the 3D eyeball and gaze vector
+    for i in ['left', 'right']:
+        eye_result = result.left if i == 'left' else result.right
+        origin = eye_result.origin
+        direction = eye_result.direction
+        pog_ball = left_pog if i == 'left' else right_pog
+        gaze_vector = left_gaze_vector if i == 'left' else right_gaze_vector
+
+        # final_position = transform_for_3d_scene(eye_g_o[k].reshape((-1,3))).flatten()
+        final_position = transform_for_3d_scene(origin.reshape((-1,3)), OPEN3D_RT_SCREEN).flatten()
+        eyeball_meshes[i].translate(final_position, relative=False)
+
+        # Rotation
+        current_eye_R = eyeball_R[i]
+        eye_R = get_rotation_matrix_from_vector(direction)
+        pitch, yaw, roll = rotation_matrix_to_euler_angles(eye_R)
+        pitch, yaw, roll = yaw, pitch, roll # Flip the pitch and yaw
+        eye_R = euler_angles_to_rotation_matrix(pitch, yaw, 0)
+
+        # Apply the scene transformation to the new eye rotation
+        eye_R = np.dot(eye_R, OPEN3D_RT[:3, :3])
+
+        # Compute the rotation matrix to rotate the current to the target
+        new_eye_R = np.dot(eye_R, current_eye_R.T)
+        eyeball_R[i] = eye_R
+        eyeball_meshes[i].rotate(new_eye_R)
+        visual.update_geometry(eyeball_meshes[i])
+
+        # Draw the gaze vectors
+        pts = np.array([origin, origin + direction * 100])
+        transform_pts = transform_for_3d_scene(pts, OPEN3D_RT_SCREEN)
+        gaze_vector.points = o3d.utility.Vector3dVector(transform_pts)
+        gaze_vector.lines = o3d.utility.Vector2iVector([[0, 1]])
+        if i == 'left':
+            gaze_vector.colors = o3d.utility.Vector3dVector(np.array([[1, 0, 0]]))
+        else:
+            gaze_vector.colors = o3d.utility.Vector3dVector(np.array([[0, 1, 0]]))
+        visual.update_geometry(gaze_vector)
+
+        # Position the PoG balls
+        pog_position = transform_for_3d_scene(eye_result.pog.pog_mm_c.reshape((-1,3))/10, OPEN3D_RT_SCREEN).flatten()
+        pog_ball.translate(pog_position, relative=False)
+        visual.update_geometry(pog_ball)
+
+    # Update visualizer
+    visual.poll_events()
+    visual.update_renderer()
+
+    # Save the image
+    visual.capture_screen_image(str(output_path))
+
+    # Cleanup
+    visual.destroy_window()
+    print(f"3D render saved to {output_path}")
+
+def render_3d_gaze_with_frame(frame: np.ndarray, result: GazeResult, output_path: pathlib.Path):
+    render_3d_gaze(frame, result, output_path)
+    render_img = cv2.imread(str(output_path))
+    combined_frame = np.hstack([frame, render_img])
+    return combined_frame
+
+def render_3d_gaze(frame: np.ndarray, result: GazeResult, output_path: pathlib.Path) -> np.ndarray:
+
+    # Get the frame size 
+    height, width = frame.shape[:2]
+    K = estimate_camera_intrinsics(np.zeros((height, width, 3)))
+    
+    # Initialize Open3D visual
+    visual = o3d.visualization.Visualizer()
+    visual.create_window(width=width, height=height)
+    visual.get_render_option().background_color = [0.1, 0.1, 0.1]
+    visual.get_render_option().mesh_show_back_face = True
+    visual.get_render_option().point_size = 10
+
+    # Change the z far to 1000
+    vis = visual.get_view_control()
+    vis.set_constant_z_far(1000)
+    params = o3d.camera.PinholeCameraParameters()
+    intrinsic = o3d.camera.PinholeCameraIntrinsic(intrinsic_matrix=K, width=width, height=height)
+    params.extrinsic = np.eye(4)
+    params.intrinsic = intrinsic
+    vis.convert_from_pinhole_camera_parameters(parameter=params)
+
+    face_mesh, face_mesh_lines = load_canonical_mesh(visual)
+    face_coordinate_axes = load_3d_axis(visual)
+    eyeball_meshes, _, eyeball_R = load_eyeball_model(visual)
+
+    # Compute face mesh
+    face_mesh.vertices = o3d.utility.Vector3dVector(transform_for_3d_scene(result.metric_face))
+    new_face_mesh_lines = o3d.geometry.LineSet.create_from_triangle_mesh(face_mesh)
+    face_mesh_lines.points = new_face_mesh_lines.points
+    visual.update_geometry(face_mesh)
+    visual.update_geometry(face_mesh_lines)
+
+    # Draw canonical face axes
+    canonical_face_axes = np.array([
+        [0, 0, 0],
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1]
+    ]) * 5
+    camera_pts_3d = transform_3d_to_3d(canonical_face_axes, result.metric_transform)
+    face_coordinate_axes.points = o3d.utility.Vector3dVector(transform_for_3d_scene(camera_pts_3d))
+    visual.update_geometry(face_coordinate_axes)
+
+    # Compute the 3D eye origin
+    for i in ['left', 'right']:
+        eye_result = result.left if i == 'left' else result.right
+        origin = eye_result.origin
+        direction = eye_result.direction
+
+        final_position = transform_for_3d_scene(origin.reshape((-1, 3))).flatten()
+        eyeball_meshes[i].translate(final_position, relative=False)
+
+        # Rotation
+        current_eye_R = eyeball_R[i]
+        eye_R = get_rotation_matrix_from_vector(direction)
+        pitch, yaw, roll = rotation_matrix_to_euler_angles(eye_R)
+        pitch, yaw, roll = yaw, pitch, roll  # Flip pitch and yaw
+        # pitch, yaw, roll = -yaw, pitch, roll  # Flip pitch and yaw
+        eye_R = euler_angles_to_rotation_matrix(pitch, yaw, 0)
+        eye_R = np.dot(eye_R, OPEN3D_RT[:3, :3])
+
+        # Compute the rotation matrix to rotate the current to the target
+        new_eye_R = np.dot(eye_R, current_eye_R.T)
+        eyeball_R[i] = eye_R
+        eyeball_meshes[i].rotate(new_eye_R)
+        visual.update_geometry(eyeball_meshes[i])
+
+    # Render the scene
+    visual.poll_events()
+    visual.update_renderer()
+
+    # Save the image
+    visual.capture_screen_image(str(output_path))
+
+    # Cleanup
+    visual.destroy_window()
+    print(f"3D render saved to {output_path}")

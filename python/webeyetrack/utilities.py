@@ -4,12 +4,46 @@ import numpy as np
 import open3d as o3d
 import trimesh
 import cv2
+import platform
 
 MAX_STEP_CM = 5
 from .constants import *
 
 ########################################################################################
-# Utilities
+# OS Utilities
+########################################################################################
+
+def get_screen_attributes():
+    """
+    Get the screen attributes based on the operating system.
+
+    Returns:
+    - screen_height_mm (float): Screen height in millimeters.
+    - screen_width_mm (float): Screen width in millimeters.
+    - screen_height_px (int): Screen height in pixels.
+    - screen_width_px (int): Screen width in pixels.
+    """
+    if platform.system() == 'Windows' or platform.system() == 'Linux':
+        from screeninfo import get_monitors
+        m = get_monitors()[0]
+        screen_height_mm = m.height_mm
+        screen_width_mm = m.width_mm
+        screen_height_px = m.height
+        screen_width_px = m.width
+    elif platform.system() == 'Darwin':
+        import Quartz
+        main_display_id = Quartz.CGMainDisplayID()
+        width_mm, height_mm = Quartz.CGDisplayScreenSize(main_display_id)
+        width_px, height_px = Quartz.CGDisplayPixelsWide(main_display_id), Quartz.CGDisplayPixelsHigh(main_display_id)
+        screen_height_mm = height_mm
+        screen_width_mm = width_mm
+        screen_height_px = height_px
+        screen_width_px = width_px
+
+    return screen_height_mm, screen_width_mm, screen_height_px, screen_width_px
+
+########################################################################################
+# Math Utilities
 ########################################################################################
 
 def rotation_matrix_to_euler_angles(R):
@@ -294,13 +328,14 @@ def create_transformation_matrix(scale, translation, rotation):
     return transformation_matrix
 
 OPEN3D_RT = create_transformation_matrix(1, [0,0,50], [0,180,180])
+OPEN3D_RT_SCREEN = create_transformation_matrix(1, [0,0,100], [0,320,180])
 
-def transform_for_3d_scene(pts):
+def transform_for_3d_scene(pts, RT=OPEN3D_RT):
     """
     Apply a RT transformation to the points to get the desired 3D scene.
     """
     pts_h = np.hstack([pts, np.ones((pts.shape[0], 1), dtype=np.float32)])
-    transformed_pts_h = (OPEN3D_RT @ pts_h.T).T
+    transformed_pts_h = (RT @ pts_h.T).T
     return transformed_pts_h[:, :3]
 
 def estimate_camera_intrinsics(frame, fov_x=None):
@@ -615,7 +650,7 @@ def load_eyeball_model(visual=None):
 
     return eyeball_meshes, iris_3d_pt, eyeball_R
 
-def load_camera_frustrum(w_ratio, h_ratio, visual=None):
+def load_camera_frustrum(w_ratio, h_ratio, visual=None, rt=OPEN3D_RT):
     
     # Add a camera frustrum of the webcam
     # Frustum parameters
@@ -634,7 +669,7 @@ def load_camera_frustrum(w_ratio, h_ratio, visual=None):
         [-frustum_width, -frustum_height, far_plane_dist], # Bottom-left
         [frustum_width, -frustum_height, far_plane_dist]   # Bottom-right
     ])
-    transformed_pts = transform_for_3d_scene(points)
+    transformed_pts = transform_for_3d_scene(points, rt)
 
     # Define lines to form the frustum
     lines = [
@@ -663,7 +698,7 @@ def load_camera_frustrum(w_ratio, h_ratio, visual=None):
 
     return frustum
 
-def load_screen_rect(visual, screen_width_mm, screen_height_mm):
+def load_screen_rect(visual, screen_width_mm, screen_height_mm, rt=OPEN3D_RT):
     
     # Screen Display
     rw, rh = screen_width_mm / 10, screen_height_mm / 10
@@ -681,7 +716,7 @@ def load_screen_rect(visual, screen_width_mm, screen_height_mm):
     ])
 
     # Apply the Open3D transformation
-    transformed_pts = transform_for_3d_scene(rectangle_points)
+    transformed_pts = transform_for_3d_scene(rectangle_points, rt)
 
     # Create the TriangleMesh object
     rectangle_mesh = o3d.geometry.TriangleMesh()
