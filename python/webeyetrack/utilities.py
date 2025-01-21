@@ -18,16 +18,16 @@ def get_screen_attributes():
     Get the screen attributes based on the operating system.
 
     Returns:
-    - screen_height_mm (float): Screen height in millimeters.
-    - screen_width_mm (float): Screen width in millimeters.
+    - screen_height_cm (float): Screen height in centimeters.
+    - screen_width_cm (float): Screen width in centimeters.
     - screen_height_px (int): Screen height in pixels.
     - screen_width_px (int): Screen width in pixels.
     """
     if platform.system() == 'Windows' or platform.system() == 'Linux':
         from screeninfo import get_monitors
         m = get_monitors()[0]
-        screen_height_mm = m.height_mm
-        screen_width_mm = m.width_mm
+        screen_height_cm = m.height_mm / 10
+        screen_width_cm = m.width_mm / 10
         screen_height_px = m.height
         screen_width_px = m.width
     elif platform.system() == 'Darwin':
@@ -35,12 +35,12 @@ def get_screen_attributes():
         main_display_id = Quartz.CGMainDisplayID()
         width_mm, height_mm = Quartz.CGDisplayScreenSize(main_display_id)
         width_px, height_px = Quartz.CGDisplayPixelsWide(main_display_id), Quartz.CGDisplayPixelsHigh(main_display_id)
-        screen_height_mm = height_mm
-        screen_width_mm = width_mm
+        screen_height_cm = height_mm / 10
+        screen_width_cm = width_mm / 10
         screen_height_px = height_px
         screen_width_px = width_px
 
-    return screen_height_mm, screen_width_mm, screen_height_px, screen_width_px
+    return screen_height_cm, screen_width_cm, screen_height_px, screen_width_px
 
 ########################################################################################
 # Math Utilities
@@ -315,7 +315,12 @@ def create_transformation_matrix(scale, translation, rotation):
     - transformation_matrix (np.array): 4x4 transformation matrix.
     """
     # Convert the rotation vector to matrix
-    R = create_rotation_matrix(rotation)
+    if rotation.shape == (3, 3):
+        R = rotation
+    elif rotation.shape == (3,):
+        R = create_rotation_matrix(rotation)
+    else:
+        raise ValueError("Invalid rotation matrix shape")
      
     # Apply scaling to the rotation matrix
     R *= scale
@@ -327,8 +332,8 @@ def create_transformation_matrix(scale, translation, rotation):
     
     return transformation_matrix
 
-OPEN3D_RT = create_transformation_matrix(1, [0,0,50], [0,180,180])
-OPEN3D_RT_SCREEN = create_transformation_matrix(1, [0,0,100], [0,320,180])
+OPEN3D_RT = create_transformation_matrix(1, np.array([0,0,50]), np.array([0,180,180]))
+OPEN3D_RT_SCREEN = create_transformation_matrix(1, np.array([0,0,100]), np.array([0,320,180]))
 
 def transform_for_3d_scene(pts, RT=OPEN3D_RT):
     """
@@ -698,15 +703,15 @@ def load_camera_frustrum(w_ratio, h_ratio, visual=None, rt=OPEN3D_RT):
 
     return frustum
 
-def load_screen_rect(visual, screen_width_mm, screen_height_mm, rt=OPEN3D_RT):
+def load_screen_rect(visual, screen_width_cm, screen_height_cm, screen_rt, scene_rt=OPEN3D_RT):
     
     # Screen Display
-    rw, rh = screen_width_mm / 10, screen_height_mm / 10
+    rw, rh = screen_width_cm, screen_height_cm
     rectangle_points = np.array([
-        [-rw/2, 0, 0],
-        [rw/2, 0, 0],
-        [rw/2, rh, 0],
-        [-rw/2, rh, 0]
+        [0,0,0],
+        [rw,0,0],
+        [rw,rh,0],
+        [0,rh,0]
     ]).astype(np.float32)
 
     # Define triangles using indices to the points (two triangles to form a rectangle)
@@ -715,8 +720,11 @@ def load_screen_rect(visual, screen_width_mm, screen_height_mm, rt=OPEN3D_RT):
         [0, 2, 3]   # Triangle 2
     ])
 
+    # Transform from screen coordinate to camera coordinate
+    transformed_pts = transform_3d_to_3d(rectangle_points, screen_rt)
+
     # Apply the Open3D transformation
-    transformed_pts = transform_for_3d_scene(rectangle_points, rt)
+    transformed_pts = transform_for_3d_scene(transformed_pts, scene_rt)
 
     # Create the TriangleMesh object
     rectangle_mesh = o3d.geometry.TriangleMesh()

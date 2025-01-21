@@ -1,11 +1,11 @@
 import cv2
+import open3d as o3d
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.colors import Normalize
 import math
 import trimesh
 import imutils
-import open3d as o3d
 
 from .data_protocols import GazeResult, EyeResult
 from .model_based import vector_to_pitch_yaw, rotation_matrix_to_euler_angles
@@ -23,6 +23,7 @@ from .utilities import (
     get_rotation_matrix_from_vector,
     euler_angles_to_rotation_matrix,
     transform_3d_to_3d,
+    create_transformation_matrix,
     transform_3d_to_2d,
     OPEN3D_RT,
     OPEN3D_RT_SCREEN,
@@ -669,12 +670,39 @@ def draw_pog(img, pog, color=(0,0,255), size=10):
 # 3D Rendering
 ####################################################################################################
 
-def render_3d_gaze_with_screen(
+def render_pog_with_screen(
+        frame: np.ndarray,
+        result: GazeResult,
+        output_path: pathlib.Path,
+        screen_RT: np.ndarray,
+        screen_width_cm: float,
+        screen_height_cm: float,
+        screen_width_px: int,
+        screen_height_px: int,
+    ):
+    render_pog(frame, result, output_path, screen_RT, screen_width_cm, screen_height_cm)
+    render_img = cv2.imread(str(output_path))
+    screen_img = cv2.zeros((screen_height_px, screen_width_px, 3), dtype=np.uint8)
+    cv2.circle(screen_img, tuple(result.pog.pog_px.astype(np.int32)), 5, (0, 0, 255), -1)
+
+    # Make the screen img match the same height as the render
+    render_height = render_img.shape[0]
+    ratio_h, ratio_w = render_height / screen_height_px, render_height / screen_width_px
+    screen_height, screen_width = int(screen_height_px * ratio_h), int(screen_width_px * ratio_w)
+    screen_img = cv2.resize(screen_img, (screen_width, screen_height))
+
+    # Concatenate the images
+    cv2.imwrite(str(output_path), np.hstack((render_img, screen_img)))
+    # total_img = np.hstack((render_img, screen_img))
+    # return total_img
+
+def render_pog(
         frame: np.ndarray, 
         result: GazeResult, 
         output_path: pathlib.Path,
-        screen_width_mm: float,
-        screen_height_mm: float,
+        screen_RT: np.ndarray,
+        screen_width_cm: float,
+        screen_height_cm: float,
     ):
 
     # Get the frame size 
@@ -704,7 +732,7 @@ def render_3d_gaze_with_screen(
     face_mesh, face_mesh_lines = load_canonical_mesh(visual)
     face_coordinate_axes = load_3d_axis(visual)
     eyeball_meshes, _, eyeball_R = load_eyeball_model(visual)
-    load_screen_rect(visual, screen_width_mm, screen_height_mm, rt=OPEN3D_RT_SCREEN)
+    load_screen_rect(visual, screen_width_cm, screen_height_cm, screen_rt=screen_RT, scene_rt=OPEN3D_RT_SCREEN)
     load_camera_frustrum(w_ratio, h_ratio, visual, rt=OPEN3D_RT_SCREEN)
     left_pog, right_pog = load_pog_balls(visual)
     left_gaze_vector, right_gaze_vector = load_gaze_vectors(visual)
@@ -778,7 +806,7 @@ def render_3d_gaze_with_screen(
         visual.update_geometry(gaze_vector)
 
         # Position the PoG balls
-        pog_position = transform_for_3d_scene(eye_result.pog.pog_mm_c.reshape((-1,3))/10, OPEN3D_RT_SCREEN).flatten()
+        pog_position = transform_for_3d_scene(eye_result.pog.pog_cm_c.reshape((-1,3)), OPEN3D_RT_SCREEN).flatten()
         pog_ball.translate(pog_position, relative=False)
         visual.update_geometry(pog_ball)
 
@@ -813,13 +841,13 @@ def render_3d_gaze(frame: np.ndarray, result: GazeResult, output_path: pathlib.P
     visual.get_render_option().point_size = 10
 
     # Change the z far to 1000
-    vis = visual.get_view_control()
-    vis.set_constant_z_far(1000)
+    control = visual.get_view_control()
+    control.set_constant_z_far(1000)
     params = o3d.camera.PinholeCameraParameters()
     intrinsic = o3d.camera.PinholeCameraIntrinsic(intrinsic_matrix=K, width=width, height=height)
     params.extrinsic = np.eye(4)
     params.intrinsic = intrinsic
-    vis.convert_from_pinhole_camera_parameters(parameter=params)
+    control.convert_from_pinhole_camera_parameters(parameter=params)
 
     face_mesh, face_mesh_lines = load_canonical_mesh(visual)
     face_coordinate_axes = load_3d_axis(visual)
@@ -875,5 +903,6 @@ def render_3d_gaze(frame: np.ndarray, result: GazeResult, output_path: pathlib.P
     visual.capture_screen_image(str(output_path))
 
     # Cleanup
+    visual.close()
     visual.destroy_window()
     print(f"3D render saved to {output_path}")

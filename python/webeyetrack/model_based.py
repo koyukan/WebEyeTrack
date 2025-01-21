@@ -756,7 +756,7 @@ def screen_plane_intersection(o, d, screen_R, screen_t):
     - screen_t: Translation vector for the screen
     
     Returns:
-    - pog_mm: 2D point of gaze on the screen in millimeters (x, y)
+    - pog: 2D point of gaze on the screen in (x, y) coordinates
     """
 
     # Obtain rotation matrix from the Rodrigues vector
@@ -778,9 +778,9 @@ def screen_plane_intersection(o, d, screen_R, screen_t):
     p = o_s + lambda_ * d_s
 
     # Keep only the x and y coordinates (2D point of gaze on screen)
-    pog_mm = p[:2]
+    pog = p[:2]
 
-    return pog_mm
+    return pog
 
 def screen_plane_intersection_2(o, d):
     """
@@ -791,7 +791,7 @@ def screen_plane_intersection_2(o, d):
     - d: Gaze direction (3D coordinates)
     
     Returns:
-    - pog_mm: 2D point of gaze on the screen in millimeters (x, y)
+    - pog: 2D point of gaze on the screen in millimeters (x, y)
     """
 
     # Screen plane: z = 0 (assumed to be at origin with a normal vector along z-axis)
@@ -805,73 +805,82 @@ def screen_plane_intersection_2(o, d):
     p = o + lambda_ * d
 
     # Keep only the x and y coordinates (2D point of gaze on screen)
-    pog_mm = p[:2]
+    pog = p[:2]
 
-    return pog_mm
+    return pog
 
 def compute_pog(
         gaze_origins, 
         gaze_vectors, 
-        screen_R, 
-        screen_t, 
-        screen_width_mm, 
-        screen_height_mm, 
+        screen_RT, 
+        screen_width_cm, 
+        screen_height_cm, 
         screen_width_px, 
         screen_height_px) -> Tuple[PoGResult, Dict[str, PoGResult]]:
     
-    # Convert the gaze origins from cm to mm
-    left_gaze_origin = gaze_origins['eye_origins_3d']['left'] * 10
-    right_gaze_origin = gaze_origins['eye_origins_3d']['right'] * 10
+    # Extract the Gaze Origins
+    left_gaze_origin = gaze_origins['eye_origins_3d']['left']
+    right_gaze_origin = gaze_origins['eye_origins_3d']['right']
     
     # Perform intersection with plane using gaze origin and vector
     # c for camera, s for screen
-    left_pog_mm_c = screen_plane_intersection_2(
+    left_pog_cm_c = screen_plane_intersection_2(
         left_gaze_origin,
         gaze_vectors['eyes']['vector']['left'],
     )
-    right_pog_mm_c = screen_plane_intersection_2(
+    right_pog_cm_c = screen_plane_intersection_2(
         right_gaze_origin,
         gaze_vectors['eyes']['vector']['right'],
     )
 
-    # Then convert the PoG to screen coordinates
-    # Obtain rotation matrix from the Rodrigues vector
-    R_matrix, _ = cv2.Rodrigues(screen_R)  # screen_R should be a 3D vector (Rodrigues rotation)
-    inv_R_matrix = np.linalg.inv(R_matrix)  # Inverse of the rotation matrix
+    # Use a debugging value 
+    # left_pog_cm_c = np.array([0, screen_height_cm/2, 0])
+    # right_pog_cm_c = np.array([0, screen_height_cm/2, 0])
 
-    # Pad the points from 2 to 3 dimensions
-    left_pog_mm_c = np.append(left_pog_mm_c, 0)
-    right_pog_mm_c = np.append(right_pog_mm_c, 0)
 
-    # Transform gaze origin and direction to screen coordinates
-    left_pog_mm_s = np.dot(inv_R_matrix, (right_pog_mm_c - screen_t.T[0]))
-    right_pog_mm_s = np.dot(inv_R_matrix, (left_pog_mm_c - screen_t.T[0]))
+    # Decompose the screen_RT into R and t
+    # screen_R = screen_RT[:3, :3]
+    # screen_t = screen_RT[:3, 3]
+    inv_screen_RT = np.linalg.inv(screen_RT)
 
-    # Convert mm to normalized coordinates
-    left_pog_norm = np.array([left_pog_mm_s[0] / screen_width_mm, left_pog_mm_s[1] / screen_height_mm])
-    right_pog_norm = np.array([right_pog_mm_s[0] / screen_width_mm, right_pog_mm_s[1] / screen_height_mm])
+    # # Then convert the PoG to screen coordinates
+    # inv_R_matrix = np.linalg.inv(screen_R)  # Inverse of the rotation matrix
+
+    # # Pad the points from 2 to 3 dimensions
+    left_pog_cm_c = np.append(left_pog_cm_c, 0)
+    right_pog_cm_c = np.append(right_pog_cm_c, 0)
+
+    # # Transform gaze origin and direction to screen coordinates
+    # left_pog_cm_s = np.dot(inv_R_matrix, (right_pog_cm_c - screen_t.T[0]))
+    # right_pog_cm_s = np.dot(inv_R_matrix, (left_pog_cm_c - screen_t.T[0]))
+    left_pog_cm_s = transform_3d_to_3d(left_pog_cm_c.reshape((-1,3)), inv_screen_RT).flatten()
+    right_pog_cm_s = transform_3d_to_3d(right_pog_cm_c.reshape((-1,3)), inv_screen_RT).flatten()
+
+    # Convert cm to normalized coordinates
+    left_pog_norm = np.array([left_pog_cm_s[0] / screen_width_cm, left_pog_cm_s[1] / screen_height_cm])
+    right_pog_norm = np.array([right_pog_cm_s[0] / screen_width_cm, right_pog_cm_s[1] / screen_height_cm])
 
     # Convert normalized coordinates to pixel coordinates
     left_pog_px = np.array([left_pog_norm[0] * screen_width_px, left_pog_norm[1] * screen_height_px])
-    right_pog_px = np.array([right_pog_norm[0] * screen_width_px, right_pog_norm[1] * screen_height_mm])
+    right_pog_px = np.array([right_pog_norm[0] * screen_width_px, right_pog_norm[1] * screen_height_px])
 
     return (
         PoGResult(
-            pog_mm_c=(left_pog_mm_c + right_pog_mm_c) / 2,
-            pog_mm_s=(left_pog_mm_s + right_pog_mm_s) / 2,
+            pog_cm_c=(left_pog_cm_c + right_pog_cm_c) / 2,
+            pog_cm_s=(left_pog_cm_s + right_pog_cm_s) / 2,
             pog_norm=(left_pog_norm + right_pog_norm) / 2,
             pog_px=(left_pog_px + right_pog_px) / 2
         ),
         {
             'left': PoGResult(
-                pog_mm_c=left_pog_mm_c,
-                pog_mm_s=left_pog_mm_s,
+                pog_cm_c=left_pog_cm_c,
+                pog_cm_s=left_pog_cm_s,
                 pog_norm=left_pog_norm,
                 pog_px=left_pog_px
             ),
             'right': PoGResult(
-                pog_mm_c=right_pog_mm_c,
-                pog_mm_s=right_pog_mm_s,
+                pog_cm_c=right_pog_cm_c,
+                pog_cm_s=right_pog_cm_s,
                 pog_norm=right_pog_norm,
                 pog_px=right_pog_px
             )

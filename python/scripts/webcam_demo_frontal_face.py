@@ -52,13 +52,7 @@ def main():
         model_asset_path=str(GIT_ROOT / 'python'/ 'weights' / 'face_landmarker_v2_with_blendshapes.task'), 
         frame_height=height,
         frame_width=width,
-        intrinsics=K,
-        screen_R=np.deg2rad(np.array([0, 0, 0]).astype(np.float32)),
-        screen_t=np.array([0, 0, 0]).astype(np.float32),
-        # screen_width_mm=SCREEN_WIDTH_MM,
-        # screen_height_mm=SCREEN_HEIGHT_MM,
-        # screen_width_px=SCREEN_WIDTH_PX,
-        # screen_height_px=SCREEN_HEIGHT_PX
+        intrinsics=K
     )
  
     while cap.isOpened():

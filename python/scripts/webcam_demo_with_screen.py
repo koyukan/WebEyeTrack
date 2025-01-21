@@ -25,18 +25,19 @@ from webeyetrack.utilities import (
     load_pog_balls,
     load_gaze_vectors,
     load_screen_rect,
-    get_screen_attributes
+    get_screen_attributes,
+    create_transformation_matrix
 )
 
-SCREEN_HEIGHT_MM, SCREEN_WIDTH_MM, SCREEN_HEIGHT_PX, SCREEN_WIDTH_PX = get_screen_attributes()
-print(f"Screen Height: {SCREEN_HEIGHT_MM} mm, Screen Width: {SCREEN_WIDTH_MM} mm")
+SCREEN_HEIGHT_CM, SCREEN_WIDTH_CM, SCREEN_HEIGHT_PX, SCREEN_WIDTH_PX = get_screen_attributes()
+print(f"Screen Height: {SCREEN_HEIGHT_CM} cm, Screen Width: {SCREEN_WIDTH_CM} cm")
 
 if __name__ == '__main__':
 
     # Initialize Open3D Visualizer
     visual = o3d.visualization.Visualizer()
     visual.create_window(width=1920, height=1080)
-    visual.get_render_option().background_color = [0.1, 0.1, 0.1]
+    visual.get_render_option().background_color = [1, 1, 1]
     visual.get_render_option().mesh_show_back_face = True
     
     # Load the webcam 
@@ -50,10 +51,21 @@ if __name__ == '__main__':
     # Define intrinsics based on the frame
     intrinsics = np.array([[width, 0, width // 2], [0, height, height // 2], [0, 0, 1]])
 
+    # Define a transformation matrix between the camera and the screen
+    screen_RT = create_transformation_matrix(
+        scale=1,
+        translation=np.array([(SCREEN_WIDTH_CM)/2, 0, 0]),
+        rotation=np.array([
+            [-1, 0, 0],
+            [0, 1, 0],
+            [0, 0, 1]
+        ])
+    )
+
     face_mesh, face_mesh_lines = load_canonical_mesh(visual)
     face_coordinate_axes = load_3d_axis(visual)
     eyeball_meshes, _, eyeball_R = load_eyeball_model(visual)
-    load_screen_rect(visual, SCREEN_WIDTH_MM, SCREEN_HEIGHT_MM, rt=OPEN3D_RT_SCREEN)
+    load_screen_rect(visual, SCREEN_WIDTH_CM, SCREEN_HEIGHT_CM, screen_rt=screen_RT,scene_rt=OPEN3D_RT_SCREEN)
     load_camera_frustrum(w_ratio, h_ratio, visual, rt=OPEN3D_RT_SCREEN)
     left_pog, right_pog = load_pog_balls(visual)
     left_gaze_vector, right_gaze_vector = load_gaze_vectors(visual)
@@ -74,10 +86,11 @@ if __name__ == '__main__':
         frame_height=height,
         frame_width=width,
         intrinsics=intrinsics,
-        screen_R=np.deg2rad(np.array([0, 0, 0]).astype(np.float32)),
-        screen_t=np.array([0, 0, 0]).astype(np.float32),
-        screen_width_mm=SCREEN_WIDTH_MM,
-        screen_height_mm=SCREEN_HEIGHT_MM,
+        # screen_R=np.deg2rad(np.array([0, 0, 0]).astype(np.float32)),
+        # screen_t=np.array([0, 0, 0]).astype(np.float32),
+        screen_RT=screen_RT,
+        screen_width_cm=SCREEN_WIDTH_CM,
+        screen_height_cm=SCREEN_HEIGHT_CM,
         screen_width_px=SCREEN_WIDTH_PX,
         screen_height_px=SCREEN_HEIGHT_PX
     )
@@ -165,15 +178,20 @@ if __name__ == '__main__':
             visual.update_geometry(gaze_vector)
 
             # Position the PoG balls
-            pog_position = transform_for_3d_scene(eye_result.pog.pog_mm_c.reshape((-1,3))/10, OPEN3D_RT_SCREEN).flatten()
+            pog_position = transform_for_3d_scene(eye_result.pog.pog_cm_c.reshape((-1,3)), OPEN3D_RT_SCREEN).flatten()
             pog_ball.translate(pog_position, relative=False)
             visual.update_geometry(pog_ball)
 
         # Update visualizer
         visual.poll_events()
         visual.update_renderer()
+
+        # Draw the PoG in a rectangle black image
+        screen_img = np.zeros((SCREEN_HEIGHT_PX, SCREEN_WIDTH_PX, 3), dtype=np.uint8)
+        cv2.circle(screen_img, tuple(result.pog.pog_px.astype(np.int32)), 5, (0, 0, 255), -1)
         
         cv2.imshow("Face Mesh", draw_frame)
+        cv2.imshow("Screen", screen_img)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
 

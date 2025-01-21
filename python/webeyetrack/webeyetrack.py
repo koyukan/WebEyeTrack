@@ -29,8 +29,8 @@ PARAMETER_LIST = [
     'intrinsics',
     'screen_R',
     'screen_t',
-    'screen_width_mm',
-    'screen_height_mm',
+    'screen_width_cm',
+    'screen_height_cm',
     'screen_width_px',
     'screen_height_px',
 ]
@@ -44,10 +44,9 @@ class WebEyeTrack():
             frame_width: Optional[int] = None,
             intrinsics: Optional[np.ndarray] = None,
             face_width_cm: Optional[float] = None,
-            screen_R: Optional[np.ndarray] = None,
-            screen_t: Optional[np.ndarray] = None,
-            screen_width_mm: Optional[float] = None,
-            screen_height_mm: Optional[float] = None,
+            screen_RT: Optional[np.ndarray] = None,
+            screen_width_cm: Optional[float] = None,
+            screen_height_cm: Optional[float] = None,
             screen_width_px: Optional[int] = None,
             screen_height_px: Optional[int] = None,
             eyeball_centers: Tuple[np.ndarray, np.ndarray] = EYEBALL_DEFAULT,
@@ -75,10 +74,9 @@ class WebEyeTrack():
         self.ear_threshold = ear_threshold
         self.face_width_cm = face_width_cm
         self.intrinsics = intrinsics
-        self.screen_R = screen_R
-        self.screen_t = screen_t
-        self.screen_width_mm = screen_width_mm
-        self.screen_height_mm = screen_height_mm
+        self.screen_RT = screen_RT
+        self.screen_width_cm = screen_width_cm
+        self.screen_height_cm = screen_height_cm
         self.screen_width_px = screen_width_px
         self.screen_height_px = screen_height_px
 
@@ -108,7 +106,7 @@ class WebEyeTrack():
                 results = self.process_sample(sample['image'], sample, eyeball_centers=eyeball_centers)
 
                 # Compute the error
-                error = np.linalg.norm(results.pog_mm_s - sample['pog_mm'].reshape((2)))
+                error = np.linalg.norm(results.pog_cm_s - sample['pog_cm'].reshape((2)))
                 errors.append(error)
 
             return sum(errors)
@@ -186,18 +184,16 @@ class WebEyeTrack():
                 gaze_vectors['eyes']['is_closed'][eye] = True
         
         # If screen's dimensions and relation to the camera are known, compute the PoG
-        if (self.screen_R is not None 
-            and self.screen_t is not None 
-            and self.screen_height_mm is not None 
-            and self.screen_width_mm is not None):
+        if (self.screen_RT is not None 
+            and self.screen_height_cm is not None 
+            and self.screen_width_cm is not None):
 
             face_pog, eyes_pog = compute_pog(
                 gaze_origins,
                 gaze_vectors,
-                self.screen_R,
-                self.screen_t,
-                self.screen_width_mm,
-                self.screen_height_mm,
+                self.screen_RT,
+                self.screen_width_cm,
+                self.screen_height_cm,
                 self.screen_width_px,
                 self.screen_height_px
             )

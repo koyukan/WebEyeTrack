@@ -66,8 +66,8 @@ class Sample:
 
 @dataclass
 class PoGResult:
-    pog_mm_c: np.ndarray # X, Y, Z in Camera Coordinate System
-    pog_mm_s: np.ndarray # X, Y, Z in Screen Coordinate System
+    pog_cm_c: np.ndarray # X, Y, Z in Camera Coordinate System
+    pog_cm_s: np.ndarray # X, Y, Z in Screen Coordinate System
     pog_norm: np.ndarray # Normalized uv coordinates in Screen Plane
     pog_px: np.ndarray # Quantized norm to match screen pixel resolution
 
