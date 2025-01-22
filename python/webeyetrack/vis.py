@@ -1,3 +1,5 @@
+from typing import Optional
+
 import cv2
 import open3d as o3d
 import numpy as np
@@ -679,22 +681,22 @@ def render_pog_with_screen(
         screen_height_cm: float,
         screen_width_px: int,
         screen_height_px: int,
+        gt_pog_px: Optional[np.ndarray] = None
     ):
     render_pog(frame, result, output_path, screen_RT, screen_width_cm, screen_height_cm)
     render_img = cv2.imread(str(output_path))
-    screen_img = cv2.zeros((screen_height_px, screen_width_px, 3), dtype=np.uint8)
-    cv2.circle(screen_img, tuple(result.pog.pog_px.astype(np.int32)), 5, (0, 0, 255), -1)
+    screen_img = np.zeros([screen_height_px, screen_width_px, 3], dtype=np.float32)
+    cv2.circle(screen_img, tuple(result.pog.pog_px.astype(np.int32)), 10, (0, 0, 255), -1)
+    cv2.circle(screen_img, tuple(gt_pog_px.astype(np.int32)), 10, (0, 255, 0), -1)
 
     # Make the screen img match the same height as the render
     render_height = render_img.shape[0]
-    ratio_h, ratio_w = render_height / screen_height_px, render_height / screen_width_px
-    screen_height, screen_width = int(screen_height_px * ratio_h), int(screen_width_px * ratio_w)
-    screen_img = cv2.resize(screen_img, (screen_width, screen_height))
+    new_width = int(screen_width_px * render_height / screen_height_px)
+    screen_img = cv2.resize(screen_img, (new_width, render_height), interpolation=cv2.INTER_CUBIC)
 
     # Concatenate the images
-    cv2.imwrite(str(output_path), np.hstack((render_img, screen_img)))
-    # total_img = np.hstack((render_img, screen_img))
-    # return total_img
+    total_img = np.hstack((render_img, screen_img))
+    return total_img
 
 def render_pog(
         frame: np.ndarray, 
@@ -836,7 +838,7 @@ def render_3d_gaze(frame: np.ndarray, result: GazeResult, output_path: pathlib.P
     # Initialize Open3D visual
     visual = o3d.visualization.Visualizer()
     visual.create_window(width=width, height=height)
-    visual.get_render_option().background_color = [0.1, 0.1, 0.1]
+    visual.get_render_option().background_color = [1, 1, 1]
     visual.get_render_option().mesh_show_back_face = True
     visual.get_render_option().point_size = 10
 

@@ -315,12 +315,19 @@ def create_transformation_matrix(scale, translation, rotation):
     - transformation_matrix (np.array): 4x4 transformation matrix.
     """
     # Convert the rotation vector to matrix
-    if rotation.shape == (3, 3):
-        R = rotation
-    elif rotation.shape == (3,):
-        R = create_rotation_matrix(rotation)
-    else:
-        raise ValueError("Invalid rotation matrix shape")
+    if isinstance(rotation, np.ndarray):
+        if rotation.shape == (3, 3):
+            R = rotation
+        elif rotation.shape == (3,1):
+            R = create_rotation_matrix(rotation.flatten())
+        elif rotation.shape == (3,):
+            R = create_rotation_matrix(rotation)
+        else:
+            raise ValueError("Invalid rotation matrix shape")
+    
+    if isinstance(translation, np.ndarray):
+        if translation.shape == (3, 1):
+            translation = translation.flatten()
      
     # Apply scaling to the rotation matrix
     R *= scale
@@ -333,7 +340,7 @@ def create_transformation_matrix(scale, translation, rotation):
     return transformation_matrix
 
 OPEN3D_RT = create_transformation_matrix(1, np.array([0,0,50]), np.array([0,180,180]))
-OPEN3D_RT_SCREEN = create_transformation_matrix(1, np.array([0,0,100]), np.array([0,320,180]))
+OPEN3D_RT_SCREEN = create_transformation_matrix(1, np.array([0,0,80]), np.array([0,320,180]))
 
 def transform_for_3d_scene(pts, RT=OPEN3D_RT):
     """

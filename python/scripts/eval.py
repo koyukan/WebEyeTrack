@@ -19,12 +19,14 @@ from webeyetrack.constants import GIT_ROOT
 from webeyetrack.datasets import MPIIFaceGazeDataset, GazeCaptureDataset, EyeDiapDataset
 import webeyetrack.vis as vis
 from webeyetrack.model_based import vector_to_pitch_yaw
+from webeyetrack.utilities import create_transformation_matrix
 from webeyetrack.data_protocols import GazeResult
 
 CWD = pathlib.Path(__file__).parent
 FILE_DIR = pathlib.Path(__file__).parent
 OUTPUTS_DIR = CWD / 'outputs'
 SKIP_COUNT = 100
+# SKIP_COUNT = 2
 CALIBRATION_POINTS = np.array([ # 9 points
     [0.5, 0.5],
     [0.1, 0.1],
@@ -127,16 +129,29 @@ def eval(args):
         first_sample_meta_df = group.iloc[0]
         first_sample = dataset.__getitem__(first_sample_meta_df.name)
 
+        screen_RT = np.linalg.inv(create_transformation_matrix(
+            scale=1,
+            rotation=first_sample['screen_R'],
+            translation=first_sample['screen_t']/10
+        ))
+        screen_width_cm = first_sample['screen_width_mm'].flatten()[0]/10
+        screen_height_cm = first_sample['screen_height_mm'].flatten()[0]/10
+        screen_width_px = int(first_sample['screen_width_px'].flatten()[0])
+        screen_height_px = int(first_sample['screen_height_px'].flatten()[0])
+        # import pdb; pdb.set_trace()
+
+        # Correcting the screen_RT by multiplying the X axis by -1
+        screen_RT[0, :] = screen_RT[0, :] * -1
+
         # Update the configurations
         algo.config(
             face_width_cm=None, # Reset the head scale estimation
             intrinsics=first_sample['intrinsics'],
-            screen_R=first_sample['screen_R'],
-            screen_t=first_sample['screen_t'],
-            screen_width_mm=first_sample['screen_width_mm'],
-            screen_height_mm=first_sample['screen_height_mm'],
-            screen_width_px=first_sample['screen_width_px'],
-            screen_height_px=first_sample['screen_height_px'],
+            screen_RT=screen_RT,
+            screen_width_cm=screen_width_cm,
+            screen_height_cm=screen_height_cm,
+            screen_width_px=screen_width_px,
+            screen_height_px=screen_height_px,
         )
 
         # For each participant, perform calibration first by selecting 9 samples
@@ -191,7 +206,7 @@ def eval(args):
             metrics['face_origin_y'].append(euclidean_distance(sample['face_origin_3d'][0], results.face_origin[0]))
             metrics['face_origin_z'].append(euclidean_distance(sample['face_origin_3d'][2], results.face_origin[2]))
             metrics['pog_px'].append(euclidean_distance(sample['pog_px'], results.pog.pog_px))
-            metrics['pog_mm'].append(euclidean_distance(sample['pog_mm'], results.pog.pog_mm_s))
+            metrics['pog_mm'].append(euclidean_distance(sample['pog_mm'], results.pog.pog_cm_s*10))
 
             if i % SKIP_COUNT == 0:
                 # Write to the output directory
@@ -200,6 +215,20 @@ def eval(args):
 
                 output_fp = RUN_DIR / 'imgs' / f'{group_name}_gaze_render_{i}.png'
                 drawn_img = vis.render_3d_gaze_with_frame(img.copy(), results, output_fp)
+                cv2.imwrite(str(output_fp), drawn_img)
+
+                output_fp = RUN_DIR / 'imgs' / f'{group_name}_pog_render_{i}_screen.png'
+                drawn_img = vis.render_pog_with_screen(
+                    img.copy(), 
+                    results, 
+                    output_fp, 
+                    screen_RT,
+                    screen_height_cm=screen_height_cm,
+                    screen_width_cm=screen_width_cm,
+                    screen_height_px=screen_height_px,
+                    screen_width_px=screen_width_px,
+                    gt_pog_px=sample['pog_px'],
+                )
                 cv2.imwrite(str(output_fp), drawn_img)
 
     # Generate box plots for the metrics
