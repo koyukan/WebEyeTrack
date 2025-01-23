@@ -255,7 +255,7 @@ class MPIIFaceGazeDataset(Dataset):
                     pog_mm = np.array([
                         pog_norm[0] * calibration_data.monitor_width_mm,
                         pog_norm[1] * calibration_data.monitor_height_mm
-                    ])
+                    ]).flatten()
 
                     annotation = Annotations(
                         original_img_size=np.array(image_np.shape),
