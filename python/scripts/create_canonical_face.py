@@ -6,7 +6,7 @@ from mediapipe.tasks.python import vision
 import open3d as o3d
 import pathlib
 
-from webeyetrack.constants import GIT_ROOT
+from webeyetrack.constants import GIT_ROOT, LEFTMOST_LANDMARK, RIGHTMOST_LANDMARK
 from webeyetrack.datasets.utils import draw_landmarks_on_image
 
 # According to https://github.com/google-ai-edge/mediapipe/blob/master/mediapipe/graphs/face_effect/face_effect_gpu.pbtxt#L61-L65
@@ -103,12 +103,13 @@ if __name__ == "__main__":
     inv_perspective_matrix = np.linalg.inv(perspective_matrix)
 
     while cap.isOpened():
-        success, frame = cap.read()
-        if not success:
-            break
+        # success, frame = cap.read()
+        # if not success:
+        #     break
 
-        frame = cv2.flip(frame, 1)
-        height, width, _ = frame.shape
+        # frame = cv2.flip(frame, 1)
+        # height, width, _ = frame.shape
+        frame = cv2.imread(str(GIT_ROOT / 'python' / 'assets' / 'face_landmarker_keypoints.png'))
 
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame.astype(np.uint8))
         detection_results = face_landmarker.detect(mp_image)
@@ -143,11 +144,12 @@ if __name__ == "__main__":
             relative_face_mesh = relative_face_mesh - nose
             
             # make the width of the face length=1
-            leftmost = np.min(relative_face_mesh[:, 0])
-            rightmost = np.max(relative_face_mesh[:, 0])
-            relative_face_mesh[:, :] /= rightmost - leftmost
+            euclidean_distance = np.linalg.norm(relative_face_mesh[LEFTMOST_LANDMARK] - relative_face_mesh[RIGHTMOST_LANDMARK])
+            relative_face_mesh[:, :] /= euclidean_distance
 
             # Save
             canonical_mesh.vertices = o3d.utility.Vector3dVector(relative_face_mesh)
-            o3d.io.write_triangle_mesh('face_mesh.obj', canonical_mesh)
+            fp = str(GIT_ROOT / 'python' / 'assets' / 'face_mesh.obj')
+            o3d.io.write_triangle_mesh(str(fp), canonical_mesh)
+            print('Face mesh saved as face_mesh.obj')
             break

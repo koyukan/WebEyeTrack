@@ -229,10 +229,9 @@ def face_reconstruction(perspective_matrix, face_landmarks, face_width_cm, face_
     # (A) Build an initial 4x4 transform that has R, s, and some guess at Z
     #     For example, -60 in front of the camera
     # ---------------------------------------------------------------
-    guess_z = 60.0
     init_transform = np.eye(4, dtype=np.float32)
     init_transform[:3, :3] = face_r
-    init_transform[:3, 3]  = np.array([0, 0, guess_z], dtype=np.float32)
+    init_transform[:3, 3]  = np.array([0, 0, initial_z_guess], dtype=np.float32)
 
     # ---------------------------------------------------------------
     # (B) Project canonical mesh using this initial transform
@@ -256,11 +255,11 @@ def face_reconstruction(perspective_matrix, face_landmarks, face_width_cm, face_
     shift_2d = partial_procrustes_translation_2d(canonical_proj_2d, detected_2d)
 
     # ---------------------------------------------------------------
-    # (E) Convert that 2D shift to a 3D offset at depth guess_z
+    # (E) Convert that 2D shift to a 3D offset at depth initial_z_guess
     #     Then add it to the transform's translation
     # ---------------------------------------------------------------
     # Estimate the fx and fy based on the frame size
-    shift_3d = image_shift_to_3d(shift_2d, depth_z=guess_z, K=K)
+    shift_3d = image_shift_to_3d(shift_2d, depth_z=initial_z_guess, K=K)
     final_transform = init_transform.copy()
     final_transform[:3, 3] += shift_3d
     first_final_transform = final_transform.copy()
@@ -269,7 +268,7 @@ def face_reconstruction(perspective_matrix, face_landmarks, face_width_cm, face_
     # (F) Refine the depth by projecting the canonical mesh
     #     and then adjusting the Z to minimize the radial error
     # ---------------------------------------------------------------
-    new_zs = [guess_z]
+    new_zs = [initial_z_guess]
     for i in range(10):
 
         # First convert canonical pts to camera points
@@ -293,8 +292,8 @@ def face_reconstruction(perspective_matrix, face_landmarks, face_width_cm, face_
         # Use similar triangles to compute the new x and y
         prior_x = first_final_transform[0, 3]
         prior_y = first_final_transform[1, 3]
-        new_x = prior_x * (new_z / guess_z)
-        new_y = prior_y * (new_z / guess_z)
+        new_x = prior_x * (new_z / initial_z_guess)
+        new_y = prior_y * (new_z / initial_z_guess)
 
         # Compute the new xy shift
         final_transform[0, 3] = new_x
