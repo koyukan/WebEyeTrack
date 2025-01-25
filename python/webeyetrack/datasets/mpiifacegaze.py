@@ -24,6 +24,7 @@ from ..constants import GIT_ROOT
 from ..vis import draw_gaze_origin
 from ..data_protocols import Annotations, CalibrationData, Sample
 from .utils import resize_annotations, resize_intrinsics, draw_landmarks_on_image, compute_uv_texture
+from ..utilities import create_transformation_matrix
 
 CWD = pathlib.Path(__file__).parent
 
@@ -63,7 +64,6 @@ class MPIIFaceGazeDataset(Dataset):
         self.face_landmarker = vision.FaceLandmarker.create_from_options(options)
 
         # Determine the number of samples in the dataset
-        # participant_dirs = [p for p in self.dataset_dir.iterdir() if p.is_dir()]
         participant_dirs = [self.dataset_dir / f'p{p:02d}' for p in self.participants]
 
         # Saving information
@@ -82,7 +82,8 @@ class MPIIFaceGazeDataset(Dataset):
             # Load the calibration data
             cal_dir = participant_dir / 'Calibration'
             new_cal_file = cal_dir / 'calibration.pkl'
-            if new_cal_file.is_file():
+            # if new_cal_file.is_file():
+            if False:
                 with open(new_cal_file, 'rb') as f:
                     calibration_data = pickle.load(f)
             else:
@@ -90,19 +91,26 @@ class MPIIFaceGazeDataset(Dataset):
                 monitor_pose_mat = scipy.io.loadmat(cal_dir / 'monitorPose.mat')
                 screen_size_mat = scipy.io.loadmat(cal_dir / 'screenSize.mat')
 
+                screen_RT = np.linalg.inv(create_transformation_matrix(
+                    scale=1,
+                    rotation=monitor_pose_mat['rvects'],
+                    translation=monitor_pose_mat['tvecs']/10,
+                    rotation_type='radians'
+                ))
+
+                # Correcting the screen_RT by multiplying the X axis by -1
+                screen_RT[0, :] = screen_RT[0, :] * -1
+
                 # Save the calibration information
                 calibration_data = CalibrationData(
                     camera_matrix=camera_mat['cameraMatrix'],
                     dist_coeffs=camera_mat['distCoeffs'],
                     camera_retval=camera_mat['retval'],
-                    camera_rvecs=camera_mat['rvecs'],
-                    camera_tvecs=camera_mat['tvecs'],
-                    monitor_rvecs=monitor_pose_mat['rvects'],
-                    monitor_tvecs=monitor_pose_mat['tvecs'],
-                    monitor_height_mm=screen_size_mat['height_mm'],
-                    monitor_height_px=screen_size_mat['height_pixel'],
-                    monitor_width_mm=screen_size_mat['width_mm'],
-                    monitor_width_px=screen_size_mat['width_pixel']
+                    screen_RT=screen_RT,
+                    monitor_height_cm=screen_size_mat['height_mm'].flatten()[0]/10,
+                    monitor_height_px=int(screen_size_mat['height_pixel'].flatten()[0]),
+                    monitor_width_cm=screen_size_mat['width_mm'].flatten()[0]/10,
+                    monitor_width_px=int(screen_size_mat['width_pixel'].flatten()[0])
                 )
 
                 # Save the calibration data
@@ -131,7 +139,8 @@ class MPIIFaceGazeDataset(Dataset):
                     data_id = f"{day_id}_{img_id}"
 
                     # If the annotation exists, store the path instead
-                    if (annotations_dir / f"{data_id}.pkl").is_file():
+                    # if (annotations_dir / f"{data_id}.pkl").is_file():
+                    if False:
                         self.samples['id'].append(data_id)
                         self.samples['participant_id'].append(participant_id)
                         self.samples['image_fp'].append(participant_dir / day_id / f"{img_id}.jpg")
@@ -242,20 +251,35 @@ class MPIIFaceGazeDataset(Dataset):
                     # Convert face_blendshapes to a proper numpy array
                     np_face_blendshapes = np.array([x.score for x in face_blendshapes])
 
-                    # Extract the PoG
-                    pog_px=np.array(items[1:3], dtype=np.float32)
+                    # # Extract the PoG
+                    # pog_px=np.array(items[1:3], dtype=np.float32)
 
-                    # Compute the normalized PoG
+                    # # Compute the normalized PoG
+                    # pog_norm = np.array([
+                    #     pog_px[0] / calibration_data.monitor_width_px,
+                    #     pog_px[1] / calibration_data.monitor_height_px
+                    # ])
+
+                    # # Compute the PoG in mm
+                    # pog_cm = np.array([
+                    #     pog_norm[0] * calibration_data.monitor_width_cm,
+                    #     pog_norm[1] * calibration_data.monitor_height_cm
+                    # ]).flatten()
+
+                    # Convert the PoG by using the gaze target 3d
+                    # import pdb; pdb.set_trace()
+                    gaze_target_3d_h = np.append(gaze_target_3d/10, 1)
+                    gaze_target_3d_screen = np.linalg.inv(calibration_data.screen_RT) @ gaze_target_3d_h
+                    gaze_target_3d_screen = gaze_target_3d_screen[:3] / gaze_target_3d_screen[3]
+                    pog_cm = gaze_target_3d_screen[:2]
                     pog_norm = np.array([
-                        pog_px[0] / calibration_data.monitor_width_px,
-                        pog_px[1] / calibration_data.monitor_height_px
+                        gaze_target_3d_screen[0] / calibration_data.monitor_width_cm,
+                        gaze_target_3d_screen[1] / calibration_data.monitor_height_cm
                     ])
-
-                    # Compute the PoG in mm
-                    pog_mm = np.array([
-                        pog_norm[0] * calibration_data.monitor_width_mm,
-                        pog_norm[1] * calibration_data.monitor_height_mm
-                    ]).flatten()
+                    pog_px = np.array([
+                        pog_norm[0] * calibration_data.monitor_width_px,
+                        pog_norm[1] * calibration_data.monitor_height_px
+                    ])
 
                     annotation = Annotations(
                         original_img_size=np.array(image_np.shape),
@@ -269,7 +293,7 @@ class MPIIFaceGazeDataset(Dataset):
                         face_bbox=face_bbox,
                         head_pose_3d=np.array(items[15:21], dtype=np.float32).reshape(3, 2),
                         # Face Gaze
-                        face_origin_3d=face_origin_3d,
+                        face_origin_3d=face_origin_3d/10, # Convert from mm to cm
                         face_origin_2d=face_origin_2d.flatten(),
                         face_gaze_vector=gaze_direction_3d,
                         # Eye Gaze
@@ -280,11 +304,11 @@ class MPIIFaceGazeDataset(Dataset):
                         right_eye_origin_2d=np.empty((2, 0), dtype=np.float32),
                         right_gaze_vector=np.empty((3, 0), dtype=np.float32),
                         # Target information
-                        gaze_target_3d=gaze_target_3d,
+                        gaze_target_3d=gaze_target_3d/10, # Convert from mm to cm
                         gaze_target_2d=gaze_target_2d.flatten(),
                         pog_px=pog_px,
                         pog_norm=pog_norm,
-                        pog_mm=pog_mm,
+                        pog_cm=pog_cm,
                         # Gaze State Information
                         is_closed=np.array([False])
                     )
@@ -342,12 +366,6 @@ class MPIIFaceGazeDataset(Dataset):
         if self.face_size is not None:
             face_image_np = cv2.resize(face_image_np, self.face_size, interpolation=cv2.INTER_LINEAR)
 
-        # Load the texture
-        # texture_dir = self.dataset_dir / sample.participant_id / 'textures'
-        # texture_fp = texture_dir / f"{data_id}.jpg"
-        # texture = cv2.imread(str(texture_fp))
-        # texture = texture.astype(np.float32) / 255.0
-
         # Compute the relative gaze direction based on the facial landmarks
         facelandmark_rt = np.load(self.dataset_dir / sample.participant_id / 'face_landmarks' / f"{sample.id}_rt.npy")
         head_direction_rotation = facelandmark_rt[0:3, 0:3]
@@ -372,27 +390,20 @@ class MPIIFaceGazeDataset(Dataset):
         # Revert the image to the correct format
         image_np = np.moveaxis(image_np, -1, 0)
         face_image_np = np.moveaxis(face_image_np, -1, 0)
-        # texture = np.moveaxis(texture, -1, 0)
 
         item_dict = {
             'participant_id': sample.participant_id,
             'image': image_np,
             'face_image': face_image_np,
-            # 'uv_texture': texture,
             'intrinsics': intrinsics,
             'dist_coeffs': calibration_data.dist_coeffs,
-            'screen_R': calibration_data.monitor_rvecs.astype(np.float32),
-            'screen_t': calibration_data.monitor_tvecs.astype(np.float32),
-            'screen_height_mm': calibration_data.monitor_height_mm.astype(np.float32),
-            'screen_height_px': calibration_data.monitor_height_px.astype(np.float32),
-            'screen_width_mm': calibration_data.monitor_width_mm.astype(np.float32),
-            'screen_width_px': calibration_data.monitor_width_px.astype(np.float32),
-            # 'gaze_origin_depth_mean': self.gaze_origin_depth_mean,
-            # 'gaze_origin_depth_std': self.gaze_origin_depth_std,
-            # 'pog_px_mean': self.pog_px_mean,
-            # 'pog_px_std': self.pog_px_std,
-            # 'mediapipe_head_vector': head_direction_xyz.astype(np.float32),
-            # 'relative_gaze_vector': relative_gaze_vector.astype(np.float32)
+            'screen_RT': calibration_data.screen_RT.astype(np.float32),
+            # 'screen_R': calibration_data.monitor_rvecs.astype(np.float32),
+            # 'screen_t': calibration_data.monitor_tvecs.astype(np.float32)/10, # Convert from mm to cm
+            'screen_height_cm': calibration_data.monitor_height_cm,
+            'screen_height_px': calibration_data.monitor_height_px,
+            'screen_width_cm': calibration_data.monitor_width_cm,
+            'screen_width_px': calibration_data.monitor_width_px,
         }
         item_dict.update(asdict(annotations))
         return item_dict

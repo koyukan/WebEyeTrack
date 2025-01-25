@@ -89,12 +89,12 @@ def eval(args):
         screen_RT = np.linalg.inv(create_transformation_matrix(
             scale=1,
             rotation=first_sample['screen_R'],
-            translation=first_sample['screen_t']/10
+            translation=first_sample['screen_t']
         ))
-        screen_width_cm = first_sample['screen_width_mm'].flatten()[0]/10
-        screen_height_cm = first_sample['screen_height_mm'].flatten()[0]/10
-        screen_width_px = int(first_sample['screen_width_px'].flatten()[0])
-        screen_height_px = int(first_sample['screen_height_px'].flatten()[0])
+        screen_width_cm = first_sample['screen_width_cm']
+        screen_height_cm = first_sample['screen_height_cm']
+        screen_width_px = first_sample['screen_width_px']
+        screen_height_px = first_sample['screen_height_px']
 
         # Correcting the screen_RT by multiplying the X axis by -1
         screen_RT[0, :] = screen_RT[0, :] * -1
@@ -141,7 +141,22 @@ def eval(args):
             # Process the sample
             results = algo.step(facial_landmarks, face_rt, face_blendshapes)
 
-            import pdb; pdb.set_trace()
+            # Save the gt pog and the estimated pog, gaze, and face origin
+            new_dataset['participant_id'].append(group_name)
+            new_dataset['gt_pog_x'].append(sample['pog_px'][0])
+            new_dataset['gt_pog_y'].append(sample['pog_px'][1])
+            new_dataset['pred_pog_x'].append(results.pog.pog_px[0])
+            new_dataset['pred_pog_y'].append(results.pog.pog_px[1])
+            new_dataset['pred_gaze_x'].append(results.face_gaze[0])
+            new_dataset['pred_gaze_y'].append(results.face_gaze[1])
+            new_dataset['pred_gaze_z'].append(results.face_gaze[2])
+            new_dataset['face_origin_x'].append(results.face_origin[0])
+            new_dataset['face_origin_y'].append(results.face_origin[1])
+            new_dataset['face_origin_z'].append(results.face_origin[2])
+
+    # Save the dataset
+    new_dataset = pd.DataFrame(new_dataset)
+    new_dataset.to_excel(GENERATED_DATASET_DIR / f'{args.dataset}_mlp_dataset.xlsx', index=False)
 
 if __name__ == '__main__':
     # Parse arguments

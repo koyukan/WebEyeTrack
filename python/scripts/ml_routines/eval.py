@@ -90,7 +90,7 @@ def eval(args):
             # face_size=[244,244],
             # dataset_size=100,
             # per_participant_size=500
-            # per_participant_size=5
+            per_participant_size=5
         )
     elif (args.dataset == 'EyeDiap'):
         dataset = EyeDiapDataset(
@@ -129,29 +129,15 @@ def eval(args):
         first_sample_meta_df = group.iloc[0]
         first_sample = dataset.__getitem__(first_sample_meta_df.name)
 
-        screen_RT = np.linalg.inv(create_transformation_matrix(
-            scale=1,
-            rotation=first_sample['screen_R'],
-            translation=first_sample['screen_t']/10
-        ))
-        screen_width_cm = first_sample['screen_width_mm'].flatten()[0]/10
-        screen_height_cm = first_sample['screen_height_mm'].flatten()[0]/10
-        screen_width_px = int(first_sample['screen_width_px'].flatten()[0])
-        screen_height_px = int(first_sample['screen_height_px'].flatten()[0])
-        # import pdb; pdb.set_trace()
-
-        # Correcting the screen_RT by multiplying the X axis by -1
-        screen_RT[0, :] = screen_RT[0, :] * -1
-
         # Update the configurations
         algo.config(
             face_width_cm=None, # Reset the head scale estimation
             intrinsics=first_sample['intrinsics'],
-            screen_RT=screen_RT,
-            screen_width_cm=screen_width_cm,
-            screen_height_cm=screen_height_cm,
-            screen_width_px=screen_width_px,
-            screen_height_px=screen_height_px,
+            screen_RT=first_sample['screen_RT'],
+            screen_width_cm=first_sample['screen_width_cm'],
+            screen_height_cm=first_sample['screen_height_cm'],
+            screen_width_px=first_sample['screen_width_px'],
+            screen_height_px=first_sample['screen_height_px'],
         )
 
         # For each participant, perform calibration first by selecting 9 samples
@@ -173,9 +159,6 @@ def eval(args):
             # Obtain the sample
             sample = dataset.__getitem__(meta_data.name)
 
-            # Convert face_origin_3d from mm to cm
-            sample['face_origin_3d'] = sample['face_origin_3d'] / 10
-
             # Get sample and load the image
             img = np.moveaxis(sample['image'], 0, -1) * 255
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
@@ -190,13 +173,12 @@ def eval(args):
                 frame_width=img.shape[1],
             )
 
-            # Extract the necessary input for the algo
-            facial_landmarks = sample['facial_landmarks']
-            face_rt = sample['facial_rt']
-            face_blendshapes = sample['face_blendshapes']
-
             # Process the sample
-            results = algo.step(facial_landmarks, face_rt, face_blendshapes)
+            results = algo.step(
+                sample['facial_landmarks'], 
+                sample['facial_rt'], 
+                sample['face_blendshapes']
+            )
 
             # For testing purposes, let's use the gt gaze vector and see how well we can predict it
             # gt_vector = sample['face_gaze_vector']
@@ -241,15 +223,16 @@ def eval(args):
             # results.right.pog = eyes_pog['right']
 
             # Compute the error
+            # import pdb; pdb.set_trace()
             metrics['face_gaze_vector'].append(angle(sample['face_gaze_vector'], results.face_gaze))
-            metrics['face_origin'].append(euclidean_distance(sample['face_origin_3d'], results.face_origin))
+            metrics['face_origin'].append(euclidean_distance(sample['face_origin_3d'], results.face_origin)) # cm
             metrics['face_origin_2d'].append(euclidean_distance(sample['face_origin_2d'], results.face_origin_2d))
             metrics['face_origin_x'].append(euclidean_distance(sample['face_origin_3d'][1], results.face_origin[1]))
             metrics['face_origin_y'].append(euclidean_distance(sample['face_origin_3d'][0], results.face_origin[0]))
             metrics['face_origin_z'].append(euclidean_distance(sample['face_origin_3d'][2], results.face_origin[2]))
             metrics['pog_px'].append(euclidean_distance(sample['pog_px'], results.pog.pog_px))
-            # metrics['pog_mm'].append(euclidean_distance(sample['pog_mm'], results.pog.pog_cm_s[:2]*10))
-            metrics['pog_mm'].append(euclidean_distance(sample['gaze_target_3d'][:2], results.pog.pog_cm_c[:2]*10))
+            metrics['pog_norm'].append(euclidean_distance(sample['pog_norm'], results.pog.pog_norm))
+            metrics['pog_cm_c'].append(euclidean_distance(sample['gaze_target_3d'][:2], results.pog.pog_cm_c[:2]))
 
             if i % SKIP_COUNT == 0:
                 # Write to the output directory
@@ -265,11 +248,11 @@ def eval(args):
                     img.copy(), 
                     results, 
                     output_fp, 
-                    screen_RT,
-                    screen_height_cm=screen_height_cm,
-                    screen_width_cm=screen_width_cm,
-                    screen_height_px=screen_height_px,
-                    screen_width_px=screen_width_px,
+                    screen_RT=sample['screen_RT'],
+                    screen_height_cm=sample['screen_height_cm'],
+                    screen_width_cm=sample['screen_width_cm'],
+                    screen_height_px=sample['screen_height_px'],
+                    screen_width_px=sample['screen_width_px'],
                     gt_pog_px=sample['pog_px'],
                 )
                 cv2.imwrite(str(output_fp), drawn_img)

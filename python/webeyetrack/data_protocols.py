@@ -38,7 +38,7 @@ class Annotations:
     gaze_target_2d: np.ndarray # (2,)
     pog_px: np.ndarray # (2,)
     pog_norm: np.ndarray # (2,)
-    pog_mm: np.ndarray # (2,)
+    pog_cm: np.ndarray # (2,)
 
     # Gaze State Information
     is_closed: np.ndarray # (1,)
@@ -48,14 +48,15 @@ class CalibrationData:
     camera_matrix: np.ndarray
     dist_coeffs: np.ndarray
     camera_retval: float
-    camera_rvecs: np.ndarray
-    camera_tvecs: np.ndarray
-    monitor_rvecs: np.ndarray
-    monitor_tvecs: np.ndarray
-    monitor_height_mm: float
-    monitor_height_px: float
-    monitor_width_mm: float
-    monitor_width_px: float
+    screen_RT: np.ndarray
+    # camera_rvecs: np.ndarray
+    # camera_tvecs: np.ndarray
+    # monitor_rvecs: np.ndarray
+    # monitor_tvecs: np.ndarray
+    monitor_height_cm: float
+    monitor_height_px: int
+    monitor_width_cm: float
+    monitor_width_px: int
 
 @dataclass
 class Sample:

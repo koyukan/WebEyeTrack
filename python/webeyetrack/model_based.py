@@ -843,12 +843,7 @@ def compute_pog(
 
 
     # Decompose the screen_RT into R and t
-    # screen_R = screen_RT[:3, :3]
-    # screen_t = screen_RT[:3, 3]
     inv_screen_RT = np.linalg.inv(screen_RT)
-
-    # # Then convert the PoG to screen coordinates
-    # inv_R_matrix = np.linalg.inv(screen_R)  # Inverse of the rotation matrix
 
     # # Pad the points from 2 to 3 dimensions
     left_pog_cm_c = np.append(left_pog_cm_c, 0)
@@ -873,20 +868,20 @@ def compute_pog(
             pog_cm_c=(left_pog_cm_c + right_pog_cm_c) / 2,
             pog_cm_s=(left_pog_cm_s + right_pog_cm_s) / 2,
             pog_norm=(left_pog_norm + right_pog_norm) / 2,
-            pog_px=(left_pog_px + right_pog_px) / 2
+            pog_px=((left_pog_px + right_pog_px) / 2).astype(np.int32)
         ),
         {
             'left': PoGResult(
                 pog_cm_c=left_pog_cm_c,
                 pog_cm_s=left_pog_cm_s,
                 pog_norm=left_pog_norm,
-                pog_px=left_pog_px
+                pog_px=left_pog_px.astype(np.int32)
             ),
             'right': PoGResult(
                 pog_cm_c=right_pog_cm_c,
                 pog_cm_s=right_pog_cm_s,
                 pog_norm=right_pog_norm,
-                pog_px=right_pog_px
+                pog_px=right_pog_px.astype(np.int32)
             )
         }
     )

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Literal
 
 import numpy as np
 import open3d as o3d
@@ -266,7 +266,7 @@ def convert_xyz_to_uv_with_intrinsic(intrinsic_matrix, x, y, z):
 
     return np.array([u, v])
 
-def create_rotation_matrix(rotation):
+def create_rotation_matrix(rotation, rotation_type: Literal['degrees', 'radians'] = 'degrees'):
     """
     Creates a rotation matrix with deg vector.
     
@@ -277,7 +277,10 @@ def create_rotation_matrix(rotation):
     - rotation matrix(np.array): 3x3 transformation matrix.
     """
     # Convert rotation from degrees to radians
-    pitch, yaw, roll = np.radians(rotation)
+    if rotation_type == 'degrees':
+        pitch, yaw, roll = np.radians(rotation)
+    else:
+        pitch, yaw, roll = rotation
     
     # Rotation matrices
     R_x = np.array([
@@ -302,7 +305,7 @@ def create_rotation_matrix(rotation):
     R = R_z @ R_y @ R_x
     return R
 
-def create_transformation_matrix(scale, translation, rotation):
+def create_transformation_matrix(scale, translation, rotation, rotation_type: Literal['degrees', 'radians'] = 'degrees'):
     """
     Creates a transformation matrix with scaling, translation, and rotation.
     
@@ -319,9 +322,9 @@ def create_transformation_matrix(scale, translation, rotation):
         if rotation.shape == (3, 3):
             R = rotation
         elif rotation.shape == (3,1):
-            R = create_rotation_matrix(rotation.flatten())
+            R = create_rotation_matrix(rotation.flatten(), rotation_type)
         elif rotation.shape == (3,):
-            R = create_rotation_matrix(rotation)
+            R = create_rotation_matrix(rotation, rotation_type)
         else:
             raise ValueError("Invalid rotation matrix shape")
     
