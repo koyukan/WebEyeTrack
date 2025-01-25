@@ -195,7 +195,7 @@ def estimate_2d_3d_eye_face_origins(perspective_matrix, facial_landmarks, face_r
         'eye_origins_2d': positions['eye_origins_2d']
     }
 
-def face_reconstruction(perspective_matrix, face_landmarks, face_width_cm, face_rt, K, frame_width, frame_height, initial_z_guess=60):
+def face_reconstruction(perspective_matrix, face_landmarks, face_width_cm, face_rt, K, frame_width, frame_height, initial_z_guess=60, frame=None):
     
     # 1) Convert uvz to xyz
     relative_face_mesh = np.array([convert_uv_to_xyz(perspective_matrix, x[0], x[1], x[2]) for x in face_landmarks[:, :3]])
@@ -279,8 +279,12 @@ def face_reconstruction(perspective_matrix, face_landmarks, face_width_cm, face_
             camera_pts_3d, K
         )
         
-        new_z, _ = refine_depth_by_radial_magnitude(
-            final_projected_pts, detected_2d, old_z=final_transform[2, 3], alpha=0.5
+        new_z = refine_depth_by_radial_magnitude(
+            final_projected_pts, 
+            detected_2d, 
+            old_z=final_transform[2, 3], 
+            alpha=0.5,
+            # frame=frame
         )
 
         # Compute the difference of the Z
@@ -299,6 +303,7 @@ def face_reconstruction(perspective_matrix, face_landmarks, face_width_cm, face_
         final_transform[0, 3] = new_x
         final_transform[1, 3] = new_y
         final_transform[2, 3] = new_z
+        # break
 
     # ---------------------------------------------------------------
     # (G) Apply the final transform to the canonical mesh to obtain

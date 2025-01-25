@@ -418,7 +418,8 @@ def refine_depth_by_radial_magnitude(
     detected_center = detected_2d.mean(axis=0)
     total_distance = 0
     # Draw the center
-    # cv2.circle(draw_frame, tuple(detected_center.astype(np.int32)), 10, (0, 255, 255), -1)
+    if frame is not None:
+        cv2.circle(draw_frame, tuple(detected_center.astype(np.int32)), 10, (0, 255, 255), -1)
 
     # For each landmark pair, draw the lines between
     for i in range(len(final_projected_pts)):
@@ -445,7 +446,13 @@ def refine_depth_by_radial_magnitude(
             color = (0, 255, 0)
             total_distance += v_norm
 
-        # cv2.line(draw_frame, tuple(p1.astype(np.int32)), tuple(p2.astype(np.int32)), color, 2)
+        if frame is not None:
+            cv2.line(draw_frame, tuple(p1.astype(np.int32)), tuple(p2.astype(np.int32)), color, 2)
+            # cv2.circle(draw_frame, tuple(p1.astype(np.int32)), 3, (0,255,0), -1)
+            # cv2.circle(draw_frame, tuple(p2.astype(np.int32)), 3, (0,0,255), -1)
+
+    if frame is not None:
+        cv2.imshow('procrustes', draw_frame)
 
     distance_per_point = total_distance / len(final_projected_pts)
     # print(f"Distance per point: {distance_per_point}")
@@ -455,7 +462,7 @@ def refine_depth_by_radial_magnitude(
     safe_delta = max(-MAX_STEP_CM, min(MAX_STEP_CM, delta))
     new_z = old_z + safe_delta
 
-    return new_z, draw_frame
+    return new_z
 
 def partial_procrustes_translation_2d(canonical_2d, detected_2d):
     # c_center = canonical_2d.mean(axis=0)

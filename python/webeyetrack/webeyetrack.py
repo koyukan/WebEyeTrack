@@ -138,6 +138,7 @@ class WebEyeTrack():
             facial_landmarks, 
             face_rt, 
             face_blendshapes, 
+            frame=None
         ):
 
         tic = time.perf_counter()
@@ -161,7 +162,8 @@ class WebEyeTrack():
             face_rt=face_rt,
             K=self.intrinsics,
             frame_height=self.frame_height,
-            frame_width=self.frame_width
+            frame_width=self.frame_width,
+            frame=frame
         )
 
         # Obtain the gaze origins based on the metric face pts
@@ -277,4 +279,5 @@ class WebEyeTrack():
             face_landmarks,
             face_rt,
             face_blendshapes,
+            # frame=frame
         ), detection_results
