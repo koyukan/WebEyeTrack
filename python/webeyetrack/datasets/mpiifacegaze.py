@@ -82,8 +82,8 @@ class MPIIFaceGazeDataset(Dataset):
             # Load the calibration data
             cal_dir = participant_dir / 'Calibration'
             new_cal_file = cal_dir / 'calibration.pkl'
-            # if new_cal_file.is_file():
-            if False:
+            if new_cal_file.is_file():
+            # if False:
                 with open(new_cal_file, 'rb') as f:
                     calibration_data = pickle.load(f)
             else:
@@ -139,8 +139,8 @@ class MPIIFaceGazeDataset(Dataset):
                     data_id = f"{day_id}_{img_id}"
 
                     # If the annotation exists, store the path instead
-                    # if (annotations_dir / f"{data_id}.pkl").is_file():
-                    if False:
+                    if (annotations_dir / f"{data_id}.pkl").is_file():
+                    # if False:
                         self.samples['id'].append(data_id)
                         self.samples['participant_id'].append(participant_id)
                         self.samples['image_fp'].append(participant_dir / day_id / f"{img_id}.jpg")
@@ -362,7 +362,15 @@ class MPIIFaceGazeDataset(Dataset):
         face_bbox[1] = np.clip(face_bbox[1], 0, image.size[0] - 1)
         face_bbox[2] = np.clip(face_bbox[2], 0, image.size[1] - 1)
         face_bbox[3] = np.clip(face_bbox[3], 0, image.size[0] - 1)
+        # face_image_np = image_np[face_bbox[0]:face_bbox[2], face_bbox[1]:face_bbox[3]]
+        
+        # Add a 10% margin to the face bounding box
+        face_bbox[0] = np.clip(face_bbox[0] - (face_bbox[2] - face_bbox[0]) // 10, 0, image.size[1] - 1)
+        face_bbox[1] = np.clip(face_bbox[1] - (face_bbox[3] - face_bbox[1]) // 10, 0, image.size[0] - 1)
+        face_bbox[2] = np.clip(face_bbox[2] + (face_bbox[2] - face_bbox[0]) // 10, 0, image.size[1] - 1)
+        face_bbox[3] = np.clip(face_bbox[3] + (face_bbox[3] - face_bbox[1]) // 10, 0, image.size[0] - 1)
         face_image_np = image_np[face_bbox[0]:face_bbox[2], face_bbox[1]:face_bbox[3]]
+
         if self.face_size is not None:
             face_image_np = cv2.resize(face_image_np, self.face_size, interpolation=cv2.INTER_LINEAR)
 

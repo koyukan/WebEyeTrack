@@ -837,11 +837,6 @@ def compute_pog(
         gaze_vectors['eyes']['vector']['right'],
     )
 
-    # Use a debugging value 
-    # left_pog_cm_c = np.array([0, screen_height_cm/2, 0])
-    # right_pog_cm_c = np.array([0, screen_height_cm/2, 0])
-
-
     # Decompose the screen_RT into R and t
     inv_screen_RT = np.linalg.inv(screen_RT)
 
@@ -850,8 +845,6 @@ def compute_pog(
     right_pog_cm_c = np.append(right_pog_cm_c, 0)
 
     # # Transform gaze origin and direction to screen coordinates
-    # left_pog_cm_s = np.dot(inv_R_matrix, (right_pog_cm_c - screen_t.T[0]))
-    # right_pog_cm_s = np.dot(inv_R_matrix, (left_pog_cm_c - screen_t.T[0]))
     left_pog_cm_s = transform_3d_to_3d(left_pog_cm_c.reshape((-1,3)), inv_screen_RT).flatten()
     right_pog_cm_s = transform_3d_to_3d(right_pog_cm_c.reshape((-1,3)), inv_screen_RT).flatten()
 

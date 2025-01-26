@@ -90,7 +90,7 @@ def eval(args):
             # face_size=[244,244],
             # dataset_size=100,
             # per_participant_size=500
-            per_participant_size=5
+            # per_participant_size=5
         )
     elif (args.dataset == 'EyeDiap'):
         dataset = EyeDiapDataset(
@@ -223,7 +223,6 @@ def eval(args):
             # results.right.pog = eyes_pog['right']
 
             # Compute the error
-            # import pdb; pdb.set_trace()
             metrics['face_gaze_vector'].append(angle(sample['face_gaze_vector'], results.face_gaze))
             metrics['face_origin'].append(euclidean_distance(sample['face_origin_3d'], results.face_origin)) # cm
             metrics['face_origin_2d'].append(euclidean_distance(sample['face_origin_2d'], results.face_origin_2d))

@@ -49,10 +49,6 @@ class CalibrationData:
     dist_coeffs: np.ndarray
     camera_retval: float
     screen_RT: np.ndarray
-    # camera_rvecs: np.ndarray
-    # camera_tvecs: np.ndarray
-    # monitor_rvecs: np.ndarray
-    # monitor_tvecs: np.ndarray
     monitor_height_cm: float
     monitor_height_px: int
     monitor_width_cm: float
