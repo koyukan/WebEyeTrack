@@ -53,9 +53,9 @@ def eval(args):
             # img_size=[244,244],
             # face_size=[512, 512],
             face_size=[128,128],
-            # dataset_size=100,
-            # per_participant_size=100
-            # per_participant_size=5
+            # dataset_size=3,
+            # per_participant_size=1
+            per_participant_size=100
         )
     elif (args.dataset == 'EyeDiap'):
         dataset = EyeDiapDataset(
@@ -78,6 +78,10 @@ def eval(args):
         for sample in dataset:
             face_image = sample['face_image']
             face_image = np.moveaxis(face_image, 0, -1)
+            # Convert face_image from float32 to uint8
+            face_image = (face_image * 255).astype(np.uint8)
+            # cv2.imshow('face_image', face_image)
+            # cv2.waitKey(0)
             assert face_image.shape == (128, 128, 3)
             gaze_vector = sample['face_gaze_vector']
             example = serialize_example(face_image, gaze_vector)

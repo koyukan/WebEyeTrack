@@ -1,7 +1,8 @@
 import os
 import pathlib
-import io
 
+import cv2
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, LearningRateScheduler
 from tensorflow.keras.optimizers import Adam
@@ -15,46 +16,67 @@ FILE_DIR = pathlib.Path(__file__).parent
 GENERATED_DATASET_DIR = GIT_ROOT / 'data' / 'generated'
 
 # Constants
-BATCH_SIZE = 32
+BATCH_SIZE = 1
 IMG_SIZE = 128
-EPOCHS = 10
+EPOCHS = 1000
 
-TFRECORD_PATH = GENERATED_DATASET_DIR / 'MPIIFaceGaze_blazegaze_full.tfrecord'
+TFRECORD_PATH = GENERATED_DATASET_DIR / 'MPIIFaceGaze_blazegaze.tfrecord'
 MODELS_DIR = FILE_DIR / 'models'
 os.makedirs(MODELS_DIR, exist_ok=True)
 MODEL_PATH = FILE_DIR / 'models' / 'blazegaze_model.h5'
 LOG_PATH = FILE_DIR / 'logs'
 os.makedirs(LOG_PATH, exist_ok=True)
 
-def plot_to_image(figure):
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    plt.close(figure)
-    buf.seek(0)
-    image = tf.image.decode_png(buf.getvalue(), channels=4)
-    image = tf.expand_dims(image, 0)
-    return image
-
-def log_images(epoch, images, writer):
-    figure = plt.figure(figsize=(10, 10))
-    for i in range(images.shape[0]):
-        plt.subplot(5, 5, i + 1)
-        plt.xticks([])
-        plt.yticks([])
-        plt.grid(False)
-        plt.imshow(images[i], cmap=plt.cm.binary)
-
-    with writer.as_default():
-        tf.summary.image("Training sample", plot_to_image(figure), step=epoch)
-
-class ImageLoggingCallback(tf.keras.callbacks.Callback):
-    def __init__(self, log_dir, sample_images):
+class GazeVisualizationCallback(tf.keras.callbacks.Callback):
+    def __init__(self, dataset, log_dir, img_size, name='Gaze'):
         super().__init__()
-        self.writer = tf.summary.create_file_writer(log_dir)
-        self.sample_images = sample_images
+        self.dataset = dataset  # Dataset to visualize predictions
+        self.log_dir = log_dir  # Directory to store TensorBoard logs
+        self.img_size = img_size
+        self.name = name
+        self.file_writer = tf.summary.create_file_writer(str(log_dir))
+
+    def draw_gaze_vector(self, image, gaze_vector, scale=50, color=(255, 0, 0), thickness=2):
+        """
+        Draw the gaze vector on the image.
+
+        Args:
+            image: A (H, W, 3) NumPy array representing the image.
+            gaze_vector: A (3,) vector representing the gaze direction.
+            scale: Scaling factor for the length of the gaze vector.
+        """
+        import cv2
+        h, w, _ = image.shape
+        center = (w // 2, h // 2)  # Center of the image
+        endpoint = (
+            int(center[0] + gaze_vector[0] * scale),
+            int(center[1] - gaze_vector[1] * scale),
+        )
+        return cv2.arrowedLine(image, center, endpoint, color, thickness=thickness, tipLength=0.3)
 
     def on_epoch_end(self, epoch, logs=None):
-        log_images(epoch, self.sample_images, self.writer)
+        # Select a batch from the dataset
+        for images, gaze_vectors in self.dataset.take(1):
+            predictions = self.model.predict(images)  # Get model predictions
+            images = images.numpy()  # Convert images to NumPy array
+            gaze_vectors = gaze_vectors.numpy()  # Ground truth gaze vectors
+            predictions = predictions  # Predicted gaze vectors
+
+            # Draw gaze vectors on the images
+            visualizations = []
+            for i in range(len(images)):
+                uint8_image = (images[i] * 255).astype(np.uint8)
+                uint8_image = cv2.cvtColor(uint8_image, cv2.COLOR_RGB2BGR)
+                vis_image = self.draw_gaze_vector(uint8_image, gaze_vectors[i], color=(0,255,0))  # Ground truth
+                vis_image = self.draw_gaze_vector(uint8_image, predictions[i], color=(255,0,0), thickness=1)  # Prediction
+                visualizations.append(vis_image)
+
+            # Log images to TensorBoard
+            with self.file_writer.as_default():
+                for i, vis in enumerate(visualizations):
+                    # tf.summary.image(f"Epoch {epoch} - Sample {i}", vis[np.newaxis], step=epoch)
+                    tf.summary.image(f"{self.name} - S{i}", vis[np.newaxis], step=epoch)
+            break
 
 def angular_loss(y_true, y_pred):
     """
@@ -138,9 +160,13 @@ def load_and_split_dataset(tfrecord_path, batch_size, train_split=0.8, valid_spl
 
     # Calculate sizes for train, validation, and test splits
     total_size = sum(1 for _ in raw_dataset)
+    # train_size = 1
+    # valid_size = 1
+    # test_size = 1
     train_size = int(total_size * train_split)
     valid_size = int(total_size * valid_split)
     test_size = total_size - train_size - valid_size
+
 
     print(f"Total size: {total_size}, Train size: {train_size}, Valid size: {valid_size}, Test size: {test_size}")
 
@@ -160,29 +186,57 @@ def load_and_split_dataset(tfrecord_path, batch_size, train_split=0.8, valid_spl
 # Prepare datasets
 train_dataset, valid_dataset, test_dataset = load_and_split_dataset(TFRECORD_PATH, BATCH_SIZE)
 
+# Learning rate schedule
+lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+    initial_learning_rate=1e-3,
+    decay_steps=1000,
+    decay_rate=0.96
+)
+
 # Load model
 model = get_gaze_model()
 init_model(model)
-model.compile(optimizer=Adam(learning_rate=1e-3), loss=angular_loss, metrics=[angular_distance])
+model.compile(optimizer=Adam(learning_rate=lr_schedule), loss=angular_loss, metrics=[angular_distance])
 
 # Callbacks
 checkpoint_callback = ModelCheckpoint(MODEL_PATH, monitor="val_loss", save_best_only=True, save_weights_only=True)
 tensorboard_callback = TensorBoard(log_dir=LOG_PATH)
-learning_rate_callback = LearningRateScheduler(lambda epoch: 1e-3 * (0.1 ** (epoch // 10)))
+# learning_rate_callback = LearningRateScheduler(lambda epoch: 1e-3 * (0.1 ** (epoch // 10)))
+
+# Subset the dataset for visualization (use a few samples)
+train_vis_dataset = train_dataset.take(1)
+valid_vis_dataset = valid_dataset.take(1)
+
+# Define the callback
+train_vis_callback = GazeVisualizationCallback(
+    dataset=train_vis_dataset,
+    log_dir=LOG_PATH / "visualizations",
+    img_size=IMG_SIZE,
+    name='Gaze (Training)'
+)
+valid_vis_callback = GazeVisualizationCallback(
+    dataset=valid_vis_dataset,
+    log_dir=LOG_PATH / "visualizations",
+    img_size=IMG_SIZE,
+    name='Gaze (Validation)'
+)
 
 log_dir = LOG_PATH / 'images'
 os.makedirs(log_dir, exist_ok=True)
-# sample_images = next(iter(valid_dataset))[0][:25] # Take a sample of images from the validation set
-# image_callback = ImageLoggingCallback(log_dir, sample_images)
 
 # Train model
 model.fit(
     train_dataset,
     validation_data=valid_dataset,
     epochs=EPOCHS,
-    callbacks=[checkpoint_callback, tensorboard_callback, learning_rate_callback]
+    callbacks=[
+        checkpoint_callback, 
+        tensorboard_callback, 
+        train_vis_callback,
+        valid_vis_callback
+    ]
 )
 
 # Evaluate model
-results = model.evaluate(test_dataset)
-print(f"Test Loss: {results[0]}, Test Angular Error (Degrees): {results[1]}")
+# results = model.evaluate(test_dataset)
+# print(f"Test Loss: {results[0]}, Test Angular Error (Degrees): {results[1]}")

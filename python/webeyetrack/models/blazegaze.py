@@ -60,6 +60,13 @@ def get_gaze_model(input_shape=(128, 128, 3)):
 
     # Output layer for gaze estimation (3D gaze vector)
     gaze_output = Conv2D(3, (1, 1), activation="linear", name="gaze_output")(double_6)
+    # gaze_output = Conv2D(3, (1, 1), activation="linear", name="gaze_output")(double_6)
+
+    # Normalize the gaze vector
+    gaze_output = tf.keras.layers.Lambda(lambda x: tf.nn.l2_normalize(x, axis=-1))(gaze_output)
+
+    # Check for NaN values
+    gaze_output = tf.keras.layers.Lambda(lambda x: tf.where(tf.math.is_nan(x), tf.zeros_like(x), x))(gaze_output)
 
     # Flatten output
     gaze_output = tf.keras.layers.GlobalAveragePooling2D()(gaze_output)
