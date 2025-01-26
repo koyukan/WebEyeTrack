@@ -54,7 +54,7 @@ def eval(args):
             # face_size=[512, 512],
             face_size=[128,128],
             # dataset_size=100,
-            per_participant_size=100
+            # per_participant_size=100
             # per_participant_size=5
         )
     elif (args.dataset == 'EyeDiap'):

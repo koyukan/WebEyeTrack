@@ -30,6 +30,7 @@ def angular_error(gaze, label):
     
     return angular_error_deg
 
+
 def generate_2d_gaussian_heatmap_torch(gaze_origins, img_size, sigma=1):
     """
     Generate a batch of 2D Gaussian heatmaps for the gaze origins.
