@@ -16,11 +16,12 @@ FILE_DIR = pathlib.Path(__file__).parent
 GENERATED_DATASET_DIR = GIT_ROOT / 'data' / 'generated'
 
 # Constants
-BATCH_SIZE = 1
+BATCH_SIZE = 32
 IMG_SIZE = 128
-EPOCHS = 1000
+EPOCHS = 10
 
-TFRECORD_PATH = GENERATED_DATASET_DIR / 'MPIIFaceGaze_blazegaze.tfrecord'
+TRAIN_TFRECORD_PATH = GENERATED_DATASET_DIR / 'train_MPIIFaceGaze_blazegaze.tfrecord'
+VAL_TFRECORD_PATH = GENERATED_DATASET_DIR / 'val_MPIIFaceGaze_blazegaze.tfrecord'
 MODELS_DIR = FILE_DIR / 'models'
 os.makedirs(MODELS_DIR, exist_ok=True)
 MODEL_PATH = FILE_DIR / 'models' / 'blazegaze_model.h5'
@@ -153,43 +154,48 @@ def parse_tfrecord_fn(example_proto):
     gaze_vector = parsed_example['gaze_vector']
     return image, gaze_vector
 
-def load_and_split_dataset(tfrecord_path, batch_size, train_split=0.8, valid_split=0.1):
+def load_dataset(tfrecord_path, batch_size):
     raw_dataset = tf.data.TFRecordDataset(tfrecord_path)
     dataset = raw_dataset.map(parse_tfrecord_fn, num_parallel_calls=tf.data.AUTOTUNE)
     dataset = dataset.shuffle(buffer_size=1000)
+    dataset = dataset.batch(batch_size).prefetch(buffer_size=tf.data.AUTOTUNE)
+    return dataset
 
-    # Calculate sizes for train, validation, and test splits
-    total_size = sum(1 for _ in raw_dataset)
-    # train_size = 1
-    # valid_size = 1
-    # test_size = 1
-    train_size = int(total_size * train_split)
-    valid_size = int(total_size * valid_split)
-    test_size = total_size - train_size - valid_size
+    # # Calculate sizes for train, validation, and test splits
+    # total_size = sum(1 for _ in raw_dataset)
+    # # train_size = 1
+    # # valid_size = 1
+    # # test_size = 1
+    # train_size = int(total_size * train_split)
+    # valid_size = int(total_size * valid_split)
+    # test_size = total_size - train_size - valid_size
 
+    # print(f"Total size: {total_size}, Train size: {train_size}, Valid size: {valid_size}, Test size: {test_size}")
 
-    print(f"Total size: {total_size}, Train size: {train_size}, Valid size: {valid_size}, Test size: {test_size}")
+    # # Split datasets
+    # train_dataset = dataset.take(train_size).batch(batch_size).prefetch(buffer_size=tf.data.AUTOTUNE)
+    # remaining_dataset = dataset.skip(train_size)
+    # valid_dataset = remaining_dataset.take(valid_size).batch(batch_size).prefetch(buffer_size=tf.data.AUTOTUNE)
+    # test_dataset = remaining_dataset.skip(valid_size).batch(batch_size).prefetch(buffer_size=tf.data.AUTOTUNE)
 
-    # Split datasets
-    train_dataset = dataset.take(train_size).batch(batch_size).prefetch(buffer_size=tf.data.AUTOTUNE)
-    remaining_dataset = dataset.skip(train_size)
-    valid_dataset = remaining_dataset.take(valid_size).batch(batch_size).prefetch(buffer_size=tf.data.AUTOTUNE)
-    test_dataset = remaining_dataset.skip(valid_size).batch(batch_size).prefetch(buffer_size=tf.data.AUTOTUNE)
+    # # Debug shapes of a single batch
+    # for input_features in dataset.take(1):
+    #     print("Input features shape:", input_features[0].shape)
+    #     print("Gaze vector shape:", input_features[1].shape)
 
-    # Debug shapes of a single batch
-    for input_features in dataset.take(1):
-        print("Input features shape:", input_features[0].shape)
-        print("Gaze vector shape:", input_features[1].shape)
-
-    return train_dataset, valid_dataset, test_dataset
+    # return train_dataset, valid_dataset, test_dataset
 
 # Prepare datasets
-train_dataset, valid_dataset, test_dataset = load_and_split_dataset(TFRECORD_PATH, BATCH_SIZE)
+# train_dataset, valid_dataset, test_dataset = load_and_split_dataset(TFRECORD_PATH, BATCH_SIZE)
+train_dataset = load_dataset(TRAIN_TFRECORD_PATH, BATCH_SIZE)
+val_dataset = load_dataset(VAL_TFRECORD_PATH, BATCH_SIZE)
 
-# Learning rate schedule
+train_dataset_size = len(list(train_dataset))
+
+# Make a learning rate schedule based on the epoch instead of steps
 lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
     initial_learning_rate=1e-3,
-    decay_steps=1000,
+    decay_steps=train_dataset_size,
     decay_rate=0.96
 )
 
@@ -205,7 +211,7 @@ tensorboard_callback = TensorBoard(log_dir=LOG_PATH)
 
 # Subset the dataset for visualization (use a few samples)
 train_vis_dataset = train_dataset.take(1)
-valid_vis_dataset = valid_dataset.take(1)
+valid_vis_dataset = val_dataset.take(1)
 
 # Define the callback
 train_vis_callback = GazeVisualizationCallback(
@@ -227,7 +233,7 @@ os.makedirs(log_dir, exist_ok=True)
 # Train model
 model.fit(
     train_dataset,
-    validation_data=valid_dataset,
+    validation_data=val_dataset,
     epochs=EPOCHS,
     callbacks=[
         checkpoint_callback, 
