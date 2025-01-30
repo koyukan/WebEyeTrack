@@ -10,6 +10,7 @@ datasets:
     path: "data/eyediap"
   EyeOfTheTyper:
     path: "/media/nicole/Crucial X6/GitHub/external/WebGazer/www/data/FramesDataset"
+    participant_characteristics: "/media/nicole/Crucial X6/GitHub/external/WebGazer/www/data/src/participant_characteristics.csv"
 train:
 
   # Model-Agnostic parameters
