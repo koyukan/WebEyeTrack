@@ -9,7 +9,7 @@ from tensorflow.keras.optimizers import Adam
 import matplotlib.pyplot as plt
 
 from webeyetrack.constants import GIT_ROOT
-from webeyetrack.models.blazegaze import get_gaze_model, init_model
+from webeyetrack.models.blazegaze import BlazeGaze
 
 from blazegaze_utils import angular_loss, angular_distance, parse_tfrecord_fn, GazeVisualizationCallback
 
@@ -50,9 +50,10 @@ lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
 )
 
 # Load model
-model = get_gaze_model()
-init_model(model)
-model.compile(optimizer=Adam(learning_rate=lr_schedule), loss=angular_loss, metrics=[angular_distance])
+# model = get_gaze_model()
+# init_model(model)
+model = BlazeGaze()
+model.tf_model.compile(optimizer=Adam(learning_rate=lr_schedule), loss=angular_loss, metrics=[angular_distance])
 
 # Callbacks
 checkpoint_callback = ModelCheckpoint(
@@ -86,7 +87,7 @@ log_dir = LOG_PATH / 'images'
 os.makedirs(log_dir, exist_ok=True)
 
 # Train model
-model.fit(
+model.tf_model.fit(
     train_dataset,
     validation_data=val_dataset,
     epochs=EPOCHS,

@@ -406,8 +406,6 @@ class MPIIFaceGazeDataset(Dataset):
             'intrinsics': intrinsics,
             'dist_coeffs': calibration_data.dist_coeffs,
             'screen_RT': calibration_data.screen_RT.astype(np.float32),
-            # 'screen_R': calibration_data.monitor_rvecs.astype(np.float32),
-            # 'screen_t': calibration_data.monitor_tvecs.astype(np.float32)/10, # Convert from mm to cm
             'screen_height_cm': calibration_data.monitor_height_cm,
             'screen_height_px': calibration_data.monitor_height_px,
             'screen_width_cm': calibration_data.monitor_width_cm,
@@ -418,16 +416,6 @@ class MPIIFaceGazeDataset(Dataset):
 
     def __len__(self):
         return len(self.samples)
-
-    # def to_df(self):
-
-    #     data = defaultdict(list)
-    #     for i in range(len(self.samples)):
-    #         sample = self[i]
-    #         for k, v in sample.items():
-    #             data[k].append(v)
-
-    #     return pd.DataFrame(data)
 
 if __name__ == '__main__':
 

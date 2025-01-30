@@ -1,3 +1,5 @@
+from typing import Optional
+
 import tensorflow as tf
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Layer, Input, DepthwiseConv2D, Conv2D, MaxPool2D, Add, Activation, Flatten
@@ -41,7 +43,7 @@ def double_blaze_block(y, filters, stride=1):
     output = Add()([x, y])
     return Activation("relu")(output)
 
-def get_gaze_model(input_shape=(128, 128, 3)):
+def get_backbone(input_shape=(128, 128, 3)):
     x = Input(shape=input_shape)
 
     # Feature extraction layers
@@ -58,9 +60,19 @@ def get_gaze_model(input_shape=(128, 128, 3)):
     double_5 = double_blaze_block(double_4, [24, 96])
     double_6 = double_blaze_block(double_5, [24, 96])
 
+    return Model(inputs=x, outputs=double_6)
+
+def get_gaze_model(input_shape=(128, 128, 3)):
+    x = Input(shape=input_shape)
+
+    # BlazeGaze backbone
+    backbone = get_backbone(input_shape=input_shape)
+    double_6 = backbone(x)
+
     # Additional 2D Convolutional Layer before pooling
-    conv_layer = Conv2D(64, (3,3), activation='relu', padding='same')(double_6)
-    conv_layer = Conv2D(32, (3,3), activation='relu', padding='same')(conv_layer)
+    regularizer = tf.keras.regularizers.l2(1e-4)
+    conv_layer = Conv2D(64, (3,3), activation='relu', padding='same', kernel_regularizer=regularizer)(double_6)
+    conv_layer = Conv2D(32, (3,3), activation='relu', padding='same', kernel_regularizer=regularizer)(conv_layer)
 
     # Flatten instead of pooling to retain spatial information
     flattened_output = Flatten()(conv_layer)
@@ -77,10 +89,26 @@ def get_gaze_model(input_shape=(128, 128, 3)):
     # Normalize the gaze vector
     gaze_output = tf.keras.layers.Lambda(lambda x: tf.nn.l2_normalize(x, axis=-1), name="gaze_output")(mlp_output)
 
-    return Model(inputs=x, outputs=gaze_output)
+    return Model(inputs=x, outputs=gaze_output), backbone
 
 def init_model(model):
     model(tf.random.uniform((1, 128, 128, 3)))
+
+class BlazeGaze():
+
+    def __init__(self, weights_fp: Optional[str] = None):
+        self.tf_model, self.tf_model_backbone = get_gaze_model()
+
+        if weights_fp:
+            self.tf_model.load_weights(weights_fp)
+        else:
+            init_model(self.tf_model)
+
+    def freeze_backbone(self):
+        self.tf_model_backbone.trainable = False
+
+    def unfreeze_backbone(self):
+        self.tf_model_backbone.trainable = True
 
 if __name__ == "__main__":
     model = get_gaze_model()

@@ -8,6 +8,8 @@ datasets:
     path: "data/GazeCapture"
   EyeDiap:
     path: "data/eyediap"
+  EyeOfTheTyper:
+    path: "/media/nicole/Crucial X6/GitHub/external/WebGazer/www/data/FramesDataset"
 train:
 
   # Model-Agnostic parameters

@@ -568,6 +568,21 @@ class EyeDiapDataset(Dataset):
                         if gaze_vals:
                             is_closed = gaze_vals[0] == 'BK'
 
+                        # Convert the PoG by using the gaze target 3d
+                        import pdb; pdb.set_trace()
+                        gaze_target_3d_h = np.append(gaze_target_3d/10, 1)
+                        gaze_target_3d_screen = np.linalg.inv(calibration_data.screen_RT) @ gaze_target_3d_h
+                        gaze_target_3d_screen = gaze_target_3d_screen[:3] / gaze_target_3d_screen[3]
+                        pog_cm = gaze_target_3d_screen[:2]
+                        pog_norm = np.array([
+                            gaze_target_3d_screen[0] / calibration_data.monitor_width_cm,
+                            gaze_target_3d_screen[1] / calibration_data.monitor_height_cm
+                        ])
+                        pog_px = np.array([
+                            pog_norm[0] * calibration_data.monitor_width_px,
+                            pog_norm[1] * calibration_data.monitor_height_px
+                        ])
+
                         # Create an annotation
                         annotation = Annotations(
                             original_img_size=np.array([desired_frame.shape[0], desired_frame.shape[1],desired_frame.shape[2]]),
@@ -595,6 +610,8 @@ class EyeDiapDataset(Dataset):
                             gaze_target_3d=gaze_target_3d,
                             gaze_target_2d=gaze_target_2d,
                             pog_px=gaze_target_2d,
+                            pog_norm=pog_norm,
+                            pog_cm=pog_cm,
                             # Gaze State Information
                             is_closed=np.array([is_closed])
                         )
