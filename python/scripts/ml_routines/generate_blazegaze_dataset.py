@@ -53,7 +53,8 @@ def eval(args):
         )
         val_dataset = MPIIFaceGazeDataset(
             GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
-            participants=config['datasets']['MPIIFaceGaze']['val_subjects'],
+            # participants=config['datasets']['MPIIFaceGaze']['val_subjects'],
+            participants=[14],
             face_size=[128,128],
             # per_participant_size=100
         )
@@ -74,18 +75,18 @@ def eval(args):
     # Load the eyediap dataset
     print("FINISHED LOADING DATASET")
 
-    output_path = GENERATED_DATASET_DIR / f'train_{args.dataset}_blazegaze.tfrecord'
-    with tf.io.TFRecordWriter(str(output_path)) as writer:
-        for sample in train_dataset:
-            face_image = sample['face_image']
-            face_image = np.moveaxis(face_image, 0, -1)
-            face_image = (face_image * 255).astype(np.uint8)
-            assert face_image.shape == (128, 128, 3)
-            gaze_vector = sample['face_gaze_vector']
-            example = serialize_example(face_image, gaze_vector)
-            writer.write(example)
+    # output_path = GENERATED_DATASET_DIR / f'train_{args.dataset}_blazegaze.tfrecord'
+    # with tf.io.TFRecordWriter(str(output_path)) as writer:
+    #     for sample in train_dataset:
+    #         face_image = sample['face_image']
+    #         face_image = np.moveaxis(face_image, 0, -1)
+    #         face_image = (face_image * 255).astype(np.uint8)
+    #         assert face_image.shape == (128, 128, 3)
+    #         gaze_vector = sample['face_gaze_vector']
+    #         example = serialize_example(face_image, gaze_vector)
+    #         writer.write(example)
 
-    output_path = GENERATED_DATASET_DIR / f'val_{args.dataset}_blazegaze.tfrecord'
+    output_path = GENERATED_DATASET_DIR / f'val_{args.dataset}_blazegaze_p14.tfrecord'
     with tf.io.TFRecordWriter(str(output_path)) as writer:
         for sample in val_dataset:
             face_image = sample['face_image']

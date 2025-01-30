@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Layer, Input, DepthwiseConv2D, Conv2D, MaxPool2D, Add, Activation
+from tensorflow.keras.layers import Layer, Input, DepthwiseConv2D, Conv2D, MaxPool2D, Add, Activation, Flatten
 
 class HeadWrapper(Layer):
     def __init__(self, last_dimension, **kwargs):
@@ -58,19 +58,24 @@ def get_gaze_model(input_shape=(128, 128, 3)):
     double_5 = double_blaze_block(double_4, [24, 96])
     double_6 = double_blaze_block(double_5, [24, 96])
 
-    # Output layer for gaze estimation (3D gaze vector)
-    gaze_output = Conv2D(3, (1, 1), activation="linear", name="gaze_output")(double_6)
-    # gaze_output = Conv2D(3, (1, 1), activation="linear", name="gaze_output")(double_6)
+    # Additional 2D Convolutional Layer before pooling
+    conv_layer = Conv2D(64, (3,3), activation='relu', padding='same')(double_6)
+    conv_layer = Conv2D(32, (3,3), activation='relu', padding='same')(conv_layer)
+
+    # Flatten instead of pooling to retain spatial information
+    flattened_output = Flatten()(conv_layer)
+
+    # MLP layers before computing the gaze vector
+    mlp = tf.keras.layers.Dense(128, activation='relu')(flattened_output)
+    mlp = tf.keras.layers.Dense(64, activation='relu')(mlp)
+    mlp_output = tf.keras.layers.Dense(3, activation='linear', name="mlp_output")(mlp)
 
     # Add epsilon before normalization to avoid division by zero
     epsilon = 1e-8
-    gaze_output = tf.keras.layers.Lambda(lambda x: x + epsilon)(gaze_output)
+    mlp_output = tf.keras.layers.Lambda(lambda x: x + epsilon)(mlp_output)
 
     # Normalize the gaze vector
-    gaze_output = tf.keras.layers.Lambda(lambda x: tf.nn.l2_normalize(x, axis=-1))(gaze_output)
-
-    # Flatten output
-    gaze_output = tf.keras.layers.GlobalAveragePooling2D()(gaze_output)
+    gaze_output = tf.keras.layers.Lambda(lambda x: tf.nn.l2_normalize(x, axis=-1), name="gaze_output")(mlp_output)
 
     return Model(inputs=x, outputs=gaze_output)
 
