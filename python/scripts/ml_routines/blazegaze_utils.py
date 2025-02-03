@@ -1,8 +1,22 @@
+import pathlib
+import json
+
 import tensorflow as tf
 import numpy as np
 import cv2
 
+from webeyetrack.constants import GIT_ROOT
+from webeyetrack.utilities import pitch_yaw_to_gaze_vector
+
 from aug import apply
+
+CWD = pathlib.Path(__file__).parent
+FILE_DIR = pathlib.Path(__file__).parent
+GENERATED_DATASET_DIR = GIT_ROOT / 'data' / 'generated'
+
+NORM_FILE_FP = GENERATED_DATASET_DIR / 'MPIIFaceGaze_blazegaze_mean_std.json'
+with open(NORM_FILE_FP, 'r') as f:
+    norm_data = json.load(f)
 
 IMG_SIZE = 128
 
@@ -35,19 +49,36 @@ class GazeVisualizationCallback(tf.keras.callbacks.Callback):
 
     def on_epoch_end(self, epoch, logs=None):
         # Select a batch from the dataset
-        for images, gaze_vectors in self.dataset.take(1):
-            predictions = self.model.predict(images)  # Get model predictions
+        for (images, head_pose), gaze_pitch_yaw in self.dataset.take(1):
+            predictions = self.model.predict([images, head_pose])  # Get model predictions
             images = images.numpy()  # Convert images to NumPy array
-            gaze_vectors = gaze_vectors.numpy()  # Ground truth gaze vectors
+            gaze_pitch_yaw = gaze_pitch_yaw.numpy()  # Ground truth gaze vectors
             predictions = predictions  # Predicted gaze vectors
 
             # Draw gaze vectors on the images
             visualizations = []
             for i in range(len(images)):
+
+                # Denormalize image
+                # images[i] = (images[i] * norm_data['image_std']) + norm_data['image_mean']
                 uint8_image = (images[i] * 255).astype(np.uint8)
                 uint8_image = cv2.cvtColor(uint8_image, cv2.COLOR_RGB2BGR)
-                vis_image = self.draw_gaze_vector(uint8_image, gaze_vectors[i], color=(0,255,0))  # Ground truth
-                vis_image = self.draw_gaze_vector(uint8_image, predictions[i], color=(255,0,0), thickness=1)  # Prediction
+
+                # Convert pitch and yaw in radians to degrees
+                gaze_pitch_yaw[i] = np.degrees(gaze_pitch_yaw[i])
+                predictions[i] = np.degrees(predictions[i])
+
+                # convert pitch, yaw to gaze vector
+                gt_gaze_vector = pitch_yaw_to_gaze_vector(*gaze_pitch_yaw[i])
+                pred_gaze_vector = pitch_yaw_to_gaze_vector(*predictions[i])
+
+                vis_image = self.draw_gaze_vector(uint8_image, gt_gaze_vector, color=(0,255,0))  # Ground truth
+                vis_image = self.draw_gaze_vector(uint8_image, pred_gaze_vector, color=(255,0,0), thickness=1)  # Prediction
+                
+                # Write the gt pitch and yaw values on the image
+                gt_pitch, gt_yaw = gaze_pitch_yaw[i]
+                cv2.putText(vis_image, f"GT: {gt_pitch:.2f}, {gt_yaw:.2f}", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+                
                 visualizations.append(vis_image)
 
             # Log images to TensorBoard
@@ -57,47 +88,122 @@ class GazeVisualizationCallback(tf.keras.callbacks.Callback):
                     tf.summary.image(f"{self.name} - S{i}", vis[np.newaxis], step=epoch)
             break
 
-def angular_loss(y_true, y_pred):
+# def angular_loss(y_true, y_pred):
+#     """
+#     Computes the angular loss between the predicted and true gaze directions.
+
+#     Args:
+#         y_true: Ground truth relative gaze vectors, shape (batch_size, 3).
+#         y_pred: Predicted gaze directions, shape (batch_size, 3).
+
+#     Returns:
+#         A scalar tensor representing the mean angular loss.
+#     """
+#     # Normalize both vectors to unit length
+#     y_true = tf.math.l2_normalize(y_true, axis=1)
+#     y_pred = tf.math.l2_normalize(y_pred, axis=1)
+
+#     # Compute cosine similarity
+#     cosine_similarity = tf.reduce_sum(y_true * y_pred, axis=1)
+
+#     # Clamp cosine similarity to avoid NaN values from acos
+#     cosine_similarity = tf.clip_by_value(cosine_similarity, -1.0 + 1e-8, 1.0 - 1e-8)
+
+#     # Compute angular distance (acos of cosine similarity)
+#     angular_distance = tf.acos(cosine_similarity)
+
+#     # Return the mean angular distance as loss
+#     return tf.reduce_mean(angular_distance)
+
+def tf_pitch_yaw_to_gaze_vector(pitch, yaw):
     """
-    Computes the angular loss between the predicted and true gaze directions.
+    Convert pitch and yaw angles to a gaze vector in 3D space.
 
     Args:
-        y_true: Ground truth relative gaze vectors, shape (batch_size, 3).
-        y_pred: Predicted gaze directions, shape (batch_size, 3).
+        pitch: Tensor of shape (batch_size,) - Pitch angles in radians.
+        yaw: Tensor of shape (batch_size,) - Yaw angles in radians.
 
     Returns:
-        A scalar tensor representing the mean angular loss.
+        A tensor of shape (batch_size, 3) representing the gaze vectors.
     """
-    # Normalize both vectors to unit length
-    y_true = tf.math.l2_normalize(y_true, axis=1)
-    y_pred = tf.math.l2_normalize(y_pred, axis=1)
+    x = tf.cos(pitch) * tf.cos(yaw)
+    y = tf.sin(pitch)
+    z = tf.cos(pitch) * tf.sin(yaw)
+    vector = tf.stack([x, y, z], axis=1)
+    norm_vector = tf.math.l2_normalize(vector, axis=1)
+    return norm_vector
+
+def angular_loss(y_true, y_pred):
+    """
+    Computes the angular loss between predicted and true gaze directions using pitch and yaw.
+
+    Args:
+        y_true: Tensor of shape (batch_size, 2) - True gaze directions (pitch, yaw).
+        y_pred: Tensor of shape (batch_size, 2) - Predicted gaze directions (pitch, yaw).
+
+    Returns:
+        A scalar tensor representing the mean angular error in degrees.
+    """
+    # Convert pitch and yaw to gaze vectors
+    true_vector = tf_pitch_yaw_to_gaze_vector(y_true[:, 0], y_true[:, 1])
+    pred_vector = tf_pitch_yaw_to_gaze_vector(y_pred[:, 0], y_pred[:, 1])
 
     # Compute cosine similarity
-    cosine_similarity = tf.reduce_sum(y_true * y_pred, axis=1)
+    cosine_similarity = tf.reduce_sum(true_vector * pred_vector, axis=1)
 
-    # Clamp cosine similarity to avoid NaN values from acos
+    # Clip cosine similarity to avoid NaN values in acos
     cosine_similarity = tf.clip_by_value(cosine_similarity, -1.0 + 1e-8, 1.0 - 1e-8)
 
-    # Compute angular distance (acos of cosine similarity)
-    angular_distance = tf.acos(cosine_similarity)
+    # Compute angular error in radians and convert to degrees
+    angular_distance = tf.acos(cosine_similarity) * (180.0 / tf.constant(3.141592653589793, dtype=tf.float32))
 
-    # Return the mean angular distance as loss
+    # Return mean angular distance
     return tf.reduce_mean(angular_distance)
+
+# def angular_distance(y_true, y_pred):
+#     """
+#     Computes the angular distance between the predicted and true gaze vectors in degrees.
+
+#     Args:
+#         y_true: Ground truth gaze vectors, shape (batch_size, 3).
+#         y_pred: Predicted gaze vectors, shape (batch_size, 3).
+
+#     Returns:
+#         A scalar tensor representing the mean angular distance in degrees.
+#     """
+#     # Normalize both vectors to unit length
+#     y_true = tf.math.l2_normalize(y_true, axis=1)
+#     y_pred = tf.math.l2_normalize(y_pred, axis=1)
+
+#     # Compute dot product (cosine similarity)
+#     dot_product = tf.reduce_sum(y_true * y_pred, axis=1)
+
+#     # Clamp values to avoid numerical issues with acos
+#     cos_theta = tf.clip_by_value(dot_product, -1.0 + 1e-8, 1.0 - 1e-8)
+
+#     # Compute angular distance in radians
+#     angular_distance_rad = tf.acos(cos_theta)
+
+#     # Convert radians to degrees
+#     angular_distance_deg = angular_distance_rad * (180.0 / tf.constant(3.141592653589793, dtype=tf.float32))
+
+#     # Return the mean angular distance in degrees
+#     return tf.reduce_mean(angular_distance_deg)
 
 def angular_distance(y_true, y_pred):
     """
     Computes the angular distance between the predicted and true gaze vectors in degrees.
 
     Args:
-        y_true: Ground truth gaze vectors, shape (batch_size, 3).
-        y_pred: Predicted gaze vectors, shape (batch_size, 3).
+        y_true: Ground truth gaze pitch and yaw, shape (batch_size, 2).
+        y_pred: Predicted gaze pitch and yaw, shape (batch_size, 2).
 
     Returns:
         A scalar tensor representing the mean angular distance in degrees.
     """
-    # Normalize both vectors to unit length
-    y_true = tf.math.l2_normalize(y_true, axis=1)
-    y_pred = tf.math.l2_normalize(y_pred, axis=1)
+    ## Convert pitch and yaw to gaze vectors
+    y_true = tf_pitch_yaw_to_gaze_vector(y_true[:, 0], y_true[:, 1])
+    y_pred = tf_pitch_yaw_to_gaze_vector(y_pred[:, 0], y_pred[:, 1])
 
     # Compute dot product (cosine similarity)
     dot_product = tf.reduce_sum(y_true * y_pred, axis=1)
@@ -114,12 +220,12 @@ def angular_distance(y_true, y_pred):
     # Return the mean angular distance in degrees
     return tf.reduce_mean(angular_distance_deg)
 
-
 # Parsing function for TFRecord
 def parse_tfrecord_fn(example_proto):
     feature_description = {
         'image': tf.io.FixedLenFeature([], tf.string),
-        'gaze_vector': tf.io.FixedLenFeature([3], tf.float32),
+        'gaze_vector': tf.io.FixedLenFeature([2], tf.float32),
+        'head_rotation': tf.io.FixedLenFeature([3], tf.float32),
     }
     parsed_example = tf.io.parse_single_example(example_proto, feature_description)
     
@@ -129,5 +235,12 @@ def parse_tfrecord_fn(example_proto):
     image = tf.cast(image, tf.float32) / 255.0
 
     # Extract gaze vector
-    gaze_vector = parsed_example['gaze_vector']
-    return apply(image, gaze_vector)
+    gaze_pitch_yaw = parsed_example['gaze_vector']
+
+    # Extract head rotation
+    head_pitch_yaw_roll = parsed_example['head_rotation']
+
+    # Perform normalization
+    # image = (image - norm_data['image_mean']) / norm_data['image_std']
+
+    return (apply(image), head_pitch_yaw_roll), gaze_pitch_yaw

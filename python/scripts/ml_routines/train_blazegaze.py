@@ -1,5 +1,6 @@
 import os
 import pathlib
+import datetime
 
 import cv2
 import numpy as np
@@ -18,16 +19,21 @@ FILE_DIR = pathlib.Path(__file__).parent
 GENERATED_DATASET_DIR = GIT_ROOT / 'data' / 'generated'
 
 # Constants
-BATCH_SIZE = 32
+# BATCH_SIZE = 32
+BATCH_SIZE = 16
 IMG_SIZE = 128
 EPOCHS = 20
 
-TRAIN_TFRECORD_PATH = GENERATED_DATASET_DIR / 'train_MPIIFaceGaze_blazegaze.tfrecord'
-VAL_TFRECORD_PATH = GENERATED_DATASET_DIR / 'val_MPIIFaceGaze_blazegaze.tfrecord'
+TRAIN_TFRECORD_PATH = GENERATED_DATASET_DIR / f'train_MPIIFaceGaze_blazegaze_v7.tfrecord'
+VAL_TFRECORD_PATH = GENERATED_DATASET_DIR / f'val_MPIIFaceGaze_blazegaze_v7.tfrecord'
 MODELS_DIR = FILE_DIR / 'models'
 os.makedirs(MODELS_DIR, exist_ok=True)
 LOG_PATH = FILE_DIR / 'logs'
 os.makedirs(LOG_PATH, exist_ok=True)
+
+TIMESTAMP = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+RUN_DIR = MODELS_DIR / TIMESTAMP
+os.makedirs(RUN_DIR, exist_ok=True)
 
 def load_dataset(tfrecord_path, batch_size):
     raw_dataset = tf.data.TFRecordDataset(tfrecord_path)
@@ -50,14 +56,12 @@ lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
 )
 
 # Load model
-# model = get_gaze_model()
-# init_model(model)
 model = BlazeGaze()
 model.tf_model.compile(optimizer=Adam(learning_rate=lr_schedule), loss=angular_loss, metrics=[angular_distance])
 
 # Callbacks
 checkpoint_callback = ModelCheckpoint(
-    filepath=MODELS_DIR/"blazegaze-{epoch:02d}-{val_loss:.2f}.h5", 
+    filepath=RUN_DIR/"blazegaze-{epoch:02d}-{val_loss:.2f}.h5", 
     monitor="epoch_angular_distance",
     ave_best_only=True, 
     save_weights_only=True,

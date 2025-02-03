@@ -46,7 +46,7 @@ def get_screen_attributes():
 # Math Utilities
 ########################################################################################
 
-def rotation_matrix_to_euler_angles(R):
+def rotation_matrix_to_euler_angles(R, degrees=True):
     # Ensure the matrix is 3x3
     assert R.shape == (3, 3)
     
@@ -56,9 +56,10 @@ def rotation_matrix_to_euler_angles(R):
     roll = np.arctan2(R[1, 0], R[0, 0])  # Roll around Z-axis (optional)
 # 
     # Convert radians to degrees if necessary
-    pitch = np.degrees(pitch)
-    yaw = np.degrees(yaw)
-    roll = np.degrees(roll)
+    if degrees:
+        pitch = np.degrees(pitch)
+        yaw = np.degrees(yaw)
+        roll = np.degrees(roll)
 
     return pitch, yaw, roll
 
@@ -110,7 +111,7 @@ def pitch_yaw_to_gaze_vector(pitch, yaw):
     # Return the 3D gaze vector
     return np.array([x, y, z])
 
-def vector_to_pitch_yaw(vector):
+def vector_to_pitch_yaw(vector, degrees=True):
     """
     Converts a 3D gaze direction vector (unit vector) into pitch and yaw angles,
     assuming [0, 0, -1] corresponds to pitch=0 and yaw=0 (forward direction).
@@ -135,10 +136,11 @@ def vector_to_pitch_yaw(vector):
     pitch = np.arctan2(y, np.sqrt(x**2 + z**2))  # In radians, between -π/2 and π/2
 
     # Convert radians to degrees
-    yaw_deg = np.degrees(yaw)
-    pitch_deg = np.degrees(pitch)
+    if degrees:
+        yaw = np.degrees(yaw)
+        pitch = np.degrees(pitch)
     
-    return pitch_deg, yaw_deg
+    return pitch, yaw
 
 def get_rotation_matrix_from_vector(vec):
     """

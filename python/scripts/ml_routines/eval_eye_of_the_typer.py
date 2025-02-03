@@ -330,7 +330,15 @@ def main():
         participant_metrics_df = pd.DataFrame(participant_metrics)
         participant_metrics_df.to_excel(par_output_dir / 'metrics.xlsx', index=False)
         participants_metrics.append(participant_metrics_df)
-        break
+
+        # Plot the distrubution of error for each method (showing the mean for a single participant)
+        plt.figure()
+        plt.title(f"{par} - Error (cm)")
+        sns.boxplot(data=participant_metrics_df[['wg_mean', 'wet_mean']])
+        plt.savefig(par_output_dir / 'mean_error.png')
+
+        # if len(participants_metrics) >= 5:
+        #     break
 
     # Construct a dataframe for all participants
     participants_metrics_df = pd.concat(participants_metrics)
@@ -340,6 +348,7 @@ def main():
 
     # Plot the distribution of error for each method
     plt.figure()
+    plt.title(f"Eye of The Typer - Error (cm)")
     sns.boxplot(data=participants_metrics_df[['wg_mean', 'wet_mean']])
     plt.savefig(RUN_DIR / 'mean_error.png')
 

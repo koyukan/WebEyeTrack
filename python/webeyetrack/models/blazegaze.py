@@ -2,7 +2,17 @@ from typing import Optional
 
 import tensorflow as tf
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Layer, Input, DepthwiseConv2D, Conv2D, MaxPool2D, Add, Activation, Flatten
+from tensorflow.keras.layers import (
+    Layer, 
+    Input, 
+    DepthwiseConv2D, 
+    Conv2D, 
+    MaxPool2D, 
+    Add, 
+    Activation, 
+    Flatten,
+    Concatenate
+)
 
 class HeadWrapper(Layer):
     def __init__(self, last_dimension, **kwargs):
@@ -62,8 +72,11 @@ def get_backbone(input_shape=(128, 128, 3)):
 
     return Model(inputs=x, outputs=double_6)
 
-def get_gaze_model(input_shape=(128, 128, 3)):
-    x = Input(shape=input_shape)
+def get_gaze_model(input_shape=(128, 128, 3), head_rotation_shape=(3,)):
+
+    # handle the inputs
+    x = Input(shape=input_shape, name="image_input")
+    head_rotation_input = Input(shape=head_rotation_shape, name="head_rotation_input")  # pitch, yaw, roll
 
     # BlazeGaze backbone
     backbone = get_backbone(input_shape=input_shape)
@@ -77,22 +90,26 @@ def get_gaze_model(input_shape=(128, 128, 3)):
     # Flatten instead of pooling to retain spatial information
     flattened_output = Flatten()(conv_layer)
 
+    # Concatenate head rotation with flattened CNN features
+    concatenated_features = Concatenate()([flattened_output, head_rotation_input])
+
     # MLP layers before computing the gaze vector
-    mlp = tf.keras.layers.Dense(128, activation='relu')(flattened_output)
+    mlp = tf.keras.layers.Dense(128, activation='relu')(concatenated_features)
     mlp = tf.keras.layers.Dense(64, activation='relu')(mlp)
-    mlp_output = tf.keras.layers.Dense(3, activation='linear', name="mlp_output")(mlp)
+    gaze_pitch_yaw = tf.keras.layers.Dense(2, activation='linear', name="mlp_output")(mlp)
 
     # Add epsilon before normalization to avoid division by zero
-    epsilon = 1e-8
-    mlp_output = tf.keras.layers.Lambda(lambda x: x + epsilon)(mlp_output)
+    # epsilon = 1e-8
+    # mlp_output = tf.keras.layers.Lambda(lambda x: x + epsilon)(mlp_output)
 
     # Normalize the gaze vector
-    gaze_output = tf.keras.layers.Lambda(lambda x: tf.nn.l2_normalize(x, axis=-1), name="gaze_output")(mlp_output)
+    # gaze_output = tf.keras.layers.Lambda(lambda x: tf.nn.l2_normalize(x, axis=-1), name="gaze_output")(mlp_output)
 
-    return Model(inputs=x, outputs=gaze_output), backbone
+    # return Model(inputs=x, outputs=gaze_output), backbone
+    return Model(inputs=[x, head_rotation_input], outputs=gaze_pitch_yaw), backbone
 
 def init_model(model):
-    model(tf.random.uniform((1, 128, 128, 3)))
+    model([tf.random.uniform((1, 128, 128, 3)), tf.random.uniform((1, 3))])
 
 class BlazeGaze():
 
