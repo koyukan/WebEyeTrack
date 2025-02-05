@@ -4,3 +4,4 @@ imutils
 screeninfo
 # If you are using a Mac, you will need to install the following packages
 pyobjc-framework-Quartz
+h5py

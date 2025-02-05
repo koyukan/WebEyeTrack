@@ -46,6 +46,8 @@ EYE_HEIGHT_RATIO = 0.7
 # Used to determine the width of the face
 LEFTMOST_LANDMARK = 356
 RIGHTMOST_LANDMARK = 127
+TOPMOST_LANDMARK = 10
+BOTTOMMOST_LANDMARK = 152
 
 # Position of eyeball center based on canonical coordinate system
 # LEFT_EYEBALL_CENTER = np.array([3.0278, -2.7526, 2.7234]) * 10 # X, Y, Z

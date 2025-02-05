@@ -15,7 +15,6 @@ from PIL import Image
 import scipy.io
 import yaml
 import numpy as np
-from torch.utils.data import Dataset
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
@@ -23,12 +22,11 @@ from mediapipe.tasks.python import vision
 from ..constants import GIT_ROOT
 from ..vis import draw_gaze_origin
 from ..data_protocols import Annotations, CalibrationData, Sample
-from .utils import resize_annotations, resize_intrinsics, draw_landmarks_on_image, compute_uv_texture
 from ..utilities import create_transformation_matrix
 
 CWD = pathlib.Path(__file__).parent
 
-class MPIIFaceGazeDataset(Dataset):
+class MPIIFaceGazeDataset():
     
     def __init__(
             self, 
@@ -344,66 +342,11 @@ class MPIIFaceGazeDataset(Dataset):
         # Load the annotations
         with open(sample.annotation_fp, 'rb') as f:
             annotations = pickle.load(f)
- 
-        # Convert from uint8 to float32
-        image_np = image_np.astype(np.float32) / 255.0
-
-        # Draw the facial landmarks on the image
-        # annotated_img = draw_landmarks_on_image(image_np, detection_results)
-        # cv2.imshow('annotated_img', annotated_img)
-        # cv2.waitKey(0)
-        # cv2.destroyAllWindows()
-
-        # Crop out the face image and resize to have standard size
-        face_bbox = annotations.face_bbox
-        
-        # Clip the face bounding box to the image size and avoid negative indexing
-        face_bbox[0] = np.clip(face_bbox[0], 0, image.size[1] - 1)
-        face_bbox[1] = np.clip(face_bbox[1], 0, image.size[0] - 1)
-        face_bbox[2] = np.clip(face_bbox[2], 0, image.size[1] - 1)
-        face_bbox[3] = np.clip(face_bbox[3], 0, image.size[0] - 1)
-        # face_image_np = image_np[face_bbox[0]:face_bbox[2], face_bbox[1]:face_bbox[3]]
-        
-        # Add a 10% margin to the face bounding box
-        face_bbox[0] = np.clip(face_bbox[0] - (face_bbox[2] - face_bbox[0]) // 10, 0, image.size[1] - 1)
-        face_bbox[1] = np.clip(face_bbox[1] - (face_bbox[3] - face_bbox[1]) // 10, 0, image.size[0] - 1)
-        face_bbox[2] = np.clip(face_bbox[2] + (face_bbox[2] - face_bbox[0]) // 10, 0, image.size[1] - 1)
-        face_bbox[3] = np.clip(face_bbox[3] + (face_bbox[3] - face_bbox[1]) // 10, 0, image.size[0] - 1)
-        face_image_np = image_np[face_bbox[0]:face_bbox[2], face_bbox[1]:face_bbox[3]]
-
-        if self.face_size is not None:
-            face_image_np = cv2.resize(face_image_np, self.face_size, interpolation=cv2.INTER_LINEAR)
-
-        # Compute the relative gaze direction based on the facial landmarks
-        facelandmark_rt = np.load(self.dataset_dir / sample.participant_id / 'face_landmarks' / f"{sample.id}_rt.npy")
-        head_direction_rotation = facelandmark_rt[0:3, 0:3]
-        head_direction_xyz = Rotation.from_matrix(head_direction_rotation).as_rotvec()
-        head_direction_xyz = head_direction_xyz / np.linalg.norm(head_direction_xyz)
-        relative_gaze_vector = annotations.face_gaze_vector - head_direction_xyz
-        relative_gaze_vector = relative_gaze_vector / np.linalg.norm(relative_gaze_vector)
-
-        # Visualize the face image
-        # cv2.imshow('face_image', face_image_np)
-        # cv2.waitKey(0)
-        # cv2.destroyAllWindows()
-
-        # Resize the raw input image if needed
-        if self.img_size is not None:
-            image_np = cv2.resize(image_np, self.img_size, interpolation=cv2.INTER_LINEAR)
-            annotations = resize_annotations(annotations, image.size, self.img_size)
-            intrinsics = resize_intrinsics(calibration_data.camera_matrix, image.size, self.img_size)
-        else:
-            intrinsics = calibration_data.camera_matrix
-        
-        # Revert the image to the correct format
-        image_np = np.moveaxis(image_np, -1, 0)
-        face_image_np = np.moveaxis(face_image_np, -1, 0)
 
         item_dict = {
-            'participant_id': sample.participant_id,
+            'person_id': sample.participant_id,
             'image': image_np,
-            'face_image': face_image_np,
-            'intrinsics': intrinsics,
+            'intrinsics': calibration_data.intrinsics,
             'dist_coeffs': calibration_data.dist_coeffs,
             'screen_RT': calibration_data.screen_RT.astype(np.float32),
             'screen_height_cm': calibration_data.monitor_height_cm,
@@ -431,6 +374,4 @@ if __name__ == '__main__':
     print(len(dataset))
 
     sample = dataset[0]
-    # print(json.dumps({k: str(v.dtype) for k, v in sample.items()}, indent=4))
-    # print(sample.keys())
     print(json.dumps({k: str(v) for k, v in sample.items()}, indent=4))
