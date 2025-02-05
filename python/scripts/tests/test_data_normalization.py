@@ -29,6 +29,42 @@ norm_camera_matrix = np.array(
     dtype=np.float64,
 )
 
+def correct_to_rotated_rectangle(src_pts):
+    """
+    Given 4 approximately rectangular points (shaky), adjust them to form
+    a true rectangle with 90-degree angles while maintaining the rotation.
+    """
+
+    # Step 1: Compute the centroid
+    center = np.mean(src_pts, axis=0)
+
+    # Step 2: Compute PCA to get the two major axes
+    mean, eigenvectors = cv2.PCACompute(src_pts.astype(np.float32), mean=None)
+
+    # Ensure the eigenvectors are in the correct order (long axis first)
+    if np.linalg.norm(eigenvectors[0]) < np.linalg.norm(eigenvectors[1]):
+        eigenvectors = eigenvectors[::-1]
+
+    # Step 3: Project points onto the major axes to find a best-fit rectangle
+    projections = np.dot(src_pts - center, eigenvectors.T)
+
+    # Get the min/max along each axis
+    min_vals = np.min(projections, axis=0)
+    max_vals = np.max(projections, axis=0)
+
+    # Create the corrected rectangle in the new coordinate system
+    rect_proj = np.array([
+        [min_vals[0], min_vals[1]],
+        [max_vals[0], min_vals[1]],
+        [max_vals[0], max_vals[1]],
+        [min_vals[0], max_vals[1]],
+    ], dtype=np.float32)
+
+    # Step 4: Transform back to the original coordinate system
+    corrected_pts = np.dot(rect_proj, eigenvectors) + center
+
+    return corrected_pts
+
 CWD = pathlib.Path(__file__).parent
 SCREEN_HEIGHT_CM, SCREEN_WIDTH_CM, SCREEN_HEIGHT_PX, SCREEN_WIDTH_PX = get_screen_attributes()
 
@@ -93,11 +129,6 @@ if __name__ == '__main__':
         face_crop = frame[topmost[1]:bottommost[1], leftmost[0]:rightmost[0]]
 
         # Compute the homography matrix (4 pts) from the points to a final flat rectangle
-        # Compute the corners
-        # lefttop = [leftmost[0], topmost[1]]
-        # leftbottom = [leftmost[0], bottommost[1]]
-        # righttop = [rightmost[0], topmost[1]]
-        # rightbottom = [rightmost[0], bottommost[1]]
         lefttop = facial_landmarks[103]
         leftbottom = facial_landmarks[150]
         righttop = facial_landmarks[332]
@@ -110,6 +141,8 @@ if __name__ == '__main__':
             rightbottom,
             righttop
         ], dtype=np.float32)
+
+        src_pts = correct_to_rotated_rectangle(src_pts)
 
         # Add padding to the points, radially away from the center
         src_direction = src_pts - center
@@ -129,8 +162,24 @@ if __name__ == '__main__':
         M, _ = cv2.findHomography(src_pts, dst_pts)
         warped_face_crop = cv2.warpPerspective(frame, M, (IMG_SIZE, IMG_SIZE))
 
+        # Apply the homography matrix to the facial landmarks
+        warped_facial_landmarks = np.dot(M, np.vstack((facial_landmarks.T, np.ones((1, facial_landmarks.shape[0])))))
+        warped_facial_landmarks = (warped_facial_landmarks[:2, :] / warped_facial_landmarks[2, :]).T.astype(np.int32)
+
+        # Generate crops for the eyes and each eye separately
+        top_eyes_patch = warped_facial_landmarks[151]
+        bottom_eyes_patch = warped_facial_landmarks[195]
+        eyes_patch = warped_face_crop[top_eyes_patch[1]:bottom_eyes_patch[1], :]
+        left_eye_in_border = warped_facial_landmarks[193]
+        right_eye_in_border = warped_facial_landmarks[417]
+        left_eye_patch = eyes_patch[:, :left_eye_in_border[0]]
+        right_eye_patch = eyes_patch[:, right_eye_in_border[0]:]
+
         cv2.imshow("Face Mesh", draw_frame)
         cv2.imshow("Face Crop", face_crop)
+        cv2.imshow("Eyes Patch", eyes_patch)
         cv2.imshow("Warped Face Crop", warped_face_crop)
+        cv2.imshow("Left Eye Patch", left_eye_patch)
+        cv2.imshow("Right Eye Patch", right_eye_patch)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
