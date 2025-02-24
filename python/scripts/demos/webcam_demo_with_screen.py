@@ -7,7 +7,7 @@ import numpy as np
 from webeyetrack import WebEyeTrack
 from webeyetrack.model_based import get_rotation_matrix_from_vector
 from webeyetrack.constants import GIT_ROOT
-from webeyetrack.datasets.utils import draw_landmarks_on_image
+from webeyetrack.vis import draw_landmarks_on_image
 from webeyetrack.utilities import (
     estimate_camera_intrinsics, 
     transform_for_3d_scene,

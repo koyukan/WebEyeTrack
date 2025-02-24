@@ -4,7 +4,7 @@ import open3d as o3d
 
 from webeyetrack import WebEyeTrack
 from webeyetrack.constants import *
-from webeyetrack.datasets.utils import draw_landmarks_on_image
+from webeyetrack.vis import draw_landmarks_on_image
 from webeyetrack.utilities import (
     estimate_camera_intrinsics, 
     transform_for_3d_scene,
@@ -113,6 +113,7 @@ def main():
 
             # final_position = transform_for_3d_scene(eye_g_o[k].reshape((-1,3))).flatten()
             final_position = transform_for_3d_scene(origin.reshape((-1,3))).flatten()
+            final_position += np.array([0, 0, 0.2]) # Offset the eyeball a bit
             eyeball_meshes[i].translate(final_position, relative=False)
 
             # Rotation
