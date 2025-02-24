@@ -14,7 +14,7 @@ from webeyetrack.utilities import (
 
 IMG_SIZE = 256
 
-def normalization(norm_facial_landmarks, frame, draw_frame):
+def normalization(norm_facial_landmarks, frame, draw_frame=None):
 
     # Get the frame dimensions
     height, width = frame.shape[:2]
@@ -40,8 +40,9 @@ def normalization(norm_facial_landmarks, frame, draw_frame):
     src_direction = src_pts - center
     src_pts = src_pts + np.array([0.4, 0.2]) * src_direction
 
-    for src_pt, color in zip(src_pts, [(0,0,0), (100, 100, 100), (200, 200, 200), (255, 255, 255)]):
-        cv2.circle(draw_frame, tuple(src_pt.astype(np.int32)), 5, color, -1)
+    if draw_frame is not None:
+        for src_pt, color in zip(src_pts, [(0,0,0), (100, 100, 100), (200, 200, 200), (255, 255, 255)]):
+            cv2.circle(draw_frame, tuple(src_pt.astype(np.int32)), 5, color, -1)
 
     dst_pts = np.array([
         [0, 0],
@@ -124,7 +125,7 @@ if __name__ == '__main__':
         draw_frame = draw_landmarks_on_image(draw_frame, detection_results)
 
         # Normalize the data
-        eyes_patch = normalization(result.facial_landmarks, frame, draw_frame)
+        eyes_patch = normalization(result.facial_landmarks, frame)
 
         if type(draw_frame) == np.ndarray:
             cv2.imshow("Face Mesh", draw_frame)
