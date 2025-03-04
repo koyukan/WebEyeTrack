@@ -49,11 +49,11 @@ class GazeVisualizationCallback(tf.keras.callbacks.Callback):
 
     def on_epoch_end(self, epoch, logs=None):
         # Select a batch from the dataset
-        for (images, head_pose), gaze_pitch_yaw in self.dataset.take(1):
-            predictions = self.model.predict([images, head_pose])  # Get model predictions
+        for images, (gaze_vector, embedding) in self.dataset.take(1):
+            pred_gaze_vectors, pred_gaze_z = self.model.predict(images)  # Get model predictions
             images = images.numpy()  # Convert images to NumPy array
-            gaze_pitch_yaw = gaze_pitch_yaw.numpy()  # Ground truth gaze vectors
-            predictions = predictions  # Predicted gaze vectors
+            # gaze_pitch_yaw = gaze_pitch_yaw.numpy()  # Ground truth gaze vectors
+            gaze_vector = gaze_vector.numpy()  # Ground truth gaze vectors
 
             # Draw gaze vectors on the images
             visualizations = []
@@ -64,20 +64,26 @@ class GazeVisualizationCallback(tf.keras.callbacks.Callback):
                 uint8_image = (images[i] * 255).astype(np.uint8)
                 uint8_image = cv2.cvtColor(uint8_image, cv2.COLOR_RGB2BGR)
 
+                # import pdb; pdb.set_trace()
+                gt_gaze_vector = gaze_vector[i]
+                pred_gaze_vector = pred_gaze_vectors[i]
+                # Convert gaze vector to pitch and yaw
+                # gt_gaze_pitch_yaw = vector_to_pitch_yaw(gaze_vector[i])
+
                 # Convert pitch and yaw in radians to degrees
-                gaze_pitch_yaw[i] = np.degrees(gaze_pitch_yaw[i])
-                predictions[i] = np.degrees(predictions[i])
+                # gaze_pitch_yaw = np.degrees(gaze_pitch_yaw)
+                # predictions[i] = np.degrees(predictions[i])
 
                 # convert pitch, yaw to gaze vector
-                gt_gaze_vector = pitch_yaw_to_gaze_vector(*gaze_pitch_yaw[i])
-                pred_gaze_vector = pitch_yaw_to_gaze_vector(*predictions[i])
+                # gt_gaze_vector = pitch_yaw_to_gaze_vector(*gaze_pitch_yaw[i])
+                # pred_gaze_vector = pitch_yaw_to_gaze_vector(*predictions[i])
 
                 vis_image = self.draw_gaze_vector(uint8_image, gt_gaze_vector, color=(0,255,0))  # Ground truth
                 vis_image = self.draw_gaze_vector(uint8_image, pred_gaze_vector, color=(255,0,0), thickness=1)  # Prediction
                 
                 # Write the gt pitch and yaw values on the image
-                gt_pitch, gt_yaw = gaze_pitch_yaw[i]
-                cv2.putText(vis_image, f"GT: {gt_pitch:.2f}, {gt_yaw:.2f}", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+                # gt_pitch, gt_yaw = gaze_pitch_yaw[i]
+                # cv2.putText(vis_image, f"GT: {gt_pitch:.2f}, {gt_yaw:.2f}", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
                 
                 visualizations.append(vis_image)
 

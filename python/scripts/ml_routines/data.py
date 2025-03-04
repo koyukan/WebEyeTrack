@@ -14,7 +14,11 @@ class generator:
             for group in hf:
                 for i in range(hf[group]["pixels"].shape[0]):
                     image = hf[group]["pixels"][i]
-                    gaze_labels = hf[group]["labels"][i]
+                    labels = hf[group]["labels"][i]
+
+                    # Split the labels into gaze and head vectors
+                    gaze_labels = labels[:3]
+                    head_labels = labels[3:]
 
                     # Placeholder embedding
                     embedding = tf.zeros(128, dtype=tf.float32)
@@ -31,12 +35,10 @@ def load_total_dataset(hdf5_path):
 
     ds = tf.data.Dataset.from_generator(
         generator(hdf5_path),
-        # tf.uint8,
-        # tf.TensorShape([128, 512, 3])
         output_signature=(
             tf.TensorSpec(shape=(128, 512, 3), dtype=tf.uint8),
             (
-                tf.TensorSpec(shape=(6,), dtype=tf.float32),
+                tf.TensorSpec(shape=(3,), dtype=tf.float32),
                 tf.TensorSpec(shape=(128,), dtype=tf.float32),
             )
         )

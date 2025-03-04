@@ -2,7 +2,6 @@ import os
 import pathlib
 import datetime
 
-import cv2
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, LearningRateScheduler
@@ -56,39 +55,49 @@ lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
 )
 
 def loss_fn(y_true, y_pred):
+    import pdb; pdb.set_trace()
     return angular_loss(y_true, y_pred)
 
 # Load model
 model = BlazeGaze()
-model.tf_model.compile(optimizer=Adam(learning_rate=lr_schedule), loss=loss_fn) #, metrics=[angular_distance])
+model.tf_model.compile(
+    optimizer=Adam(learning_rate=lr_schedule), 
+    loss={
+        "gaze_output_norm": angular_loss,
+        # "embedding_output": "cosine_similarity"
+    },
+    metrics={
+        "gaze_output_norm": angular_distance
+    }
+)
 
 # Callbacks
-# checkpoint_callback = ModelCheckpoint(
-#     filepath=RUN_DIR/"blazegaze-{epoch:02d}-{val_loss:.2f}.h5", 
-#     monitor="epoch_angular_distance",
-#     ave_best_only=True, 
-#     save_weights_only=True,
-# )
-# tensorboard_callback = TensorBoard(log_dir=LOG_PATH)
-# learning_rate_callback = LearningRateScheduler(lambda epoch: 1e-3 * (0.1 ** (epoch // 10)))
+checkpoint_callback = ModelCheckpoint(
+    filepath=RUN_DIR/"blazegaze-{epoch:02d}-{val_loss:.2f}.h5", 
+    monitor="epoch_angular_distance",
+    ave_best_only=True, 
+    save_weights_only=True,
+)
+tensorboard_callback = TensorBoard(log_dir=LOG_PATH)
+learning_rate_callback = LearningRateScheduler(lambda epoch: 1e-3 * (0.1 ** (epoch // 10)))
 
-# # Subset the dataset for visualization (use a few samples)
-# train_vis_dataset = train_dataset.take(1)
-# valid_vis_dataset = val_dataset.take(1)
+# Subset the dataset for visualization (use a few samples)
+train_vis_dataset = train_dataset.take(1)
+valid_vis_dataset = val_dataset.take(1)
 
 # Define the callback
-# train_vis_callback = GazeVisualizationCallback(
-#     dataset=train_vis_dataset,
-#     log_dir=LOG_PATH / "visualizations",
-#     img_size=IMG_SIZE,
-#     name='Gaze (Training)'
-# )
-# valid_vis_callback = GazeVisualizationCallback(
-#     dataset=valid_vis_dataset,
-#     log_dir=LOG_PATH / "visualizations",
-#     img_size=IMG_SIZE,
-#     name='Gaze (Validation)'
-# )
+train_vis_callback = GazeVisualizationCallback(
+    dataset=train_vis_dataset,
+    log_dir=LOG_PATH / "visualizations",
+    img_size=IMG_SIZE,
+    name='Gaze (Training)'
+)
+valid_vis_callback = GazeVisualizationCallback(
+    dataset=valid_vis_dataset,
+    log_dir=LOG_PATH / "visualizations",
+    img_size=IMG_SIZE,
+    name='Gaze (Validation)'
+)
 
 log_dir = LOG_PATH / 'images'
 os.makedirs(log_dir, exist_ok=True)
@@ -99,10 +108,10 @@ model.tf_model.fit(
     validation_data=val_dataset,
     epochs=EPOCHS,
     callbacks=[
-        # checkpoint_callback, 
-        # tensorboard_callback, 
-        # train_vis_callback,
-        # valid_vis_callback
+        checkpoint_callback, 
+        tensorboard_callback, 
+        train_vis_callback,
+        valid_vis_callback
     ]
 )
 

@@ -154,7 +154,7 @@ def load_datasets(args):
             dataset = MPIIFaceGazeDataset(
                 GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
                 participants=[participant],
-                per_participant_size=100,
+                # per_participant_size=100,
                 # face_size=[128,128],
                 # per_participant_size=10
             )

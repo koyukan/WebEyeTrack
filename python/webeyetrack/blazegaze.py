@@ -55,7 +55,7 @@ def double_blaze_block(y, filters, stride=1):
     output = Add()([x, y])
     return Activation("relu")(output)
 
-def get_backbone(input_shape=(128, 128, 3)):
+def get_backbone(input_shape=(128, 512, 3)):
     x = Input(shape=input_shape)
 
     # Feature extraction layers
@@ -99,8 +99,11 @@ def get_gaze_model(input_shape=(128, 512, 3)): #head_rotation_shape=(3,)):
     mlp = tf.keras.layers.Dense(128, activation='relu')(flattened_output)
     mlp = tf.keras.layers.Dense(64, activation='relu')(mlp)
 
-    # Gaze vector output (pitch, yaw)
-    gaze_pitch_yaw = tf.keras.layers.Dense(2, activation='linear', name="gaze_output")(mlp)
+    # Gaze vector output
+    gaze_pitch_yaw = tf.keras.layers.Dense(3, activation='linear', name="gaze_output")(mlp)
+
+    # Ensure the output is normalized
+    gaze_pitch_yaw = tf.keras.layers.Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name="gaze_output_norm")(gaze_pitch_yaw)
 
     # Embedding output (for contrastive learning)
     embedding_output = tf.keras.layers.Dense(EMBEDDING_SIZE, activation='tanh', name="embedding_output")(mlp)
