@@ -111,6 +111,49 @@ def pitch_yaw_to_gaze_vector(pitch, yaw):
     # Return the 3D gaze vector
     return np.array([x, y, z])
 
+    import numpy as np
+
+def pitch_yaw_roll_to_gaze_vector(pitch, yaw, roll):
+    """
+    Converts pitch, yaw, and roll angles into a 3D gaze direction vector (unit vector).
+    - Pitch: Up/down rotation
+    - Yaw: Left/right rotation
+    - Roll: Rotation around the gaze direction
+
+    Arguments:
+    pitch -- pitch angle in degrees
+    yaw -- yaw angle in degrees
+    roll -- roll angle in degrees
+
+    Returns:
+    A 3D unit gaze direction vector as a numpy array [x, y, z].
+    """
+    # Convert degrees to radians
+    pitch_rad = np.radians(pitch)
+    yaw_rad = np.radians(yaw)
+    roll_rad = np.radians(roll)
+
+    # Calculate initial gaze vector (ignoring roll)
+    z = -np.cos(pitch_rad) * np.cos(yaw_rad)  # Forward (negative Z direction)
+    x = np.cos(pitch_rad) * np.sin(yaw_rad)   # Right
+    y = np.sin(pitch_rad)                     # Up
+
+    gaze_vector = np.array([x, y, z])
+
+    # Apply roll rotation using a rotation matrix
+    cos_r, sin_r = np.cos(roll_rad), np.sin(roll_rad)
+    roll_matrix = np.array([
+        [cos_r, -sin_r, 0],
+        [sin_r,  cos_r, 0],
+        [0,      0,     1]
+    ])
+
+    # Apply roll rotation to the (x, y) components
+    rotated_vector = roll_matrix @ gaze_vector
+
+    return rotated_vector
+
+
 def vector_to_pitch_yaw(vector, degrees=True):
     """
     Converts a 3D gaze direction vector (unit vector) into pitch and yaw angles,

@@ -8,15 +8,15 @@ import cv2
 from webeyetrack.constants import GIT_ROOT
 from webeyetrack.utilities import pitch_yaw_to_gaze_vector
 
-from aug import apply
+from .aug import apply
 
 CWD = pathlib.Path(__file__).parent
 FILE_DIR = pathlib.Path(__file__).parent
 GENERATED_DATASET_DIR = GIT_ROOT / 'data' / 'generated'
 
-NORM_FILE_FP = GENERATED_DATASET_DIR / 'MPIIFaceGaze_blazegaze_mean_std.json'
-with open(NORM_FILE_FP, 'r') as f:
-    norm_data = json.load(f)
+# NORM_FILE_FP = GENERATED_DATASET_DIR / 'MPIIFaceGaze_blazegaze_mean_std.json'
+# with open(NORM_FILE_FP, 'r') as f:
+#     norm_data = json.load(f)
 
 IMG_SIZE = 128
 

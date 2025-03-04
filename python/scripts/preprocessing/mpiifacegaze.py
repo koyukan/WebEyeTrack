@@ -19,10 +19,10 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
-from ..constants import GIT_ROOT
-from ..vis import draw_gaze_origin
-from ..data_protocols import Annotations, CalibrationData, Sample
-from ..utilities import create_transformation_matrix
+from webeyetrack.constants import GIT_ROOT
+from webeyetrack.vis import draw_gaze_origin
+from webeyetrack.data_protocols import Annotations, CalibrationData, Sample
+from webeyetrack.utilities import create_transformation_matrix
 
 CWD = pathlib.Path(__file__).parent
 
@@ -346,7 +346,7 @@ class MPIIFaceGazeDataset():
         item_dict = {
             'person_id': sample.participant_id,
             'image': image_np,
-            'intrinsics': calibration_data.intrinsics,
+            'intrinsics': calibration_data.camera_matrix,
             'dist_coeffs': calibration_data.dist_coeffs,
             'screen_RT': calibration_data.screen_RT.astype(np.float32),
             'screen_height_cm': calibration_data.monitor_height_cm,
@@ -360,18 +360,18 @@ class MPIIFaceGazeDataset():
     def __len__(self):
         return len(self.samples)
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
 
-    from ..constants import DEFAULT_CONFIG
-    with open(DEFAULT_CONFIG, 'r') as f:
-        config = yaml.safe_load(f)
+#     from ..constants import DEFAULT_CONFIG
+#     with open(DEFAULT_CONFIG, 'r') as f:
+#         config = yaml.safe_load(f)
 
-    dataset = MPIIFaceGazeDataset(
-        GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
-        dataset_size=2,
-        participants=[1]
-    )
-    print(len(dataset))
+#     dataset = MPIIFaceGazeDataset(
+#         GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
+#         dataset_size=2,
+#         participants=[1]
+#     )
+#     print(len(dataset))
 
-    sample = dataset[0]
-    print(json.dumps({k: str(v) for k, v in sample.items()}, indent=4))
+#     sample = dataset[0]
+#     print(json.dumps({k: str(v) for k, v in sample.items()}, indent=4))

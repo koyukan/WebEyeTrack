@@ -7,8 +7,6 @@ import numpy as np
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from skopt import gp_minimize
-from skopt.space import Real
 
 from .model_based import (
     create_perspective_matrix, 
