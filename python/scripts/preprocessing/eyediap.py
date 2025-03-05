@@ -17,15 +17,14 @@ from PIL import Image
 import scipy.io
 import yaml
 import numpy as np
-from torch.utils.data import Dataset
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
-from ..constants import GIT_ROOT
-from ..vis import draw_gaze_origin, draw_axis
-from ..data_protocols import Annotations, CalibrationData, Sample
-from ..model_based import vector_to_pitch_yaw
+from webeyetrack.constants import GIT_ROOT
+from webeyetrack.vis import draw_gaze_origin, draw_axis
+from webeyetrack.data_protocols import Annotations, CalibrationData, Sample
+from webeyetrack.model_based import vector_to_pitch_yaw
 
 CWD = pathlib.Path(__file__).parent
 
@@ -201,7 +200,7 @@ def extract_next_file_values(file_obj, delimiter=';', typecast=float):
     else:
         return None, None
 
-class EyeDiapDataset(Dataset):
+class EyeDiapDataset():
 
     def __init__(
             self, 
@@ -331,10 +330,35 @@ class EyeDiapDataset(Dataset):
                 requested_frames = safe_requested_frames
                 gaze_state_track.seek(0)
 
-
             # Create progress bar
             pbar = tqdm(total=len(requested_frames))
             per_participant_size = 0
+
+            # Construct the calibration data for the session and video type
+            if self.video_type == 'vga':
+                calibration_data = CalibrationData(
+                    camera_matrix=rgb_vga_calibration['intrinsics'],
+                    dist_coeffs=None,
+                    camera_retval=None,
+                    screen_RT=None,
+                    monitor_height_cm=None,
+                    monitor_height_px=None,
+                    monitor_width_cm=None,
+                    monitor_width_px=None
+                )
+            elif self.video_type == 'hd':
+                calibration_data = CalibrationData(
+                    camera_matrix=rgb_hd_calibration['intrinsics'],
+                    dist_coeffs=None,
+                    camera_retval=None,
+                    screen_RT=None,
+                    monitor_height_cm=None,
+                    monitor_height_px=None,
+                    monitor_width_cm=None,
+                    monitor_width_px=None
+                )
+            else:
+                raise ValueError("Invalid video type. Must be 'vga' or 'hd'.")
 
             if rgb_vga.isOpened() and depth.isOpened() and (rgb_hd is None or rgb_hd.isOpened()):
                 all_ok = True
@@ -732,71 +756,34 @@ class EyeDiapDataset(Dataset):
     def __len__(self):
         return len(self.samples)
 
-    def get_sample(self, index: int, pytorch_friendly: bool = True) -> Dict[str, Any]:
-        
-        # Make a copy of the sample
-        sample = copy.deepcopy(self.samples[index])
+    def get_sample(self, index: int) -> Dict[str, Any]:
+        sample = self.samples.iloc[index]
 
-        # Create torch-compatible data
+        # Load image
         image = Image.open(sample.image_fp)
         image_np = np.array(image)
 
-        # Convert from uint8 to float32
-        image_np = image_np.astype(np.float32) / 255.0
+        # Get the calibration
+        calibration_data = self.participant_calibration_data[sample.participant_id]
 
-        # Crop out the face image and resize to have standard size
-        face_bbox = sample.annotations.face_bbox
-        
-        # Clip the face bounding box to the image size and avoid negative indexing
-        face_bbox[0] = np.clip(face_bbox[0], 0, image.size[1] - 1)
-        face_bbox[1] = np.clip(face_bbox[1], 0, image.size[0] - 1)
-        face_bbox[2] = np.clip(face_bbox[2], 0, image.size[1] - 1)
-        face_bbox[3] = np.clip(face_bbox[3], 0, image.size[0] - 1)
-        face_image_np = image_np[face_bbox[0]:face_bbox[2], face_bbox[1]:face_bbox[3]]
-        if self.face_size is not None:
-            face_image_np = cv2.resize(face_image_np, self.face_size, interpolation=cv2.INTER_LINEAR)
+        # Load the annotations
+        with open(sample.annotation_fp, 'rb') as f:
+            annotations = pickle.load(f)
 
-        # Resize the raw input image if needed
-        # if self.img_size is not None:
-        #     image_np = cv2.resize(image_np, self.img_size, interpolation=cv2.INTER_LINEAR)
-        #     sample.annotations = resize_annotations(sample.annotations, image.size, self.img_size)
-        #     intrinsics = resize_intrinsics(calibration_data.camera_matrix, image.size, self.img_size)
-        # else:
-        #     intrinsics = calibration_data.camera_matrix
-        
-        # Revert the image to the correct format
-        image_np = np.moveaxis(image_np, -1, 0)
-        face_image_np = np.moveaxis(face_image_np, -1, 0)
-
-        sample_dict = {
+        item_dict = {
+            'person_id': sample.participant_id,
             'image': image_np,
-            'face_image': face_image_np,
-            # 'intrinsics': intrinsics,
-            # 'dist_coeffs': calibration_data.dist_coeffs,
-            # 'screen_R': calibration_data.monitor_rvecs.astype(np.float32),
-            # 'screen_t': calibration_data.monitor_tvecs.astype(np.float32),
-            # 'screen_height_mm': calibration_data.monitor_height_mm.astype(np.float32),
-            # 'screen_height_px': calibration_data.monitor_height_px.astype(np.float32),
-            # 'screen_width_mm': calibration_data.monitor_width_mm.astype(np.float32),
-            # 'screen_width_px': calibration_data.monitor_width_px.astype(np.float32),
-            # 'gaze_origin_depth_mean': self.gaze_origin_depth_mean,
-            # 'gaze_origin_depth_std': self.gaze_origin_depth_std,
-            # 'pog_px_mean': self.pog_px_mean,
-            # 'pog_px_std': self.pog_px_std,
-            # 'pog_mm': pog_mm,
-            # 'mediapipe_head_vector': head_direction_xyz.astype(np.float32),
-            # 'relative_gaze_vector': relative_gaze_vector.astype(np.float32)
+            'intrinsics': calibration_data.camera_matrix,
+            'dist_coeffs': calibration_data.dist_coeffs,
+            'screen_RT': calibration_data.screen_RT.astype(np.float32),
+            'screen_height_cm': calibration_data.monitor_height_cm,
+            'screen_height_px': calibration_data.monitor_height_px,
+            'screen_width_cm': calibration_data.monitor_width_cm,
+            'screen_width_px': calibration_data.monitor_width_px,
         }
-
-        # Extract the PyTorch friendly data
-        pytorch_friendly_sample = {}
-        if pytorch_friendly:
-            for k, v in asdict(sample.annotations).items():
-                if k not in ['facial_detection_results']:
-                    pytorch_friendly_sample[k] = v
-
-        sample_dict.update(pytorch_friendly_sample)
-        return sample_dict
+        item_dict.update(asdict(annotations))
+        return item_dict
+        
 
     def __getitem__(self, index: int) -> Dict[str, np.ndarray]:
         return self.get_sample(index)
@@ -813,22 +800,22 @@ class EyeDiapDataset(Dataset):
         return pd.DataFrame(data)
         
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
 
-    from ..constants import DEFAULT_CONFIG
-    with open(DEFAULT_CONFIG, 'r') as f:
-        config = yaml.safe_load(f)
+#     from ..constants import DEFAULT_CONFIG
+#     with open(DEFAULT_CONFIG, 'r') as f:
+#         config = yaml.safe_load(f)
 
-    dataset = EyeDiapDataset(
-        GIT_ROOT / pathlib.Path(config['datasets']['EyeDiap']['path']),
-        # dataset_size=10,
-        participants=[1],
-        # per_participant_size=2,
-        video_type='hd',
-        visualize=True,
-        frame_skip_rate=4
-    )
-    print(len(dataset))
+#     dataset = EyeDiapDataset(
+#         GIT_ROOT / pathlib.Path(config['datasets']['EyeDiap']['path']),
+#         # dataset_size=10,
+#         participants=[1],
+#         # per_participant_size=2,
+#         video_type='hd',
+#         visualize=True,
+#         frame_skip_rate=4
+#     )
+#     print(len(dataset))
     
-    sample = dataset[0]
-    print(json.dumps({k: str(v.dtype) for k, v in sample.items()}, indent=4))
+#     sample = dataset[0]
+#     print(json.dumps({k: str(v.dtype) for k, v in sample.items()}, indent=4))

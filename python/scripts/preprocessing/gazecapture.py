@@ -8,6 +8,7 @@ from typing import List, Dict, Union, Optional, Tuple
 import shutil
 import json
 from dataclasses import asdict
+import pickle
 
 import pandas as pd
 from tqdm import tqdm
@@ -20,9 +21,8 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
-from ..constants import GIT_ROOT
-from ..data_protocols import Annotations, CalibrationData, Sample
-from .utils import resize_annotations, resize_intrinsics, draw_landmarks_on_image, compute_uv_texture
+from webeyetrack.constants import GIT_ROOT
+from webeyetrack.data_protocols import Annotations, CalibrationData, Sample
 
 CWD = pathlib.Path(__file__).parent
 LEFT_EYE_LANDMARKS = [263, 362, 386, 374, 380]
@@ -213,65 +213,49 @@ class GazeCaptureDataset(Dataset):
                 num_samples += 1
                 per_participant_samples += 1
 
-    def __getitem__(self, idx: int):
-        # Make a copy of the sample
-        sample = self.samples[idx]
+    def __getitem__(self, index: int):
+        sample = self.samples.iloc[index]
 
-        # Create torch-compatible data
+        # Load image
         image = Image.open(sample.image_fp)
         image_np = np.array(image)
 
-        # Convert from uint8 to float32
-        image_np = image_np.astype(np.float32) / 255.0
+        # Get the calibration
+        calibration_data = self.participant_calibration_data[sample.participant_id]
 
-        # Crop out the face image and resize to have standard size
-        face_bbox = sample.annotations.face_bbox
-        
-        # Clip the face bounding box to the image size and avoid negative indexing
-        face_bbox[0] = np.clip(face_bbox[0], 0, image.size[1] - 1)
-        face_bbox[1] = np.clip(face_bbox[1], 0, image.size[0] - 1)
-        face_bbox[2] = np.clip(face_bbox[2], 0, image.size[1] - 1)
-        face_bbox[3] = np.clip(face_bbox[3], 0, image.size[0] - 1)
-        face_image_np = image_np[face_bbox[0]:face_bbox[2], face_bbox[1]:face_bbox[3]]
-        if self.face_size is not None:
-            face_image_np = cv2.resize(face_image_np, self.face_size, interpolation=cv2.INTER_LINEAR)
+        # Load the annotations
+        with open(sample.annotation_fp, 'rb') as f:
+            annotations = pickle.load(f)
 
-        # Revert the image to the correct format
-        image_np = np.moveaxis(image_np, -1, 0)
-        face_image_np = np.moveaxis(face_image_np, -1, 0)
-
-        # Estimate intrinsics from the image size
-        intrinsics = np.array([
-            [image_np.shape[1], 0, image_np.shape[1] / 2],
-            [0, image_np.shape[0], image_np.shape[0] / 2],
-            [0, 0, 1]
-        ])
-
-        sample_dict = {
+        item_dict = {
+            'person_id': sample.participant_id,
             'image': image_np,
-            'face_image': face_image_np,
-            'intrinsics': intrinsics,
-            'dist_coeffs': np.zeros(5),
+            'intrinsics': calibration_data.camera_matrix,
+            'dist_coeffs': calibration_data.dist_coeffs,
+            'screen_RT': calibration_data.screen_RT.astype(np.float32),
+            'screen_height_cm': calibration_data.monitor_height_cm,
+            'screen_height_px': calibration_data.monitor_height_px,
+            'screen_width_cm': calibration_data.monitor_width_cm,
+            'screen_width_px': calibration_data.monitor_width_px,
         }
-        sample_dict.update(asdict(sample.annotations))
-
-        return sample_dict
+        item_dict.update(asdict(annotations))
+        return item_dict
 
     def __len__(self):
         return len(self.samples)
     
-if __name__ == "__main__":
+# if __name__ == "__main__":
     
-    from ..constants import DEFAULT_CONFIG
-    with open(DEFAULT_CONFIG, 'r') as f:
-        config = yaml.safe_load(f)
+#     from ..constants import DEFAULT_CONFIG
+#     with open(DEFAULT_CONFIG, 'r') as f:
+#         config = yaml.safe_load(f)
 
-    dataset = GazeCaptureDataset(
-        dataset_dir=GIT_ROOT / pathlib.Path(config['datasets']['GazeCapture']['path']),
-        per_participant_size=10,
-        dataset_size=20
-    )
-    print(len(dataset))
+#     dataset = GazeCaptureDataset(
+#         dataset_dir=GIT_ROOT / pathlib.Path(config['datasets']['GazeCapture']['path']),
+#         per_participant_size=10,
+#         dataset_size=20
+#     )
+#     print(len(dataset))
 
-    sample = dataset[0]
-    print(json.dumps({k: str(v.dtype) for k, v in sample.items()}, indent=4))
+#     sample = dataset[0]
+#     print(json.dumps({k: str(v.dtype) for k, v in sample.items()}, indent=4))

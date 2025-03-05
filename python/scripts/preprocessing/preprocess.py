@@ -19,6 +19,8 @@ from webeyetrack.constants import GIT_ROOT
 from webeyetrack.utilities import vector_to_pitch_yaw, rotation_matrix_to_euler_angles, pitch_yaw_roll_to_gaze_vector
 
 from mpiifacegaze import MPIIFaceGazeDataset
+from eyediap import EyeDiapDataset
+from gazecapture import GazeCaptureDataset
 
 CWD = pathlib.Path(__file__).parent
 SCRIPTS_DIR = CWD.parent
@@ -122,21 +124,21 @@ def data_normalization_entry(i, sample):
 
     oh, ow = eyes_patch.shape[:2]
 
-    # # Basic visualization for debugging purposes
-    # if i % 25 == 0:
-    #     # to_visualize = cv2.equalizeHist(cv2.cv2tColor(patch, cv2.COLOR_RGB2GRAY))
-    #     to_visualize = cv2.cvtColor(eyes_patch.copy(), cv2.COLOR_RGB2BGR)
-    #     # to_visualize = draw_gaze(to_visualize, (0.5 * ow, 0.5 * oh), n_g,
-    #     #                             length=80.0, thickness=1)
-    #     to_visualize = draw_axis(to_visualize, g_pitch, g_yaw, 0, tdx=0.5 * ow, tdy=0.4 * oh, size=100, show_xy=True)
-    #     to_visualize = draw_axis(to_visualize, h_pitch, h_yaw, 0, tdx=0.5 * ow, tdy=0.6 * oh, size=100, color=(0, 255, 0), show_xy=True)
-    #     # to_visualize = draw_gaze(to_visualize, (0.5 * ow, 0.75 * oh), n_h,
-    #     #                             length=40.0, thickness=3, color=(0, 0, 0))
-    #     # to_visualize = draw_gaze(to_visualize, (0.5 * ow, 0.75 * oh), n_h,
-    #     #                             length=40.0, thickness=1,
-    #     #                             color=(255, 255, 255))
-    #     cv2.imshow('normalized_patch', to_visualize)
-    #     cv2.waitKey(1)
+    # Basic visualization for debugging purposes
+    if i % 25 == 0:
+        # to_visualize = cv2.equalizeHist(cv2.cv2tColor(patch, cv2.COLOR_RGB2GRAY))
+        to_visualize = cv2.cvtColor(eyes_patch.copy(), cv2.COLOR_RGB2BGR)
+        # to_visualize = draw_gaze(to_visualize, (0.5 * ow, 0.5 * oh), n_g,
+        #                             length=80.0, thickness=1)
+        to_visualize = draw_axis(to_visualize, g_pitch, g_yaw, 0, tdx=0.5 * ow, tdy=0.4 * oh, size=100, show_xy=True)
+        to_visualize = draw_axis(to_visualize, h_pitch, h_yaw, 0, tdx=0.5 * ow, tdy=0.6 * oh, size=100, color=(0, 255, 0), show_xy=True)
+        # to_visualize = draw_gaze(to_visualize, (0.5 * ow, 0.75 * oh), n_h,
+        #                             length=40.0, thickness=3, color=(0, 0, 0))
+        # to_visualize = draw_gaze(to_visualize, (0.5 * ow, 0.75 * oh), n_h,
+        #                             length=40.0, thickness=1,
+        #                             color=(255, 255, 255))
+        cv2.imshow('normalized_patch', to_visualize)
+        cv2.waitKey(1)
 
     return {
         'pixels': eyes_patch,
@@ -169,6 +171,13 @@ def load_datasets(args):
     #         video_type='vga',
     #         frame_skip_rate=5
     #     )
+    elif (args.dataset == 'GazeCapture'):
+        dataset = GazeCaptureDataset(
+            GIT_ROOT / pathlib.Path(config['datasets']['GazeCapture']['path']),
+            participants=1,
+            dataset_size=20,
+            per_participant_size=10,
+        )
     else:
         raise ValueError(f"Dataset {args.dataset} not supported")
     
@@ -228,7 +237,7 @@ if __name__ == '__main__':
     # Parse arguments
     parser = argparse.ArgumentParser()
     # parser.add_argument('--dataset', type=str, required=True, choices=['MPIIFaceGaze', 'EyeDiap'], help='Dataset to evaluate')
-    parser.add_argument('--dataset', type=str, default='MPIIFaceGaze', choices=['MPIIFaceGaze', 'EyeDiap'], help='Dataset to evaluate')
+    parser.add_argument('--dataset', type=str, required=True, choices=['MPIIFaceGaze', 'EyeDiap'], help='Dataset to evaluate')
     args = parser.parse_args()
     
     # Generate the dataset

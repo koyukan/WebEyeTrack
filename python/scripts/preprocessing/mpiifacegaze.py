@@ -328,11 +328,9 @@ class MPIIFaceGazeDataset():
         return self.samples
             
     def __getitem__(self, index: int):
-        # Make a copy of the sample
-        # sample = copy.deepcopy(self.samples[index])
         sample = self.samples.iloc[index]
 
-        # Create torch-compatible data
+        # Load image
         image = Image.open(sample.image_fp)
         image_np = np.array(image)
 

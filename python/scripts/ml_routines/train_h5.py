@@ -22,7 +22,7 @@ BATCH_SIZE = 16
 IMG_SIZE = 128
 EPOCHS = 20
 
-H5_FILE = GENERATED_DATASET_DIR / 'MPIIFaceGaze.h5'
+H5_FILE = GENERATED_DATASET_DIR / 'MPIIFaceGaze_entire.h5'
 MODELS_DIR = FILE_DIR / 'models'
 os.makedirs(MODELS_DIR, exist_ok=True)
 LOG_PATH = FILE_DIR / 'logs'
@@ -33,19 +33,11 @@ RUN_DIR = MODELS_DIR / TIMESTAMP
 os.makedirs(RUN_DIR, exist_ok=True)
 
 # Prepare datasets
-full_dataset, dataset_size = load_total_dataset(H5_FILE)
-print(f"Dataset size: {dataset_size}")
-
-# Split the dataset
-train_size = int(0.8 * dataset_size)
-val_size = int(0.2 * dataset_size)
-
-# Shuffle and split
-full_dataset = full_dataset.shuffle(dataset_size, seed=42)
-train_dataset = full_dataset.take(train_size).batch(BATCH_SIZE).prefetch(tf.data.experimental.AUTOTUNE)
-val_dataset = full_dataset.skip(train_size).batch(BATCH_SIZE).prefetch(tf.data.experimental.AUTOTUNE)
-
-train_dataset_size = len(list(train_dataset))
+train_dataset, train_dataset_size = load_total_dataset(H5_FILE, participants=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+val_dataset, val_dataset_size = load_total_dataset(H5_FILE, participants=[13, 14])
+print(f"Train dataset size: {train_dataset_size}, Validation dataset size: {val_dataset_size}")
+train_dataset = train_dataset.batch(BATCH_SIZE).prefetch(tf.data.experimental.AUTOTUNE)
+val_dataset = val_dataset.batch(BATCH_SIZE).prefetch(tf.data.experimental.AUTOTUNE)
 
 # Make a learning rate schedule based on the epoch instead of steps
 lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
