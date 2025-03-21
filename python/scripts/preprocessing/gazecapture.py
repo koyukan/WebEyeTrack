@@ -45,6 +45,7 @@ class GazeCaptureDataset():
         img_size: Tuple[int, int] = None,
         dataset_size: Optional[int] = None,
         per_participant_size: Optional[int] = None,
+        participants: Optional[List[str]] = None
     ):
         
         # Process input variables
@@ -56,6 +57,11 @@ class GazeCaptureDataset():
         self.per_participant_size = per_participant_size
         self.face_size = face_size
         self.img_size = img_size
+        self.participants = participants
+        self.face_landmarker = None
+        self.preprocessing()
+
+    def load_model(self):
 
         # Setup MediaPipe Face Facial Landmark model
         base_options = python.BaseOptions(model_asset_path=str(GIT_ROOT / 'python' / 'weights' / 'face_landmarker_v2_with_blendshapes.task'))
@@ -64,8 +70,6 @@ class GazeCaptureDataset():
                                             output_facial_transformation_matrixes=True,
                                             num_faces=1)
         self.face_landmarker = vision.FaceLandmarker.create_from_options(options)
-
-        self.preprocessing()
 
     def preprocessing(self):
 
@@ -77,7 +81,10 @@ class GazeCaptureDataset():
                 gz_element.unlink()
 
         # Now obtain each participants folder
-        participant_dir = [x for x in self.dataset_dir.iterdir() if x.is_dir()]
+        if self.participants is not None:
+            participant_dir = [self.dataset_dir / x for x in self.participants]
+        else:
+            participant_dir = [x for x in self.dataset_dir.iterdir() if x.is_dir()]
 
         # Saving information
         # self.samples: List[Sample] = []
@@ -186,35 +193,39 @@ class GazeCaptureDataset():
 
                 # If the annotation already exists, create the sample that is referenced
                 annotation_fp = part_dir / 'samples' / f'{frame}.pkl'
-                if annotation_fp.exists():
-                    self.samples['id'].append(f"{participant_id}_{i}")
-                    self.samples['participant_id'].append(participant_id)
-                    self.samples['image_fp'].append(frame_fp)
-                    self.samples['annotation_fp'].append(annotation_fp)
-                    self.sample_calibration_data.append(calibration_data)
-                    num_samples += 1
-                    per_participant_samples += 1
-                    continue
+                # if annotation_fp.exists():
+                #     self.samples['id'].append(f"{participant_id}_{i}")
+                #     self.samples['participant_id'].append(participant_id)
+                #     self.samples['image_fp'].append(frame_fp)
+                #     self.samples['annotation_fp'].append(annotation_fp)
+                #     self.sample_calibration_data.append(calibration_data)
+                #     num_samples += 1
+                #     per_participant_samples += 1
+                #     continue
 
                 # Load the image
                 image_np = cv2.imread(str(frame_fp))
 
+                if self.face_landmarker is None:
+                    self.load_model()
+
                 # Detect the facial landmarks via MediaPipe
                 mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image_np)
                 detection_results = self.face_landmarker.detect(mp_image)
+                i_h, i_w, _ = image_np.shape
 
                 # Compute the face bounding box based on the MediaPipe landmarks
                 try:
                     face_landmarks_proto = detection_results.face_landmarks[0]
                 except:
-                    # print(f"Participant {participant_id} image {items[0]} does not have a face detected.")
+                    print(f"Participant {participant_id} image at frame {i} does not have a face detected.")
                     continue
 
                 # Save the detection results as numpy arrays
                 face_landmarks_all = np.array([[lm.x, lm.y, lm.z, lm.visibility, lm.presence] for lm in face_landmarks_proto])
                 face_landmarks_rt = detection_results.facial_transformation_matrixes[0]
                 face_blendshapes = detection_results.face_blendshapes[0]
-                face_landmarks = np.array([[lm.x * image_np.shape[0], lm.y * image_np.shape[1]] for lm in face_landmarks_proto])
+                face_landmarks = np.array([[lm.x * i_w, lm.y * i_h] for lm in face_landmarks_proto])
                 
                 # Draw the landmarks on the image
                 # image_landmarks = draw_landmarks_on_image(image_np, detection_results)

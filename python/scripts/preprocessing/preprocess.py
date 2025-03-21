@@ -3,6 +3,7 @@ import pathlib
 import argparse
 import datetime
 from collections import defaultdict
+import json
 
 import numpy as np
 import yaml
@@ -14,7 +15,7 @@ import h5py
 import matplotlib
 matplotlib.use('TkAgg')
 
-from webeyetrack.vis import draw_axis
+from webeyetrack.vis import draw_axis, draw_landmarks_simple
 from webeyetrack.constants import GIT_ROOT
 from webeyetrack.utilities import vector_to_pitch_yaw, rotation_matrix_to_euler_angles, pitch_yaw_roll_to_gaze_vector
 
@@ -27,6 +28,10 @@ SCRIPTS_DIR = CWD.parent
 GENERATED_DATASET_DIR = GIT_ROOT / 'data' / 'generated'
 os.makedirs(GENERATED_DATASET_DIR, exist_ok=True)
 TIMESTAMP = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+
+# Load the GazeCapture participant IDs
+with open(CWD / 'GazeCapture_participant_ids.json', 'r') as f:
+    GAZE_CAPTURE_IDS = json.load(f)
 
 with open(SCRIPTS_DIR / 'config.yaml', 'r') as f:
     config = yaml.safe_load(f)
@@ -60,7 +65,15 @@ def data_normalization_entry(i, sample):
 
     # Select the image
     frame = sample['image']
+    h, w, _ = frame.shape
     facial_landmarks = sample['facial_landmarks_2d']
+    # facial_landmarks = sample['facial_landmarks'][:, :2] * np.array([w, h])
+    detection_results = sample['facial_detection_results']
+    draw_frame = frame.copy()
+
+    # Draw the landmarks
+    draw_landmarks_simple(draw_frame, facial_landmarks)
+    # draw_frame = draw_landmarks_on_image(draw_frame, detection_results)
 
     # Compute the homography matrix (4 pts) from the points to a final flat rectangle
     lefttop = facial_landmarks[103]
@@ -137,6 +150,8 @@ def data_normalization_entry(i, sample):
         # to_visualize = draw_gaze(to_visualize, (0.5 * ow, 0.75 * oh), n_h,
         #                             length=40.0, thickness=1,
         #                             color=(255, 255, 255))
+        cv2.imshow('frame', frame)
+        cv2.imshow('draw_frame', draw_frame)
         cv2.imshow('normalized_patch', to_visualize)
         cv2.waitKey(1)
 
@@ -172,12 +187,15 @@ def load_datasets(args):
     #         frame_skip_rate=5
     #     )
     elif (args.dataset == 'GazeCapture'):
-        dataset = GazeCaptureDataset(
-            GIT_ROOT / pathlib.Path(config['datasets']['GazeCapture']['path']),
-            participants=1,
-            dataset_size=20,
-            per_participant_size=10,
-        )
+        person_datasets = {}
+        for participant in GAZE_CAPTURE_IDS:
+            dataset = GazeCaptureDataset(
+                GIT_ROOT / pathlib.Path(config['datasets']['GazeCapture']['path']),
+                participants=[participant],
+                # dataset_size=20,
+                # per_participant_size=10,
+            )
+            person_datasets[participant] = dataset
     else:
         raise ValueError(f"Dataset {args.dataset} not supported")
     
@@ -236,8 +254,8 @@ if __name__ == '__main__':
 
     # Parse arguments
     parser = argparse.ArgumentParser()
-    # parser.add_argument('--dataset', type=str, required=True, choices=['MPIIFaceGaze', 'EyeDiap'], help='Dataset to evaluate')
-    parser.add_argument('--dataset', type=str, required=True, choices=['MPIIFaceGaze', 'EyeDiap'], help='Dataset to evaluate')
+    # parser.add_argument('--dataset', type=str, required=True, choices=['MPIIFaceGaze', 'GazeCapture'], help='Dataset to evaluate')
+    parser.add_argument('--dataset', type=str, required=True, choices=['MPIIFaceGaze', 'GazeCapture'], help='Dataset to evaluate')
     args = parser.parse_args()
     
     # Generate the dataset

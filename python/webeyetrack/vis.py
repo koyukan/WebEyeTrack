@@ -63,8 +63,15 @@ class TimeSeriesOscilloscope:
 
         return self.img
 
+def draw_landmarks_simple(draw_frame, landmarks):
+    for pt in landmarks:
+        cv2.circle(draw_frame, (int(pt[0]), int(pt[1])), 1, (0, 255, 0), -1)
+
 def draw_landmarks_on_image(rgb_image, detection_result):
-    face_landmarks_list = detection_result.face_landmarks
+    if type(detection_result) == dict:
+        face_landmarks_list = detection_result['face_landmarks']
+    else:
+        face_landmarks_list = detection_result.face_landmarks
     annotated_image = np.copy(rgb_image)
 
     # Loop through the detected faces to visualize.
