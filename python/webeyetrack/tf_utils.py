@@ -49,7 +49,8 @@ class GazeVisualizationCallback(tf.keras.callbacks.Callback):
 
     def on_epoch_end(self, epoch, logs=None):
         # Select a batch from the dataset
-        for images, (gaze_vector, embedding) in self.dataset.take(1):
+        # for images, (gaze_vector, embedding) in self.dataset.take(1):
+        for images, gaze_vector in self.dataset.take(1):
             pred_gaze_vectors, pred_gaze_z = self.model.predict(images)  # Get model predictions
             images = images.numpy()  # Convert images to NumPy array
             # gaze_pitch_yaw = gaze_pitch_yaw.numpy()  # Ground truth gaze vectors
@@ -62,7 +63,7 @@ class GazeVisualizationCallback(tf.keras.callbacks.Callback):
                 # Denormalize image
                 # images[i] = (images[i] * norm_data['image_std']) + norm_data['image_mean']
                 uint8_image = (images[i] * 255).astype(np.uint8)
-                uint8_image = cv2.cvtColor(uint8_image, cv2.COLOR_RGB2BGR)
+                # uint8_image = cv2.cvtColor(uint8_image, cv2.COLOR_RGB2BGR)
 
                 # import pdb; pdb.set_trace()
                 gt_gaze_vector = gaze_vector[i]

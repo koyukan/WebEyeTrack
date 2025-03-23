@@ -36,8 +36,8 @@ elif DATASET == 'GazeCapture':
     with open(CWD.parent / 'GazeCapture_participant_ids.json', 'r') as f:
         GAZE_CAPTURE_IDS = json.load(f)
 
-    # For testing, only using 20 participants
-    GAZE_CAPTURE_IDS = GAZE_CAPTURE_IDS[:20]
+    # For testing, only using 10 participants
+    GAZE_CAPTURE_IDS = GAZE_CAPTURE_IDS[:10]
     
     # Split the GAZE_CAPTURE_IDS into train, validation, and test sets (80-10-10)
     np.random.seed(42)
@@ -66,8 +66,9 @@ def load_datasets():
     val_dataset, val_dataset_size = load_total_dataset(H5_FILE, participants=VAL_IDS)
     test_dataset, test_dataset_size = load_total_dataset(H5_FILE, participants=TEST_IDS)
     print(f"Train dataset size: {train_dataset_size}, Validation dataset size: {val_dataset_size}, Test dataset size: {test_dataset_size}")
-    train_dataset = train_dataset.batch(BATCH_SIZE).prefetch(tf.data.experimental.AUTOTUNE)
-    val_dataset = val_dataset.batch(BATCH_SIZE).prefetch(tf.data.experimental.AUTOTUNE)
+    train_dataset = train_dataset.batch(BATCH_SIZE).cache().prefetch(tf.data.experimental.AUTOTUNE)
+    val_dataset = val_dataset.batch(BATCH_SIZE).cache().prefetch(tf.data.experimental.AUTOTUNE)
+    test_dataset = test_dataset.batch(BATCH_SIZE).cache().prefetch(tf.data.experimental.AUTOTUNE)
 
     # Sanity check
     for img, label in train_dataset.take(1):
@@ -111,7 +112,7 @@ checkpoint_callback = ModelCheckpoint(
     ave_best_only=True, 
     save_weights_only=True,
 )
-tensorboard_callback = TensorBoard(log_dir=LOG_PATH)
+tensorboard_callback = TensorBoard(log_dir=LOG_PATH, histogram_freq=1, profile_batch='5,10')
 learning_rate_callback = LearningRateScheduler(lambda epoch: 1e-3 * (0.1 ** (epoch // 10)))
 
 # Subset the dataset for visualization (use a few samples)
@@ -154,5 +155,6 @@ model.tf_model.fit(
 )
 
 # Evaluate model
-# results = model.evaluate(test_dataset)
+# results = model.tf_model.evaluate(test_dataset)
+# print(results)
 # print(f"Test Loss: {results[0]}, Test Angular Error (Degrees): {results[1]}")
