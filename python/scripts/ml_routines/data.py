@@ -1,5 +1,6 @@
 import h5py
 import tensorflow as tf
+from tqdm import tqdm
 
 class generator:
     def __init__(self, file, participants=None):
@@ -27,17 +28,18 @@ class generator:
                     head_labels = labels[3:]
 
                     # Placeholder embedding
-                    embedding = tf.zeros(128, dtype=tf.float32)
+                    # embedding = tf.zeros(128, dtype=tf.float32)
 
-                    yield (image, (gaze_labels, embedding))
+                    # yield (image, (gaze_labels, embedding))
+                    yield (image, gaze_labels)
 
 def load_total_dataset(hdf5_path, participants=None):
 
     # Determine the size of the hdf5 file
     with h5py.File(hdf5_path, 'r') as hf:
         total = 0
-        for group in hf:
-            if participants is not None and int(group) not in participants:
+        for group in tqdm(hf, desc="Calculating dataset size"):
+            if ((int(group) not in participants) and (group not in participants)):
                 continue
             total += hf[group]["pixels"].shape[0]
 
@@ -45,10 +47,11 @@ def load_total_dataset(hdf5_path, participants=None):
         generator(hdf5_path, participants),
         output_signature=(
             tf.TensorSpec(shape=(128, 512, 3), dtype=tf.float32),
-            (
-                tf.TensorSpec(shape=(3,), dtype=tf.float32),
-                tf.TensorSpec(shape=(128,), dtype=tf.float32),
-            )
+            tf.TensorSpec(shape=(3,), dtype=tf.float32),
+            # (
+            #     tf.TensorSpec(shape=(3,), dtype=tf.float32),
+            #     tf.TensorSpec(shape=(128,), dtype=tf.float32),
+            # )
         )
     )
     return ds, total

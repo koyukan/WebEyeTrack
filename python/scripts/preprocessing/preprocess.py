@@ -188,7 +188,7 @@ def load_datasets(args):
     #     )
     elif (args.dataset == 'GazeCapture'):
         person_datasets = {}
-        for participant in GAZE_CAPTURE_IDS:
+        for participant in tqdm(GAZE_CAPTURE_IDS, desc='Participants'):
             dataset = GazeCaptureDataset(
                 GIT_ROOT / pathlib.Path(config['datasets']['GazeCapture']['path']),
                 participants=[participant],
@@ -218,7 +218,11 @@ def generate_datasets(args):
         for i, sample in tqdm(enumerate(person_dataset), total=len(person_dataset), desc='Sample'):
             
             # Perform data normalization
-            processed_entry = data_normalization_entry(i, sample)
+            try:
+                processed_entry = data_normalization_entry(i, sample)
+            except Exception as e:
+                print(f"Error processing entry {i}: {e}")
+                continue
 
             to_write['pixels'].append(processed_entry['pixels'])
             to_write['labels'].append(np.concatenate([

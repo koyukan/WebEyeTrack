@@ -100,16 +100,16 @@ def get_gaze_model(input_shape=(128, 512, 3)): #head_rotation_shape=(3,)):
     mlp = tf.keras.layers.Dense(64, activation='relu')(mlp)
 
     # Gaze vector output
-    gaze_pitch_yaw = tf.keras.layers.Dense(3, activation='linear', name="gaze_output")(mlp)
+    gaze_vector = tf.keras.layers.Dense(3, activation='linear', name="gaze_output")(mlp)
 
     # Ensure the output is normalized
-    gaze_pitch_yaw = tf.keras.layers.Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name="gaze_output_norm")(gaze_pitch_yaw)
+    gaze_norm_vector = tf.keras.layers.Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name="gaze_output_norm")(gaze_vector)
 
     # Embedding output (for contrastive learning)
     embedding_output = tf.keras.layers.Dense(EMBEDDING_SIZE, activation='tanh', name="embedding_output")(mlp)
 
     # return Model(inputs=x, outputs=gaze_output), backbone
-    return Model(inputs=[x], outputs=[gaze_pitch_yaw, embedding_output]), backbone
+    return Model(inputs=[x], outputs=[gaze_norm_vector, embedding_output]), backbone
 
 def init_model(model):
     model([tf.random.uniform((1, 128, 512, 3))])

@@ -36,6 +36,10 @@ CWD = pathlib.Path(__file__).parent
 LEFT_EYE_LANDMARKS = [263, 362, 386, 374, 380]
 RIGHT_EYE_LANDMARKS = [33, 133, 159, 145, 153]
 
+# Load the GazeCapture participant IDs
+with open(CWD.parent / 'GazeCapture_participant_ids.json', 'r') as f:
+    GAZE_CAPTURE_IDS = json.load(f)
+
 class GazeCaptureDataset():
 
     def __init__(
@@ -193,15 +197,27 @@ class GazeCaptureDataset():
 
                 # If the annotation already exists, create the sample that is referenced
                 annotation_fp = part_dir / 'samples' / f'{frame}.pkl'
-                # if annotation_fp.exists():
-                #     self.samples['id'].append(f"{participant_id}_{i}")
-                #     self.samples['participant_id'].append(participant_id)
-                #     self.samples['image_fp'].append(frame_fp)
-                #     self.samples['annotation_fp'].append(annotation_fp)
-                #     self.sample_calibration_data.append(calibration_data)
-                #     num_samples += 1
-                #     per_participant_samples += 1
-                #     continue
+                meta_fp = part_dir / 'samples' / f'meta.json'
+                if annotation_fp.exists():
+                    self.samples['id'].append(f"{participant_id}_{i}")
+                    self.samples['participant_id'].append(participant_id)
+                    self.samples['image_fp'].append(frame_fp)
+                    self.samples['annotation_fp'].append(annotation_fp)
+                    self.sample_calibration_data.append(calibration_data)
+                    num_samples += 1
+                    per_participant_samples += 1
+                    continue
+
+                # Load the meta
+                if meta_fp.exists():
+                    with open(meta_fp, 'r') as f:
+                        meta = json.load(f)
+                else:
+                    meta = {}
+
+                # If face detection is not successful, skip the frame
+                if 'face_detected' in meta and not meta['face_detected']:
+                    continue
 
                 # Load the image
                 image_np = cv2.imread(str(frame_fp))
@@ -219,6 +235,12 @@ class GazeCaptureDataset():
                     face_landmarks_proto = detection_results.face_landmarks[0]
                 except:
                     print(f"Participant {participant_id} image at frame {i} does not have a face detected.")
+
+                    # Make that this frame is not to be reconsidered via the meta.json file
+                    meta['face_detected'] = False
+                    with open(meta_fp, 'w') as f:
+                        json.dump(meta, f)
+
                     continue
 
                 # Save the detection results as numpy arrays
@@ -359,8 +381,9 @@ if __name__ == "__main__":
 
     dataset = GazeCaptureDataset(
         dataset_dir=GIT_ROOT / pathlib.Path(config['datasets']['GazeCapture']['path']),
-        per_participant_size=10,
-        dataset_size=20
+        # per_participant_size=10,
+        # dataset_size=20
+        participants=GAZE_CAPTURE_IDS
     )
     print(len(dataset))
 
