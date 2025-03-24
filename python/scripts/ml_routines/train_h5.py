@@ -37,8 +37,8 @@ elif DATASET == 'GazeCapture':
         GAZE_CAPTURE_IDS = json.load(f)
 
     # For testing, only using 10 participants
-    GAZE_CAPTURE_IDS = GAZE_CAPTURE_IDS[:100]
-    MAX_PER_PARTICIPANT = BATCH_SIZE * 3
+    GAZE_CAPTURE_IDS = GAZE_CAPTURE_IDS[:1000]
+    MAX_PER_PARTICIPANT = BATCH_SIZE * 2
     
     # Split the GAZE_CAPTURE_IDS into train, validation, and test sets (80-10-10)
     np.random.seed(42)
