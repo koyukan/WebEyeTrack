@@ -19,7 +19,7 @@ FILE_DIR = pathlib.Path(__file__).parent
 GENERATED_DATASET_DIR = GIT_ROOT / 'data' / 'generated'
 
 # Constants
-BATCH_SIZE = 2**6 # 64
+BATCH_SIZE = 16
 IMG_SIZE = 128
 EPOCHS = 20
 
@@ -37,7 +37,8 @@ elif DATASET == 'GazeCapture':
         GAZE_CAPTURE_IDS = json.load(f)
 
     # For testing, only using 10 participants
-    GAZE_CAPTURE_IDS = GAZE_CAPTURE_IDS[:10]
+    GAZE_CAPTURE_IDS = GAZE_CAPTURE_IDS[:100]
+    MAX_PER_PARTICIPANT = BATCH_SIZE * 3
     
     # Split the GAZE_CAPTURE_IDS into train, validation, and test sets (80-10-10)
     np.random.seed(42)
@@ -62,13 +63,13 @@ def load_datasets():
     
     # Prepare datasets
     print(f"Loading datasets from {H5_FILE}")
-    train_dataset, train_dataset_size = load_total_dataset(H5_FILE, participants=TRAIN_IDS)
-    val_dataset, val_dataset_size = load_total_dataset(H5_FILE, participants=VAL_IDS)
-    test_dataset, test_dataset_size = load_total_dataset(H5_FILE, participants=TEST_IDS)
+    train_dataset, train_dataset_size = load_total_dataset(H5_FILE, participants=TRAIN_IDS, batch_size=BATCH_SIZE, max_samples_per_participant=MAX_PER_PARTICIPANT)
+    val_dataset, val_dataset_size = load_total_dataset(H5_FILE, participants=VAL_IDS, batch_size=BATCH_SIZE, max_samples_per_participant=MAX_PER_PARTICIPANT)
+    test_dataset, test_dataset_size = load_total_dataset(H5_FILE, participants=TEST_IDS, batch_size=BATCH_SIZE, max_samples_per_participant=MAX_PER_PARTICIPANT)
     print(f"Train dataset size: {train_dataset_size}, Validation dataset size: {val_dataset_size}, Test dataset size: {test_dataset_size}")
-    train_dataset = train_dataset.batch(BATCH_SIZE).cache().prefetch(tf.data.experimental.AUTOTUNE)
-    val_dataset = val_dataset.batch(BATCH_SIZE).cache().prefetch(tf.data.experimental.AUTOTUNE)
-    test_dataset = test_dataset.batch(BATCH_SIZE).cache().prefetch(tf.data.experimental.AUTOTUNE)
+    # train_dataset = train_dataset.batch(BATCH_SIZE).cache().prefetch(tf.data.experimental.AUTOTUNE)
+    # val_dataset = val_dataset.batch(BATCH_SIZE).cache().prefetch(tf.data.experimental.AUTOTUNE)
+    # test_dataset = test_dataset.batch(BATCH_SIZE).cache().prefetch(tf.data.experimental.AUTOTUNE)
 
     # Sanity check
     for img, label in train_dataset.take(1):
@@ -112,8 +113,12 @@ checkpoint_callback = ModelCheckpoint(
     ave_best_only=True, 
     save_weights_only=True,
 )
-tensorboard_callback = TensorBoard(log_dir=LOG_PATH, histogram_freq=1, profile_batch='5,10')
-learning_rate_callback = LearningRateScheduler(lambda epoch: 1e-3 * (0.1 ** (epoch // 10)))
+tensorboard_callback = TensorBoard(
+    log_dir=LOG_PATH, 
+    # histogram_freq=1, 
+    # profile_batch='5,10'
+)
+# learning_rate_callback = LearningRateScheduler(lambda epoch: 1e-3 * (0.1 ** (epoch // 10)))
 
 # Subset the dataset for visualization (use a few samples)
 train_vis_dataset = train_dataset.take(1)
