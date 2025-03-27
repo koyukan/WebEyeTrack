@@ -1,4 +1,5 @@
-from typing import Optional
+from typing import Optional, Literal
+from dataclasses import dataclass
 
 import tensorflow as tf
 from tensorflow.keras.models import Model
@@ -11,28 +12,33 @@ from tensorflow.keras.layers import (
     Add, 
     Activation, 
     Flatten,
-    Concatenate
+    Concatenate, 
+    Conv2DTranspose,
+    BatchNormalization
 )
 
-EMBEDDING_SIZE = 128
+# EMBEDDING_SIZE = 128
+@dataclass
+class BlazeGazeConfig:
 
-class HeadWrapper(Layer):
-    def __init__(self, last_dimension, **kwargs):
-        super(HeadWrapper, self).__init__(**kwargs)
-        self.last_dimension = last_dimension
+    # Mode
+    mode: Literal['autoencoder', 'gaze'] = 'autoencoder'
+    weights_fp: Optional[str] = None
 
-    def get_config(self):
-        config = super(HeadWrapper, self).get_config()
-        config.update({"last_dimension": self.last_dimension})
-        return config
+    # Encoder
+    input_shape: tuple = (128, 512, 3)
+    embedding_size: int = 512
+    encoder_output: tuple = (8, 32, 96)
 
-    def call(self, xs):
-        last_dimension = self.last_dimension
-        batch_size = tf.shape(xs[0])[0]
-        outputs = []
-        for conv_layer in xs:
-            outputs.append(tf.reshape(conv_layer, (batch_size, -1, last_dimension)))
-        return tf.concat(outputs, axis=1)
+    # Decoder
+    output_shape: tuple = (128, 512, 3)
+
+    # MLP
+    gaze_output: Literal['2d', '3d'] = '3d'
+
+# ------------------------------------------------------------------------
+# Encoder
+# ------------------------------------------------------------------------
 
 def blaze_block(y, filters, stride=1):
     x = DepthwiseConv2D((5,5), strides=stride, padding="same")(y)
@@ -55,8 +61,8 @@ def double_blaze_block(y, filters, stride=1):
     output = Add()([x, y])
     return Activation("relu")(output)
 
-def get_backbone(input_shape=(128, 512, 3)):
-    x = Input(shape=input_shape)
+def get_encoder(config: BlazeGazeConfig):
+    x = Input(shape=config.input_shape)
 
     # Feature extraction layers
     first_conv = Conv2D(24, (5,5), strides=2, padding="same", activation="relu")(x)
@@ -74,19 +80,52 @@ def get_backbone(input_shape=(128, 512, 3)):
 
     return Model(inputs=x, outputs=double_6)
 
-def get_gaze_model(input_shape=(128, 512, 3)): #head_rotation_shape=(3,)):
+# ------------------------------------------------------------------------
+# Decoder Block
+# ------------------------------------------------------------------------
+
+def decoder_block(y, filters, stride=1):
+    x = Conv2DTranspose(filters, (3, 3), strides=stride, padding="same")(y)
+    x = BatchNormalization()(x)
+    x = Activation("relu")(x)
+    return x
+
+def get_decoder(config: BlazeGazeConfig):
+    """
+    CNN-based decoder that reconstructs image from encoded features.
+    Mirrors the encoder structure and upscales back to (H, W, 3).
+    """
+
+    encoded_input = Input(shape=config.encoder_output)  # Adjust based on encoder output shape
+
+    x = decoder_block(encoded_input, 96)         # 8x32 → 8x32
+    x = decoder_block(x, 96)                     # 8x32 → 8x32
+    x = decoder_block(x, 96, stride=2)           # 8x32 → 16x64
+    x = decoder_block(x, 96)                     # 16x64 → 16x64
+    x = decoder_block(x, 96)                     # 16x64 → 16x64
+    x = decoder_block(x, 48, stride=2)           # 16x64 → 32x128
+    x = decoder_block(x, 48)                     # 32x128 → 32x128
+    x = decoder_block(x, 24, stride=2)           # 32x128 → 64x256
+    x = decoder_block(x, 24)                     # 64x256 → 64x256
+    x = decoder_block(x, 24, stride=2)           # 64x256 → 128x512
+
+    # Final RGB reconstruction
+    x = Conv2D(3, (3, 3), padding="same", activation="sigmoid")(x)  # Output in [0, 1]
+
+    return Model(inputs=encoded_input, outputs=x)
+
+# ------------------------------------------------------------------------
+# Gaze Model
+# ------------------------------------------------------------------------
+
+def get_gaze_model(config):
 
     # handle the inputs
-    x = Input(shape=input_shape, name="image_input")
-    # head_rotation_input = Input(shape=head_rotation_shape, name="head_rotation_input")  # pitch, yaw, roll
-
-    # BlazeGaze backbone
-    backbone = get_backbone(input_shape=input_shape)
-    double_6 = backbone(x)
+    x = Input(shape=config.encoder_output, name="encoder_input")
 
     # Additional 2D Convolutional Layer before pooling
     regularizer = tf.keras.regularizers.l2(1e-4)
-    conv_layer = Conv2D(64, (3,3), activation='relu', padding='same', kernel_regularizer=regularizer)(double_6)
+    conv_layer = Conv2D(64, (3,3), activation='relu', padding='same', kernel_regularizer=regularizer)(x)
     conv_layer = Conv2D(32, (3,3), activation='relu', padding='same', kernel_regularizer=regularizer)(conv_layer)
 
     # Flatten instead of pooling to retain spatial information
@@ -99,38 +138,72 @@ def get_gaze_model(input_shape=(128, 512, 3)): #head_rotation_shape=(3,)):
     mlp = tf.keras.layers.Dense(128, activation='relu')(flattened_output)
     mlp = tf.keras.layers.Dense(64, activation='relu')(mlp)
 
-    # Gaze vector output
-    gaze_vector = tf.keras.layers.Dense(3, activation='linear', name="gaze_output")(mlp)
-
-    # Ensure the output is normalized
-    gaze_norm_vector = tf.keras.layers.Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name="gaze_output_norm")(gaze_vector)
-
-    # Embedding output (for contrastive learning)
-    embedding_output = tf.keras.layers.Dense(EMBEDDING_SIZE, activation='tanh', name="embedding_output")(mlp)
-
-    # return Model(inputs=x, outputs=gaze_output), backbone
-    return Model(inputs=[x], outputs=[gaze_norm_vector, embedding_output]), backbone
-
-def init_model(model):
-    model([tf.random.uniform((1, 128, 512, 3))])
+    if config.gaze_output == '2d':
+        # Output xy coordinate on the screen
+        gaze_xy = tf.keras.layers.Dense(2, activation='linear', name="gaze_output")(mlp)
+        return Model(inputs=x, outputs=gaze_xy)
+    
+    elif config.gaze_output == '3d':
+        # Gaze vector output
+        gaze_vector = tf.keras.layers.Dense(3, activation='linear', name="gaze_output")(mlp)
+        # Ensure the output is normalized
+        gaze_norm_vector = tf.keras.layers.Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name="gaze_output_norm")(gaze_vector)
+        return Model(inputs=x, outputs=gaze_norm_vector)
 
 class BlazeGaze():
 
-    def __init__(self, weights_fp: Optional[str] = None):
-        self.tf_model, self.tf_model_backbone = get_gaze_model()
+    model: Model
 
-        if weights_fp:
-            self.tf_model.load_weights(weights_fp)
+    def __init__(self, config: BlazeGazeConfig):
+        self.config = config
+
+        if self.config.mode == 'autoencoder':
+            self.set_autoencoder()
+        elif self.config.mode == 'gaze':
+            self.set_gazemodel()
         else:
-            init_model(self.tf_model)
+            raise ValueError("Invalid mode. Must be either 'autoencoder' or 'gaze'")
 
-    def freeze_backbone(self):
-        self.tf_model_backbone.trainable = False
+    def set_autoencoder(self):
+        self.encoder = get_encoder(self.config)
+        self.decoder = get_decoder(self.config)
+        self.model = Model(inputs=self.encoder.input, outputs=self.decoder(self.encoder.output), name="blazegaze_autoencoder")
 
-    def unfreeze_backbone(self):
-        self.tf_model_backbone.trainable = True
+        if self.config.weights_fp:
+            self.model.load_weights(self.config.weights_fp)
+        else:
+            self.model([tf.random.uniform((1, *self.config.input_shape))])
+
+    def set_gazemodel(self):
+        self.encoder = get_encoder(self.config)
+        self.gaze_model = get_gaze_model(self.config)
+        self.model = Model(inputs=self.encoder.input, outputs=self.gaze_model(self.encoder.output), name="blazegaze_gaze")
+
+        if self.config.weights_fp:
+            self.model.load_weights(self.config.weights_fp)
+        else:
+            self.model([tf.random.uniform((1, *self.config.input_shape))])
+
+    def freeze_encoder(self):
+        self.encoder.trainable = False
+    
+    def unfreeze_encoder(self):
+        self.encoder.trainable = True
 
 if __name__ == "__main__":
-    model = get_gaze_model()
-    init_model(model)
-    model.summary()
+
+    # Test both models
+    config = BlazeGazeConfig(
+        # Mode
+        mode='autoencoder'
+    )
+    model = BlazeGaze(config)
+    model.model.summary()
+
+    
+    config = BlazeGazeConfig(
+        # Mode
+        mode='gaze'
+    )
+    model = BlazeGaze(config)
+    model.model.summary()
