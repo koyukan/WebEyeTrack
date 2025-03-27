@@ -95,6 +95,39 @@ class GazeVisualizationCallback(tf.keras.callbacks.Callback):
                     tf.summary.image(f"{self.name} - S{i}", vis[np.newaxis], step=epoch)
             break
 
+class ImageVisCallback(tf.keras.callbacks.Callback):
+    def __init__(self, dataset, log_dir, img_size, name='Gaze'):
+        super().__init__()
+        self.dataset = dataset  # Dataset to visualize predictions
+        self.log_dir = log_dir  # Directory to store TensorBoard logs
+        self.img_size = img_size
+        self.name = name
+        self.file_writer = tf.summary.create_file_writer(str(log_dir))
+
+    def on_epoch_end(self, epoch, logs=None):
+        # Select a batch from the dataset
+        # for images, (gaze_vector, embedding) in self.dataset.take(1):
+        for images, _ in self.dataset.take(1):
+            output_images = self.model.predict(images)  # Get model predictions
+            images = images.numpy()  # Convert images to NumPy array
+            # Draw gaze vectors on the images
+            visualizations = []
+            for i in range(len(images)):
+
+                # Denormalize image
+                uint8_image = (images[i] * 255).astype(np.uint8)
+                uint8_output_image = (output_images[i] * 255).astype(np.uint8)
+
+                # Concatenate the input and output images
+                vis_image = np.concatenate([uint8_image, uint8_output_image], axis=1)
+                visualizations.append(vis_image)
+
+            # Log images to TensorBoard
+            with self.file_writer.as_default():
+                for i, vis in enumerate(visualizations):
+                    tf.summary.image(f"{self.name} - S{i}", vis[np.newaxis], step=epoch)
+            break
+
 # def angular_loss(y_true, y_pred):
 #     """
 #     Computes the angular loss between the predicted and true gaze directions.

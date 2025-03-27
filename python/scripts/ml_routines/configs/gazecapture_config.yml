@@ -1,0 +1,43 @@
+# Description: Configuration file for the GazeCapture dataset.
+
+# Configuration file for the GazeCapture dataset.
+dataset:
+  name: 'GazeCapture'
+  seed: 42
+  train_val_test_split: [0.8, 0.1]
+  gazecapture:
+    num_of_ids: 10
+    max_per_participant: 32
+
+# Configuration for the optimizer.
+optimizer:
+  learning_rate: 0.001
+  decay_rate: 0.95
+
+# Training configuration.
+training:
+  batch_size: 16
+  epochs: 20
+  num_of_workers: 4
+
+# Configuration for the model.
+model:
+  mode: 'autoencoder'
+  weights_fp: null
+  input_shape: [128,512,3]
+  embedding_size: 512
+  encoder_output: [8, 32, 96]
+  decoder_output: [128, 512, 3]
+  gaze_output: '3d'
+
+# Configuration for the loss function.
+loss:
+  functions: 'mse'
+  metrics: 'mae'
+
+# Configuration for the callbacks.
+callbacks:
+  - 'TensorBoard'
+  - 'ImageVisCallback'
+
+

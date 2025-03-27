@@ -31,7 +31,7 @@ class BlazeGazeConfig:
     encoder_output: tuple = (8, 32, 96)
 
     # Decoder
-    output_shape: tuple = (128, 512, 3)
+    decoder_output: tuple = (128, 512, 3)
 
     # MLP
     gaze_output: Literal['2d', '3d'] = '3d'
@@ -200,7 +200,7 @@ if __name__ == "__main__":
     model = BlazeGaze(config)
     model.model.summary()
 
-    
+
     config = BlazeGazeConfig(
         # Mode
         mode='gaze'
