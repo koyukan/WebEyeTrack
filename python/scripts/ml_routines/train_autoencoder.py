@@ -121,6 +121,7 @@ def train(config):
                 # histogram_freq=1, 
                 # profile_batch='5,10'
             )
+            callbacks.append(callback)
         elif callback_name == 'ModelCheckpoint':
             callback = ModelCheckpoint(
                 filepath=RUN_DIR/"blazegaze-{epoch:02d}-{val_loss:.2f}.h5", 
@@ -128,31 +129,48 @@ def train(config):
                 ave_best_only=True, 
                 save_weights_only=True,
             )
+            callbacks.append(callback)
         elif callback_name == 'GazeVisualizationCallback':
             # Subset the dataset for visualization (use a few samples)
             train_vis_dataset = train_dataset.take(1)
-            # valid_vis_dataset = val_dataset.take(1)
+            valid_vis_dataset = val_dataset.take(1)
             # log_dir = RUN_DIR / 'visualizations'
             # os.makedirs(log_dir, exist_ok=True)
-            callback = GazeVisualizationCallback(
+            train_callback = GazeVisualizationCallback(
                 dataset=train_vis_dataset,
                 log_dir=RUN_DIR,
                 img_size=IMG_SIZE,
                 name='Gaze (Training)'
             )
+            callbacks.append(train_callback)
+            valid_callback = GazeVisualizationCallback(
+                dataset=valid_vis_dataset,
+                log_dir=RUN_DIR,
+                img_size=IMG_SIZE,
+                name='Gaze (Validation)'
+            )
+            callbacks.append(valid_callback)
         elif callback_name == 'ImageVisCallback':
             # log_dir = RUN_DIR / 'images'
             # os.makedirs(log_dir, exist_ok=True)
             train_vis_dataset = train_dataset.take(1)
-            callback = ImageVisCallback(
+            valid_vis_dataset = val_dataset.take(1)
+            train_callback = ImageVisCallback(
                 dataset=train_vis_dataset,
                 log_dir=RUN_DIR,
                 img_size=IMG_SIZE,
                 name='Image (Training)'
             )
+            callbacks.append(train_callback)
+            valid_callback = ImageVisCallback(
+                dataset=valid_vis_dataset,
+                log_dir=RUN_DIR,
+                img_size=IMG_SIZE,
+                name='Image (Validation)'
+            )
+            callbacks.append(valid_callback)
         else:
             raise ValueError(f"Invalid callback name: {callback_name}")
-        callbacks.append(callback)
 
     print(f"Callbacks: {callbacks}")
 

@@ -6,7 +6,7 @@ dataset:
   seed: 42
   train_val_test_split: [0.8, 0.1]
   gazecapture:
-    num_of_ids: 100
+    num_of_ids: 700
     max_per_participant: 32
 
 # Configuration for the optimizer.
