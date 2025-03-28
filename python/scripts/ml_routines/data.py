@@ -53,7 +53,11 @@ def load_total_dataset(
     ds = tf.data.Dataset.sample_from_datasets(datasets, weights=None, seed=config['dataset']['seed'])  # Uniform sampling
 
     # ds = ds.shuffle(100).batch(batch_size).prefetch(tf.data.AUTOTUNE)
-    ds = ds.shuffle(1000).batch(config['training']['batch_size']).cache().prefetch(tf.data.AUTOTUNE).repeat()
+    ds = ds.shuffle(1000) \
+        .batch(config['training']['batch_size']) \
+        .cache() \
+        .prefetch(tf.data.AUTOTUNE).repeat()
+    
     # ds.batch(batch_size).cache() \
     #     .shuffle(5000, reshuffle_each_iteration=True) \
     #     .prefetch(tf.data.AUTOTUNE)

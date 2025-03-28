@@ -20,6 +20,9 @@ GENERATED_DATASET_DIR = GIT_ROOT / 'data' / 'generated'
 
 IMG_SIZE = 128
 
+# Fourier Transform
+# https://colab.research.google.com/github/tancik/fourier-feature-networks/blob/master/Demo.ipynb
+
 class GazeVisualizationCallback(tf.keras.callbacks.Callback):
     def __init__(self, dataset, log_dir, img_size, name='Gaze'):
         super().__init__()

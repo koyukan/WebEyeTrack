@@ -7,6 +7,7 @@ import time
 import json
 from tqdm import tqdm
 
+import cattrs
 import yaml
 import numpy as np
 import tensorflow as tf
@@ -104,9 +105,10 @@ def train(config):
     )
 
     # Load model
-    model_config = BlazeGazeConfig(
-        **config['model']
-    )
+    # model_config = BlazeGazeConfig(
+    #     **config['model']
+    # )
+    model_config = cattrs.structure(config['model'], BlazeGazeConfig)
     model = BlazeGaze(model_config)
     model.model.compile(
         optimizer=Adam(learning_rate=lr_schedule),

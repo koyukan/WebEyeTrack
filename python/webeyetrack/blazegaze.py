@@ -1,5 +1,6 @@
 from typing import Optional, Literal
 from dataclasses import dataclass
+import numpy as np
 
 import tensorflow as tf
 from tensorflow.keras.models import Model
@@ -16,6 +17,11 @@ from tensorflow.keras.layers import (
     Conv2DTranspose,
     BatchNormalization
 )
+
+@dataclass
+class FourierTransformParams:
+    mapping_size: int = 256
+    scale: float = 10.0
 
 # EMBEDDING_SIZE = 128
 @dataclass
@@ -35,6 +41,19 @@ class BlazeGazeConfig:
 
     # MLP
     gaze_output: Literal['2d', '3d'] = '3d'
+
+    # Preprocessing
+    fourier_transform: bool = False
+    fourier_transform_params: FourierTransformParams = FourierTransformParams()
+
+# ------------------------------------------------------------------------
+# Preprocessing
+# ------------------------------------------------------------------------
+
+def fourier_transform(x, b):
+    pi = tf.constant(3.141592653589793, dtype=tf.float32)
+    x_proj = tf.linalg.matmul(2. * pi * x, tf.transpose(b))
+    return tf.concat([tf.sin(x_proj), tf.cos(x_proj)], axis=-1)
 
 # ------------------------------------------------------------------------
 # Encoder
@@ -61,11 +80,44 @@ def double_blaze_block(y, filters, stride=1):
     output = Add()([x, y])
     return Activation("relu")(output)
 
+class FourierFeatureMapping(tf.keras.layers.Layer):
+    def __init__(self, mapping_size=256, scale=10.0, **kwargs):
+        super().__init__(**kwargs)
+        self.mapping_size = mapping_size
+        self.scale = scale
+
+    def build(self, input_shape):
+        channels = input_shape[-1]
+        # Trainable or fixed projection matrix (B)
+        self.B = self.add_weight(
+            shape=(channels, self.mapping_size),
+            initializer=tf.keras.initializers.RandomNormal(stddev=self.scale),
+            trainable=False,  # Set to True if you want to learn B
+            name="fourier_B"
+        )
+
+    def call(self, inputs):
+        # inputs: [B, H, W, C]
+        pi = tf.constant(np.pi, dtype=tf.float32)
+        flat = tf.reshape(inputs, [-1, inputs.shape[-1]])  # [B*H*W, C]
+        x_proj = tf.matmul(flat, self.B) * (2. * pi)
+        x_proj = tf.reshape(x_proj, tf.concat([tf.shape(inputs)[:-1], [self.mapping_size]], axis=0))
+        return tf.concat([tf.sin(x_proj), tf.cos(x_proj)], axis=-1)
+
+
 def get_encoder(config: BlazeGazeConfig):
     x = Input(shape=config.input_shape)
 
+    if config.fourier_transform:
+        x_mapped = FourierFeatureMapping(
+            mapping_size=config.fourier_transform_params.mapping_size,
+            scale=config.fourier_transform_params.scale
+        )(x)
+    else:
+        x_mapped = x
+
     # Feature extraction layers
-    first_conv = Conv2D(24, (5,5), strides=2, padding="same", activation="relu")(x)
+    first_conv = Conv2D(24, (5,5), strides=2, padding="same", activation="relu")(x_mapped)
     single_1 = blaze_block(first_conv, 24)
     single_2 = blaze_block(single_1, 24)
     single_3 = blaze_block(single_2, 48, 2)
@@ -195,15 +247,16 @@ if __name__ == "__main__":
     # Test both models
     config = BlazeGazeConfig(
         # Mode
-        mode='autoencoder'
+        mode='autoencoder',
+        fourier_transform=True
     )
     model = BlazeGaze(config)
     model.model.summary()
 
 
-    config = BlazeGazeConfig(
-        # Mode
-        mode='gaze'
-    )
-    model = BlazeGaze(config)
-    model.model.summary()
+    # config = BlazeGazeConfig(
+    #     # Mode
+    #     mode='gaze'
+    # )
+    # model = BlazeGaze(config)
+    # model.model.summary()

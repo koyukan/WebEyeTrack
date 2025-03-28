@@ -16,7 +16,7 @@ optimizer:
 
 # Training configuration.
 training:
-  batch_size: 16
+  batch_size: 8
   epochs: 20
   num_of_workers: 4
 
@@ -30,6 +30,12 @@ model:
   decoder_output: [128, 512, 3]
   gaze_output: '3d'
 
+  # Preprocessing configuration.
+  fourier_transform: true
+  fourier_transform_params:
+    mapping_size: 256
+    scale: 10
+
 # Configuration for the loss function.
 loss:
   functions: 'mse'
@@ -39,5 +45,3 @@ loss:
 callbacks:
   - 'TensorBoard'
   - 'ImageVisCallback'
-
-
