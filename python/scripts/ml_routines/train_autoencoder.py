@@ -31,9 +31,7 @@ FILE_DIR = pathlib.Path(__file__).parent
 GENERATED_DATASET_DIR = GIT_ROOT / 'data' / 'generated'
 
 # Constants
-# BATCH_SIZE = 16
 IMG_SIZE = 128
-# EPOCHS = 20
 
 def load_datasets(h5_file, train_ids, val_ids, test_ids, config):
     
@@ -55,14 +53,14 @@ def load_datasets(h5_file, train_ids, val_ids, test_ids, config):
 
 def train(config):
 
-    MODELS_DIR = FILE_DIR / 'models'
-    os.makedirs(MODELS_DIR, exist_ok=True)
     LOG_PATH = FILE_DIR / 'logs'
     os.makedirs(LOG_PATH, exist_ok=True)
-
     TIMESTAMP = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    RUN_DIR = MODELS_DIR / TIMESTAMP
+    RUN_DIR = LOG_PATH / TIMESTAMP
     os.makedirs(RUN_DIR, exist_ok=True)
+
+    with open(RUN_DIR / 'config.yaml', 'w') as f:
+        yaml.dump(config, f)
 
     if config['dataset']['name'] == 'MPIIFaceGaze':
         h5_file = GENERATED_DATASET_DIR / 'MPIIFaceGaze_entire.h5'
@@ -105,9 +103,6 @@ def train(config):
     )
 
     # Load model
-    # model_config = BlazeGazeConfig(
-    #     **config['model']
-    # )
     model_config = cattrs.structure(config['model'], BlazeGazeConfig)
     model = BlazeGaze(model_config)
     model.model.compile(
@@ -121,7 +116,7 @@ def train(config):
     for callback_name in config['callbacks']:
         if callback_name == 'TensorBoard':
             callback = TensorBoard(
-                log_dir=LOG_PATH,
+                log_dir=RUN_DIR,
                 update_freq='epoch', 
                 # histogram_freq=1, 
                 # profile_batch='5,10'
@@ -137,17 +132,21 @@ def train(config):
             # Subset the dataset for visualization (use a few samples)
             train_vis_dataset = train_dataset.take(1)
             # valid_vis_dataset = val_dataset.take(1)
+            # log_dir = RUN_DIR / 'visualizations'
+            # os.makedirs(log_dir, exist_ok=True)
             callback = GazeVisualizationCallback(
                 dataset=train_vis_dataset,
-                log_dir=LOG_PATH / "visualizations",
+                log_dir=RUN_DIR,
                 img_size=IMG_SIZE,
                 name='Gaze (Training)'
             )
         elif callback_name == 'ImageVisCallback':
+            # log_dir = RUN_DIR / 'images'
+            # os.makedirs(log_dir, exist_ok=True)
             train_vis_dataset = train_dataset.take(1)
             callback = ImageVisCallback(
                 dataset=train_vis_dataset,
-                log_dir=LOG_PATH / "images",
+                log_dir=RUN_DIR,
                 img_size=IMG_SIZE,
                 name='Image (Training)'
             )
@@ -156,9 +155,6 @@ def train(config):
         callbacks.append(callback)
 
     print(f"Callbacks: {callbacks}")
-
-    log_dir = LOG_PATH / 'images'
-    os.makedirs(log_dir, exist_ok=True)
 
     steps_per_epoch = train_dataset_size // config['training']['batch_size']
     validation_steps = val_dataset_size // config['training']['batch_size']

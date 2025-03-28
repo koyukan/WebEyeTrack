@@ -6,7 +6,7 @@ dataset:
   seed: 42
   train_val_test_split: [0.8, 0.1]
   gazecapture:
-    num_of_ids: 10
+    num_of_ids: 100
     max_per_participant: 32
 
 # Configuration for the optimizer.
@@ -26,13 +26,15 @@ model:
   weights_fp: null
   input_shape: [128,512,3]
   embedding_size: 512
+  encoder_type: 'mlp' # 'mlp' or 'cnn'
   encoder_output: [8, 32, 96]
   decoder_output: [128, 512, 3]
   gaze_output: '3d'
 
   # Preprocessing configuration.
-  fourier_transform: true
+  fourier_transform: false
   fourier_transform_params:
+    trainable: false
     mapping_size: 256
     scale: 10
 

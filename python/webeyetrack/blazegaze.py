@@ -20,6 +20,7 @@ from tensorflow.keras.layers import (
 
 @dataclass
 class FourierTransformParams:
+    trainable: bool = False
     mapping_size: int = 256
     scale: float = 10.0
 
@@ -32,6 +33,7 @@ class BlazeGazeConfig:
     weights_fp: Optional[str] = None
 
     # Encoder
+    encoder_type: Literal['mlp', 'cnn'] = 'mlp'
     input_shape: tuple = (128, 512, 3)
     embedding_size: int = 512
     encoder_output: tuple = (8, 32, 96)
@@ -45,15 +47,6 @@ class BlazeGazeConfig:
     # Preprocessing
     fourier_transform: bool = False
     fourier_transform_params: FourierTransformParams = FourierTransformParams()
-
-# ------------------------------------------------------------------------
-# Preprocessing
-# ------------------------------------------------------------------------
-
-def fourier_transform(x, b):
-    pi = tf.constant(3.141592653589793, dtype=tf.float32)
-    x_proj = tf.linalg.matmul(2. * pi * x, tf.transpose(b))
-    return tf.concat([tf.sin(x_proj), tf.cos(x_proj)], axis=-1)
 
 # ------------------------------------------------------------------------
 # Encoder
@@ -81,10 +74,11 @@ def double_blaze_block(y, filters, stride=1):
     return Activation("relu")(output)
 
 class FourierFeatureMapping(tf.keras.layers.Layer):
-    def __init__(self, mapping_size=256, scale=10.0, **kwargs):
+    def __init__(self, mapping_size=256, scale=10.0, trainable=False, **kwargs):
         super().__init__(**kwargs)
         self.mapping_size = mapping_size
         self.scale = scale
+        self.trainable_B = trainable
 
     def build(self, input_shape):
         channels = input_shape[-1]
@@ -92,7 +86,7 @@ class FourierFeatureMapping(tf.keras.layers.Layer):
         self.B = self.add_weight(
             shape=(channels, self.mapping_size),
             initializer=tf.keras.initializers.RandomNormal(stddev=self.scale),
-            trainable=False,  # Set to True if you want to learn B
+            trainable=self.trainable_B,  # Set to True if you want to learn B
             name="fourier_B"
         )
 
@@ -104,8 +98,29 @@ class FourierFeatureMapping(tf.keras.layers.Layer):
         x_proj = tf.reshape(x_proj, tf.concat([tf.shape(inputs)[:-1], [self.mapping_size]], axis=0))
         return tf.concat([tf.sin(x_proj), tf.cos(x_proj)], axis=-1)
 
+class FourierFeatureVectorMapping(tf.keras.layers.Layer):
+    def __init__(self, mapping_size=256, scale=10.0, trainable=False, **kwargs):
+        super().__init__(**kwargs)
+        self.mapping_size = mapping_size
+        self.scale = scale
+        self.trainable_B = trainable
 
-def get_encoder(config: BlazeGazeConfig):
+    def build(self, input_shape):
+        self.input_dim = input_shape[-1]
+        self.B = self.add_weight(
+            shape=(self.input_dim, self.mapping_size),
+            initializer=tf.keras.initializers.RandomNormal(stddev=self.scale),
+            trainable=self.trainable_B,
+            name="fourier_B_vector"
+        )
+
+    def call(self, inputs):
+        # inputs: [batch_size, features]
+        pi = tf.constant(np.pi, dtype=tf.float32)
+        x_proj = tf.matmul(inputs, self.B) * (2. * pi)
+        return tf.concat([tf.sin(x_proj), tf.cos(x_proj)], axis=-1)
+
+def get_cnn_encoder(config: BlazeGazeConfig):
     x = Input(shape=config.input_shape)
 
     if config.fourier_transform:
@@ -131,6 +146,27 @@ def get_encoder(config: BlazeGazeConfig):
     double_6 = double_blaze_block(double_5, [24, 96])
 
     return Model(inputs=x, outputs=double_6)
+
+def get_mlp_encoder(config: BlazeGazeConfig):
+    input_layer = Input(shape=config.input_shape)
+
+    x = input_layer
+    x = Flatten()(x)  # [B, H*W*C]
+
+    if config.fourier_transform:
+        x = FourierFeatureVectorMapping(
+            mapping_size=config.fourier_transform_params.mapping_size,
+            scale=config.fourier_transform_params.scale,
+            trainable=config.fourier_transform_params.trainable
+        )(x)
+
+    # MLP layers
+    x = tf.keras.layers.Dense(1024, activation='relu')(x)
+    x = tf.keras.layers.Dense(512, activation='relu')(x)
+    x = tf.keras.layers.Dense(np.prod(config.encoder_output), activation='relu')(x)
+    x = tf.keras.layers.Reshape(config.encoder_output)(x)
+
+    return Model(inputs=input_layer, outputs=x, name="mlp_encoder")
 
 # ------------------------------------------------------------------------
 # Decoder Block
@@ -217,7 +253,13 @@ class BlazeGaze():
             raise ValueError("Invalid mode. Must be either 'autoencoder' or 'gaze'")
 
     def set_autoencoder(self):
-        self.encoder = get_encoder(self.config)
+
+        if self.config.encoder_type == 'cnn':
+            self.encoder = get_cnn_encoder(self.config)
+        elif self.config.encoder_type == 'mlp':
+            self.encoder = get_mlp_encoder(self.config)
+        else:
+            raise ValueError("Invalid encoder type. Must be either 'cnn' or 'mlp'")
         self.decoder = get_decoder(self.config)
         self.model = Model(inputs=self.encoder.input, outputs=self.decoder(self.encoder.output), name="blazegaze_autoencoder")
 
@@ -227,7 +269,12 @@ class BlazeGaze():
             self.model([tf.random.uniform((1, *self.config.input_shape))])
 
     def set_gazemodel(self):
-        self.encoder = get_encoder(self.config)
+        if self.config.encoder_type == 'cnn':
+            self.encoder = get_cnn_encoder(self.config)
+        elif self.config.encoder_type == 'mlp':
+            self.encoder = get_mlp_encoder(self.config)
+        else:
+            raise ValueError("Invalid encoder type. Must be either 'cnn' or 'mlp'")
         self.gaze_model = get_gaze_model(self.config)
         self.model = Model(inputs=self.encoder.input, outputs=self.gaze_model(self.encoder.output), name="blazegaze_gaze")
 
@@ -248,7 +295,8 @@ if __name__ == "__main__":
     config = BlazeGazeConfig(
         # Mode
         mode='autoencoder',
-        fourier_transform=True
+        fourier_transform=True,
+        fourier_transform_params=FourierTransformParams(trainable=True),
     )
     model = BlazeGaze(config)
     model.model.summary()
