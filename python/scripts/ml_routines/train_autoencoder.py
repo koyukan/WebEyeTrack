@@ -74,7 +74,10 @@ def train(config):
             GAZE_CAPTURE_IDS = json.load(f)
 
         # For testing, only using 10 participants
-        GAZE_CAPTURE_IDS = GAZE_CAPTURE_IDS[:config['dataset']['gazecapture']['num_of_ids']]
+        if config['dataset']['gazecapture']['num_of_ids'] > 0:
+            GAZE_CAPTURE_IDS = GAZE_CAPTURE_IDS[:config['dataset']['gazecapture']['num_of_ids']]
+        else:
+            GAZE_CAPTURE_IDS = GAZE_CAPTURE_IDS
         
         # Split the GAZE_CAPTURE_IDS into train, validation, and test sets (80-10-10)
         np.random.seed(config['dataset']['seed'])
