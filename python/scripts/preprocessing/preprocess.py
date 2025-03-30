@@ -30,7 +30,7 @@ os.makedirs(GENERATED_DATASET_DIR, exist_ok=True)
 TIMESTAMP = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
 
 # Load the GazeCapture participant IDs
-with open(CWD / 'GazeCapture_participant_ids.json', 'r') as f:
+with open(CWD.parent / 'GazeCapture_participant_ids.json', 'r') as f:
     GAZE_CAPTURE_IDS = json.load(f)
 
 with open(SCRIPTS_DIR / 'config.yaml', 'r') as f:
@@ -158,7 +158,10 @@ def data_normalization_entry(i, sample):
     return {
         'pixels': eyes_patch,
         'gaze_vector': f_g,
-        'head_vector': f_h
+        'head_vector': f_h,
+
+        # Take all of sample data
+        **sample,
     }
 
 def load_datasets(args):
@@ -204,12 +207,13 @@ def load_datasets(args):
     return person_datasets
 
 def generate_datasets(args):
+    
+    # Create output path
+    output_path = GENERATED_DATASET_DIR / f'{args.dataset}_{TIMESTAMP}.h5'
+    print(f"Generating {output_path}")
 
     # Load the dataset
     person_datasets = load_datasets(args)
-
-    # Create output path
-    output_path = GENERATED_DATASET_DIR / f'{args.dataset}_{TIMESTAMP}.h5'
 
     for person_id, person_dataset in tqdm(person_datasets.items(), total=len(person_datasets), desc='Person ID'):
         # Prepare methods to organize per-entry outputs
@@ -225,10 +229,25 @@ def generate_datasets(args):
                 continue
 
             to_write['pixels'].append(processed_entry['pixels'])
-            to_write['labels'].append(np.concatenate([
-                processed_entry['gaze_vector'],
-                processed_entry['head_vector'],
-            ]))
+            # to_write['labels'].append(np.concatenate([
+            #     processed_entry['gaze_vector'],
+            #     processed_entry['head_vector'],
+            # ]))
+            to_write['gaze_vector'].append(processed_entry['gaze_vector'])
+
+            # Include head pose information
+            to_write['face_origin_3d'].append(processed_entry['face_origin_3d'])
+            to_write['face_origin_2d'].append(processed_entry['face_origin_2d'])
+            to_write['head_vector'].append(processed_entry['head_vector'])
+            
+            # Include 2D Gaze information
+            to_write['pog_px'].append(processed_entry['pog_px'])
+            to_write['pog_norm'].append(processed_entry['pog_norm'])
+            to_write['pog_cm'].append(processed_entry['pog_cm'])
+            to_write['screen_height_cm'].append(processed_entry['screen_height_cm'])
+            to_write['screen_width_cm'].append(processed_entry['screen_width_cm'])
+            to_write['screen_height_px'].append(processed_entry['screen_height_px'])
+            to_write['screen_width_px'].append(processed_entry['screen_width_px'])
 
         if len(to_write) == 0:
             continue
