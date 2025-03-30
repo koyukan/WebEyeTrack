@@ -22,7 +22,8 @@ from webeyetrack.tf_utils import (
     angular_distance, 
     parse_tfrecord_fn, 
     GazeVisualizationCallback,
-    ImageVisCallback
+    ImageVisCallback, 
+    EncoderDecoderCheckpoint
 )
 from data import load_total_dataset
 
@@ -125,12 +126,21 @@ def train(config):
                 # profile_batch='5,10'
             )
             callbacks.append(callback)
-        elif callback_name == 'ModelCheckpoint':
-            callback = ModelCheckpoint(
-                filepath=RUN_DIR/"blazegaze-{epoch:02d}-{val_loss:.2f}.h5", 
-                monitor="epoch_angular_distance",
-                ave_best_only=True, 
-                save_weights_only=True,
+        # elif callback_name == 'ModelCheckpoint':
+        #     callback = ModelCheckpoint(
+        #         filepath=RUN_DIR/"blazegaze.h5", 
+        #         monitor="val_loss",
+        #         save_best_only=True, 
+        #         save_weights_only=True,
+        #     )
+        #     callbacks.append(callback)
+        elif callback_name == 'EncoderDecoderCheckpoint':
+            callback = EncoderDecoderCheckpoint(
+                encoder=model.encoder,
+                decoder=model.decoder,
+                checkpoint_dir=RUN_DIR,
+                monitor='val_loss',  # or 'val_epoch_angular_distance'
+                mode='min'
             )
             callbacks.append(callback)
         elif callback_name == 'GazeVisualizationCallback':

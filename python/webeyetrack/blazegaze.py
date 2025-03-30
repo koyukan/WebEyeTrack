@@ -241,6 +241,8 @@ def get_gaze_model(config):
 class BlazeGaze():
 
     model: Model
+    encoder: Model
+    decoder: Model
 
     def __init__(self, config: BlazeGazeConfig):
         self.config = config

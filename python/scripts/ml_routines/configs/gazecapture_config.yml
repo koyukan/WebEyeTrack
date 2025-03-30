@@ -47,3 +47,4 @@ loss:
 callbacks:
   - 'TensorBoard'
   - 'ImageVisCallback'
+  - 'EncoderDecoderCheckpoint'

@@ -23,6 +23,49 @@ IMG_SIZE = 128
 # Fourier Transform
 # https://colab.research.google.com/github/tancik/fourier-feature-networks/blob/master/Demo.ipynb
 
+class EncoderDecoderCheckpoint(tf.keras.callbacks.Callback):
+    def __init__(self, encoder, decoder, checkpoint_dir, monitor='val_loss', mode='min'):
+        super().__init__()
+        self.encoder = encoder
+        self.decoder = decoder
+        self.checkpoint_dir = pathlib.Path(checkpoint_dir)
+        self.monitor = monitor
+        self.mode = mode
+        self.best = float('inf') if mode == 'min' else -float('inf')
+
+        # Filenames
+        self.encoder_fp = self.checkpoint_dir / "encoder_best.h5"
+        self.decoder_fp = self.checkpoint_dir / "decoder_best.h5"
+
+    def on_epoch_end(self, epoch, logs=None):
+        current = logs.get(self.monitor)
+        if current is None:
+            return
+
+        is_better = (
+            current < self.best if self.mode == 'min' else current > self.best
+        )
+        if is_better:
+            self.best = current
+            print(f"\nSaving encoder & decoder weights at epoch {epoch + 1} with {self.monitor} = {current:.4f}")
+
+            # Clean up any older checkpoint files
+            for file in self.checkpoint_dir.glob("encoder_best_*.h5"):
+                file.unlink()
+            for file in self.checkpoint_dir.glob("decoder_best_*.h5"):
+                file.unlink()
+
+            # Save with epoch-specific filenames
+            encoder_path = self.checkpoint_dir / f"encoder_best_epoch_{epoch+1:02d}.h5"
+            decoder_path = self.checkpoint_dir / f"decoder_best_epoch_{epoch+1:02d}.h5"
+
+            self.encoder.save_weights(encoder_path)
+            self.decoder.save_weights(decoder_path)
+
+            # Optionally update stored filenames (for potential later cleanup or tracking)
+            self.encoder_fp = encoder_path
+            self.decoder_fp = decoder_path
+
 class GazeVisualizationCallback(tf.keras.callbacks.Callback):
     def __init__(self, dataset, log_dir, img_size, name='Gaze'):
         super().__init__()
