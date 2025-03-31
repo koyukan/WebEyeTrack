@@ -81,21 +81,30 @@ def inner_loop(gaze_head, support_features, support_y, inner_lr, loss_fn):
 def maml_train(
     encoder_model,
     gaze_model,
-    maml_dataset,
+    train_maml_dataset,
+    valid_maml_dataset,
+    ids,
     steps_outer=1000,
     inner_lr=0.01,
     outer_lr=0.001,
-    steps_inner=1
+    steps_inner=1,
+    tb_writer=None
 ):
     meta_optimizer = tf.keras.optimizers.Adam(learning_rate=outer_lr)
     loss_fn = tf.keras.losses.MeanSquaredError()
-    task_iter = iter(maml_dataset)
+    train_task_iter = iter(train_maml_dataset)
+    train_ids, val_ids, test_ids = ids
 
-    for steps in tqdm(range(steps_outer), desc="Meta Training Steps"):
+    # Model and optimizer for validation
+    valid_task_iter = iter(valid_maml_dataset)
+    valid_model = tf.keras.models.clone_model(gaze_model)
+    valid_optim = tf.keras.optimizers.Adam(learning_rate=inner_lr)
+    valid_tasks = 100
+
+    for step in tqdm(range(steps_outer), desc="Meta Training Steps"):
 
         # Sample a task
-        support_x, support_y, query_x, query_y = next(task_iter)
-        # support_x, support_y, query_x, query_y = next(maml_dataset)
+        support_x, support_y, query_x, query_y = next(train_task_iter)
 
         # Step 1: Extract features
         support_features = encoder_model(support_x, training=False)
@@ -115,7 +124,7 @@ def maml_train(
                 inner_lr,
                 loss_fn
             )
-            # task_model.set_weights(adapted_weights)
+            task_model.set_weights(adapted_weights)
 
         # Step 4: Outer loop
         with tf.GradientTape() as outer_tape:
@@ -123,22 +132,42 @@ def maml_train(
             query_loss = loss_fn(query_y, query_preds)
 
         grads = outer_tape.gradient(query_loss, task_model.trainable_weights) # Full grads
-        # grads = outer_tape.gradient(query_loss, gaze_model.trainable_weights) # Empty grads
-
-        # for g, v in zip(grads, gaze_model.trainable_weights):
-        #     print(v.name, "→", "None" if g is None else "OK")
-        
-        # import pdb; pdb.set_trace()
-        # # Print out the grads to understand the gradient flow
-        # for i, g in enumerate(grads):
-        #     if g is not None:
-        #         print(f"Gradient {i}: {g.numpy().mean()}")
-
         meta_optimizer.apply_gradients(zip(grads, gaze_model.trainable_weights))
 
-    #     epoch_losses.append(query_loss.numpy())
+        # Report the loss to TensorBoard
+        if (step + 1) % 10 == 0:
+            if tb_writer:
+                tf.summary.scalar('support_loss', support_loss, step=step)
+                tf.summary.scalar('query_loss', query_loss, step=step)
+                tb_writer.flush()
+            print(f"Step {step}: Support Loss: {support_loss.numpy():.3f}, Query Loss: {query_loss.numpy():.3f}")
 
-    # print(f"→ Epoch {epoch+1}: Query Loss = {np.mean(epoch_losses):.4f}")
+            # Perform validation
+            losses = []
+            for j in tqdm(range(len(val_ids)), desc="Validation Steps"):
+                valid_model.set_weights(gaze_model.get_weights())
+                support_x, support_y, query_x, query_y = next(valid_task_iter)
+                support_features = encoder_model(support_x, training=False)
+                adapted_weights, support_loss = inner_loop(
+                    valid_model,
+                    support_features,
+                    support_y,
+                    inner_lr,
+                    loss_fn
+                )
+                valid_model.set_weights(adapted_weights)
+                query_features = encoder_model(query_x, training=False)
+                query_loss = loss_fn(query_y, valid_model(query_features, training=False))
+                losses.append((query_loss.numpy(), support_loss.numpy()))
+            querry_losses, support_losses = zip(*losses)
+            if tb_writer:
+                tf.summary.scalar('valid_support_loss', np.mean(support_losses), step=step)
+                tf.summary.scalar('valid_query_loss', np.mean(querry_losses), step=step)
+                tb_writer.flush()
+            print(f"Validation Step {step}: Support Loss: {np.mean(support_losses):.3f}, Query Loss: {np.mean(querry_losses):.3f}")
+
+    # Save the MAML parameters
+    ...
 
 def train(config):
 
@@ -168,6 +197,10 @@ def train(config):
     else:
         print("No encoder weights path provided, using default.")
 
+    # Create tensorboard writer
+    tb_writer = tf.summary.create_file_writer(str(RUN_DIR))
+    tb_writer.set_as_default()
+
     # Load model
     model_config = cattrs.structure(config['model'], BlazeGazeConfig)
     model = BlazeGaze(model_config)
@@ -179,25 +212,29 @@ def train(config):
     h5_file, train_ids, val_ids, test_ids = get_dataset_metadata(config)
 
     # Load MAML dataset
-    maml_dataset = get_maml_task_dataset(
+    train_maml_dataset = get_maml_task_dataset(
         h5_file,
         train_ids,
         config
     )
-
-    # meta_optimizer = Adam(learning_rate=config['optimizer']['learning_rate'])
-    # loss_fn = tf.keras.losses.MeanSquaredError()
-    # metric = tf.keras.metrics.MeanAbsoluteError()
+    valid_maml_dataset = get_maml_task_dataset(
+        h5_file,
+        val_ids,
+        config
+    )
     
     # Running the MAML training
     maml_train(
         encoder_model=encoder,
         gaze_model=model.gaze_model,
-        maml_dataset=maml_dataset,
+        train_maml_dataset=train_maml_dataset,
+        valid_maml_dataset=valid_maml_dataset,
+        ids=(train_ids, val_ids, test_ids),
         inner_lr=config['optimizer']['inner_lr'],
         outer_lr=config['optimizer']['learning_rate'],
         steps_outer=config['training']['num_outer_steps'],
-        steps_inner=config['training']['num_inner_steps']
+        steps_inner=config['training']['num_inner_steps'],
+        tb_writer=tb_writer
     )
     print("Training completed.")
 

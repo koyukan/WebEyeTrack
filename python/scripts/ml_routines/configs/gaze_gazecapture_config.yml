@@ -7,10 +7,10 @@ dataset:
   name: 'GazeCapture'
   seed: 42
   train_val_test_split: [0.8, 0.1]
-  query_size: 9 # 100
+  query_size: 100
   support_size: 9
   gazecapture:
-    num_of_ids: 10 # -1 means all ids
+    num_of_ids: 20 # -1 means all ids
     max_per_participant: 25 # 32
 
 # Configuration for the optimizer.
@@ -50,9 +50,3 @@ model:
 loss:
   functions: 'mse'
   metrics: 'mae'
-
-# Configuration for the callbacks.
-callbacks:
-  - 'TensorBoard'
-  - 'ImageVisCallback'
-  - 'EncoderDecoderCheckpoint'

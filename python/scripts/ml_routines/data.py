@@ -199,8 +199,8 @@ def get_maml_task_dataset(h5_file, participants, config):
     output_signature = (
         tf.TensorSpec(shape=(support_size, *config['model']['input_shape']), dtype=tf.float32),
         tf.TensorSpec(shape=(support_size, 2), dtype=tf.float32),
-        tf.TensorSpec(shape=(query_size, *config['model']['input_shape']), dtype=tf.float32),
-        tf.TensorSpec(shape=(query_size, 2), dtype=tf.float32),
+        tf.TensorSpec(shape=(None, *config['model']['input_shape']), dtype=tf.float32), # None to support variable batch size
+        tf.TensorSpec(shape=(None, 2), dtype=tf.float32),
     )
 
     return tf.data.Dataset.from_generator(
