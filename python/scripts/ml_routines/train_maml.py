@@ -40,19 +40,35 @@ SAVED_MODELS_DIR = CWD / 'saved_models'
 # Constants
 IMG_SIZE = 128
 
-def fast_weights(model, weights, x):
-    """Apply a forward pass with manually-updated weights."""
-    out = x
-    for i, layer in enumerate(model.layers):
-        if not hasattr(layer, 'kernel'):
-            out = layer(out)  # layers like Flatten, Activation, etc.
-            continue
-        kernel = weights[i * 2]
-        bias = weights[i * 2 + 1]
-        out = tf.matmul(out, kernel) + bias
-        if hasattr(layer, 'activation') and layer.activation:
-            out = layer.activation(out)
-    return out
+"""
+Initialize meta-model θ (e.g., encoder + head)
+
+For each meta-epoch:
+    Sample a batch of tasks T_i ~ p(T)        # Each task = 1 participant
+
+    meta_grads = 0
+
+    For each task T_i:
+        # Split into support and query sets
+        (x_supp, y_supp), (x_query, y_query) = sample_task(T_i)
+
+        # --- Inner Loop ---
+        Clone the model θ_i ← θ
+
+        For k steps:
+            Compute support loss: L_supp = loss(y_supp, θ_i(x_supp))
+            Compute gradients ∇L_supp w.r.t. θ_i
+            Update θ_i ← θ_i - α * ∇L_supp     # α = inner learning rate
+
+        # --- Outer Loop ---
+        Compute query loss: L_query = loss(y_query, θ_i(x_query))
+        Compute gradients ∇L_query w.r.t. θ   # NOT θ_i
+
+        Accumulate ∇L_query into meta_grads
+
+    Average meta_grads over tasks
+    Update meta-model: θ ← θ - β * meta_grads     # β = outer learning rate
+"""
 
 def inner_loop(gaze_head, support_features, support_y, inner_lr, loss_fn):
     with tf.GradientTape() as tape:
@@ -66,51 +82,63 @@ def maml_train(
     encoder_model,
     gaze_model,
     maml_dataset,
-    num_epochs=5,
+    steps_outer=1000,
     inner_lr=0.01,
     outer_lr=0.001,
     steps_inner=1
 ):
     meta_optimizer = tf.keras.optimizers.Adam(learning_rate=outer_lr)
     loss_fn = tf.keras.losses.MeanSquaredError()
+    task_iter = iter(maml_dataset)
 
-    for epoch in tqdm(range(num_epochs), total=num_epochs, desc="Training MAML"):
-        print(f"\nEpoch {epoch + 1}/{num_epochs}")
-        epoch_losses = []
+    for steps in tqdm(range(steps_outer), desc="Meta Training Steps"):
 
-        for step, (support_x, support_y, query_x, query_y) in enumerate(maml_dataset):
+        # Sample a task
+        support_x, support_y, query_x, query_y = next(task_iter)
+        # support_x, support_y, query_x, query_y = next(maml_dataset)
 
-            # Step 1: Extract features
-            support_features = encoder_model(support_x, training=False)
-            query_features = encoder_model(query_x, training=False)
+        # Step 1: Extract features
+        support_features = encoder_model(support_x, training=False)
+        query_features = encoder_model(query_x, training=False)
 
-            # Step 2: Clone gaze head
-            task_model = tf.keras.models.clone_model(gaze_model)
-            task_model.build(support_features.shape)  # Ensure weights exist
-            task_model.set_weights(gaze_model.get_weights())
+        # Step 2: Clone gaze head
+        task_model = tf.keras.models.clone_model(gaze_model)
+        task_model.build(support_features.shape)  # Ensure weights exist
+        task_model.set_weights(gaze_model.get_weights())
 
-            # Step 3: Inner loop → get adapted weights (don't assign them!)
-            for i in range(steps_inner):
-                adapted_weights, support_loss = inner_loop(
-                    task_model,
-                    support_features,
-                    support_y,
-                    inner_lr,
-                    loss_fn
-                )
-                task_model.set_weights(adapted_weights)
+        # Step 3: Inner loop → get adapted weights (don't assign them!)
+        for i in range(steps_inner):
+            adapted_weights, support_loss = inner_loop(
+                task_model,
+                support_features,
+                support_y,
+                inner_lr,
+                loss_fn
+            )
+            # task_model.set_weights(adapted_weights)
 
-            # Step 4: Outer loop
-            with tf.GradientTape() as outer_tape:
-                query_preds = task_model(query_features, training=True)
-                query_loss = loss_fn(query_y, query_preds)
+        # Step 4: Outer loop
+        with tf.GradientTape() as outer_tape:
+            query_preds = task_model(query_features, training=True)
+            query_loss = loss_fn(query_y, query_preds)
 
-            grads = outer_tape.gradient(query_loss, gaze_model.trainable_weights)
-            meta_optimizer.apply_gradients(zip(grads, gaze_model.trainable_weights))
+        grads = outer_tape.gradient(query_loss, task_model.trainable_weights) # Full grads
+        # grads = outer_tape.gradient(query_loss, gaze_model.trainable_weights) # Empty grads
 
-            epoch_losses.append(query_loss.numpy())
+        # for g, v in zip(grads, gaze_model.trainable_weights):
+        #     print(v.name, "→", "None" if g is None else "OK")
+        
+        # import pdb; pdb.set_trace()
+        # # Print out the grads to understand the gradient flow
+        # for i, g in enumerate(grads):
+        #     if g is not None:
+        #         print(f"Gradient {i}: {g.numpy().mean()}")
 
-        print(f"→ Epoch {epoch+1}: Query Loss = {np.mean(epoch_losses):.4f}")
+        meta_optimizer.apply_gradients(zip(grads, gaze_model.trainable_weights))
+
+    #     epoch_losses.append(query_loss.numpy())
+
+    # print(f"→ Epoch {epoch+1}: Query Loss = {np.mean(epoch_losses):.4f}")
 
 def train(config):
 
@@ -157,18 +185,18 @@ def train(config):
         config
     )
 
-    meta_optimizer = Adam(learning_rate=config['optimizer']['learning_rate'])
-    loss_fn = tf.keras.losses.MeanSquaredError()
-    metric = tf.keras.metrics.MeanAbsoluteError()
+    # meta_optimizer = Adam(learning_rate=config['optimizer']['learning_rate'])
+    # loss_fn = tf.keras.losses.MeanSquaredError()
+    # metric = tf.keras.metrics.MeanAbsoluteError()
     
     # Running the MAML training
     maml_train(
         encoder_model=encoder,
         gaze_model=model.gaze_model,
         maml_dataset=maml_dataset,
-        num_epochs=config['training']['epochs'],
         inner_lr=config['optimizer']['inner_lr'],
         outer_lr=config['optimizer']['learning_rate'],
+        steps_outer=config['training']['num_outer_steps'],
         steps_inner=config['training']['num_inner_steps']
     )
     print("Training completed.")

@@ -7,7 +7,7 @@ dataset:
   name: 'GazeCapture'
   seed: 42
   train_val_test_split: [0.8, 0.1]
-  query_size: 100
+  query_size: 9 # 100
   support_size: 9
   gazecapture:
     num_of_ids: 10 # -1 means all ids
@@ -24,6 +24,7 @@ training:
   batch_size: 8
   epochs: 2
   num_of_workers: 4
+  num_outer_steps: 1000
   num_inner_steps: 5
 
 # Configuration for the model.
