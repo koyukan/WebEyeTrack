@@ -31,6 +31,7 @@ class BlazeGazeConfig:
     # Mode
     mode: Literal['autoencoder', 'gaze'] = 'autoencoder'
     weights_fp: Optional[str] = None
+    encoder_weights_fp: Optional[str] = None
 
     # Encoder
     encoder_type: Literal['mlp', 'cnn'] = 'mlp'
@@ -242,7 +243,8 @@ class BlazeGaze():
 
     model: Model
     encoder: Model
-    decoder: Model
+    decoder: Optional[Model]
+    gaze_model: Optional[Model]
 
     def __init__(self, config: BlazeGazeConfig):
         self.config = config

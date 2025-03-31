@@ -1,4 +1,6 @@
 # Description: Configuration file for the GazeCapture dataset.
+config:
+  type: "autoencoder"
 
 # Configuration file for the GazeCapture dataset.
 dataset:
@@ -24,6 +26,7 @@ training:
 model:
   mode: 'autoencoder'
   weights_fp: null
+  encoder_weights_fp: null
   input_shape: [128,512,3]
   embedding_size: 512
   encoder_type: 'cnn' # 'mlp' or 'cnn'
