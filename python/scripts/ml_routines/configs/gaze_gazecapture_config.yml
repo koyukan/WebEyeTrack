@@ -23,9 +23,9 @@ optimizer:
 training:
   batch_size: 8
   epochs: 2
-  num_of_workers: 4
-  num_outer_steps: 1000
+  num_outer_steps: 10
   num_inner_steps: 5
+  valid_at_every: 5
 
 # Configuration for the model.
 model:

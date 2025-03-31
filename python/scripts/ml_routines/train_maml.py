@@ -37,6 +37,12 @@ FILE_DIR = pathlib.Path(__file__).parent
 GENERATED_DATASET_DIR = GIT_ROOT / 'data' / 'generated'
 SAVED_MODELS_DIR = CWD / 'saved_models'
 
+LOG_PATH = FILE_DIR / 'logs'
+os.makedirs(LOG_PATH, exist_ok=True)
+TIMESTAMP = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+RUN_DIR = LOG_PATH / TIMESTAMP
+os.makedirs(RUN_DIR, exist_ok=True)
+
 # Constants
 IMG_SIZE = 128
 
@@ -135,7 +141,7 @@ def maml_train(
         meta_optimizer.apply_gradients(zip(grads, gaze_model.trainable_weights))
 
         # Report the loss to TensorBoard
-        if (step + 1) % 10 == 0:
+        if (step + 1) % config['training']['valid_at_every'] == 0:
             if tb_writer:
                 tf.summary.scalar('support_loss', support_loss, step=step)
                 tf.summary.scalar('query_loss', query_loss, step=step)
@@ -167,15 +173,73 @@ def maml_train(
             print(f"Validation Step {step}: Support Loss: {np.mean(support_losses):.3f}, Query Loss: {np.mean(querry_losses):.3f}")
 
     # Save the MAML parameters
-    ...
+    gaze_model.save_weights(RUN_DIR / 'maml_gaze_model.h5')
+    print("MAML Training completed.")
+
+    return gaze_model
+
+def maml_test(
+    encoder_model,
+    gaze_model,
+    test_maml_dataset,
+    ids,
+    inner_lr=0.01,
+    steps_inner=1,
+    tb_writer=None,
+    steps_test=None  # Optional cap on number of test tasks to evaluate
+):
+
+    print("Starting MAML Test...")
+    loss_fn = tf.keras.losses.MeanSquaredError()
+    mae_fn = tf.keras.metrics.MeanAbsoluteError()
+
+    test_task_iter = iter(test_maml_dataset)
+    train_ids, val_ids, test_ids = ids
+    max_steps = steps_test or len(test_ids)
+
+    all_query_losses = []
+    all_query_maes = []
+
+    for step in tqdm(range(max_steps), desc="Meta Test Steps"):
+        # Sample test task
+        support_x, support_y, query_x, query_y = next(test_task_iter)
+
+        # Encode features (encoder is frozen)
+        support_features = encoder_model(support_x, training=False)
+        query_features = encoder_model(query_x, training=False)
+
+        # Clone the gaze model (meta-initialized)
+        task_model = tf.keras.models.clone_model(gaze_model)
+        task_model.build(support_features.shape)
+        task_model.set_weights(gaze_model.get_weights())
+
+        # Adapt on support set
+        for _ in range(steps_inner):
+            with tf.GradientTape() as tape:
+                support_preds = task_model(support_features, training=True)
+                support_loss = loss_fn(support_y, support_preds)
+            grads = tape.gradient(support_loss, task_model.trainable_weights)
+            for w, g in zip(task_model.trainable_weights, grads):
+                w.assign_sub(inner_lr * g)
+
+        # Evaluate on query set
+        query_preds = task_model(query_features, training=False)
+        query_loss = loss_fn(query_y, query_preds).numpy()
+        query_mae = mae_fn(query_y, query_preds).numpy()
+
+        all_query_losses.append(query_loss)
+        all_query_maes.append(query_mae)
+
+        if tb_writer:
+            with tb_writer.as_default():
+                tf.summary.scalar("test_query_loss", query_loss, step=step)
+                tf.summary.scalar("test_query_mae", query_mae, step=step)
+                tb_writer.flush()
+
+    print(f"MAML Test Finished — Avg Query Loss: {np.mean(all_query_losses):.4f}, Avg MAE: {np.mean(all_query_maes):.4f}")
+    return all_query_losses, all_query_maes
 
 def train(config):
-
-    LOG_PATH = FILE_DIR / 'logs'
-    os.makedirs(LOG_PATH, exist_ok=True)
-    TIMESTAMP = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    RUN_DIR = LOG_PATH / TIMESTAMP
-    os.makedirs(RUN_DIR, exist_ok=True)
 
     with open(RUN_DIR / 'config.yaml', 'w') as f:
         yaml.dump(config, f)
@@ -222,9 +286,14 @@ def train(config):
         val_ids,
         config
     )
+    test_maml_dataset = get_maml_task_dataset(
+        h5_file,
+        test_ids,
+        config
+    )
     
     # Running the MAML training
-    maml_train(
+    model.gaze_model = maml_train(
         encoder_model=encoder,
         gaze_model=model.gaze_model,
         train_maml_dataset=train_maml_dataset,
@@ -236,7 +305,17 @@ def train(config):
         steps_inner=config['training']['num_inner_steps'],
         tb_writer=tb_writer
     )
-    print("Training completed.")
+
+    # Run the test dataset
+    maml_test(
+        encoder_model=encoder,
+        gaze_model=model.gaze_model,
+        test_maml_dataset=test_maml_dataset,
+        ids=(train_ids, val_ids, test_ids),
+        inner_lr=config['optimizer']['inner_lr'],
+        steps_inner=config['training']['num_inner_steps'],
+        tb_writer=tb_writer
+    )
 
 if __name__ == "__main__":
     # Add arguments to specify the configuration file

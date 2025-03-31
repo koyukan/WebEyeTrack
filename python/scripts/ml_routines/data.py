@@ -157,7 +157,8 @@ def participant_task_generator(h5_file, pid, config):
             def get_samples(idxs):
                 for i in idxs:
                     image = group["pixels"][i].astype(np.float32) / 255.0
-                    label = group["pog_norm"][i][:2].astype(np.float32)
+                    # label = group["pog_norm"][i][:2].astype(np.float32)
+                    label = group['pog_cm'][i][:2].astype(np.float32)
                     yield image, label
 
             support = list(get_samples(support_indices))
