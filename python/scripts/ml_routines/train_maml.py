@@ -47,6 +47,13 @@ os.makedirs(RUN_DIR, exist_ok=True)
 IMG_SIZE = 128
 
 """
+# References
+[1] https://github.com/hereismari/tensorflow-maml/blob/master/maml.ipynb
+[2] https://www.digitalocean.com/community/tutorials/first-order-maml-algorithm-in-meta-learning
+[3] https://github.com/hereismari/tensorflow-maml/blob/master/maml.ipynb
+[4] https://gist.github.com/luis-mueller/f23f483c405b0a169bf279f7b02209bc#file-maml-py
+[5] https://arxiv.org/pdf/1703.03400.pdf
+
 Initialize meta-model θ (e.g., encoder + head)
 
 For each meta-epoch:
