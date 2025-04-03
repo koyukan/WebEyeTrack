@@ -148,7 +148,7 @@ def maml_train(
         meta_optimizer.apply_gradients(zip(grads, gaze_model.trainable_weights))
 
         # Report the loss to TensorBoard
-        if (step + 1) % config['training']['valid_at_every'] == 0:
+        if (step + 1) % (steps_outer // 15) == 0:
             if tb_writer:
                 tf.summary.scalar('support_loss', support_loss, step=step)
                 tf.summary.scalar('query_loss', query_loss, step=step)
@@ -307,7 +307,7 @@ def train(config):
         valid_maml_dataset=valid_maml_dataset,
         ids=(train_ids, val_ids, test_ids),
         inner_lr=config['optimizer']['inner_lr'],
-        outer_lr=config['optimizer']['learning_rate'],
+        outer_lr=config['optimizer']['outer_lr'],
         steps_outer=config['training']['num_outer_steps'],
         steps_inner=config['training']['num_inner_steps'],
         tb_writer=tb_writer

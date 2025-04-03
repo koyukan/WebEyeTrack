@@ -1,9 +1,11 @@
 import pathlib
 import json
 
+from tqdm import tqdm
 import h5py
 import tensorflow as tf
 import numpy as np
+import yaml
 
 from webeyetrack.constants import GIT_ROOT
 
@@ -78,7 +80,7 @@ def participant_generator(file, pid, config):
             limit = min(max_samples, total) if max_samples else total
             for i in range(limit):
                 image = group["pixels"][i].astype(np.float32) / 255.0
-                label = group["labels"][i][:3].astype(np.float32)
+                label = group["pog_norm"][i][:2].astype(np.float32)
                 if config['model']['mode'] == 'autoencoder':
                     yield image, image
                 elif config['model']['mode'] == 'gaze':
@@ -101,7 +103,7 @@ def load_total_dataset(
     elif config['model']['mode'] == 'gaze':
         output_signature = (
             tf.TensorSpec(shape=config['model']['input_shape'], dtype=tf.float32),
-            tf.TensorSpec(shape=(3,), dtype=tf.float32),
+            tf.TensorSpec(shape=(2,), dtype=tf.float32),
         )
     else:
         raise ValueError("Invalid mode. Must be either 'autoencoder' or 'gaze'")
@@ -151,8 +153,12 @@ def participant_task_generator(h5_file, pid, config):
             indices = np.arange(total)
             np.random.shuffle(indices)
 
-            support_indices = indices[:support_size]
-            query_indices = indices[support_size:support_size + query_size]
+            # Clip support and query sizes to the total number of samples
+            safe_support_size = min(support_size, total)
+            safe_query_size = min(query_size, total - support_size)
+
+            support_indices = indices[:safe_support_size]
+            query_indices = indices[safe_support_size:safe_support_size + safe_query_size]
 
             def get_samples(idxs):
                 for i in idxs:
@@ -268,3 +274,34 @@ def get_maml_task_dataset(h5_file, participants, config):
         output_signature=output_signature
     )
 
+if __name__ == '__main__':
+
+    # Load the config
+    with open(CWD / 'configs' / 'gaze_gazecapture_config.yml', 'r') as f:
+        config = yaml.safe_load(f)
+    
+    # Test loading GazeCapture dataset
+    h5_file = GENERATED_DATASET_DIR / 'GazeCapture_entire.h5'
+    with open(CWD.parent / 'GazeCapture_participant_ids.json', 'r') as f:
+        GAZE_CAPTURE_IDS = json.load(f)
+
+    print("Loading dataset...")
+    
+    dataset, _, size, _, _, _ = load_datasets(
+        h5_file, 
+        train_ids=GAZE_CAPTURE_IDS[:100],
+        val_ids=[GAZE_CAPTURE_IDS[-1]],
+        test_ids=[GAZE_CAPTURE_IDS[-1]],
+        config=config
+    )
+
+    print("Dataset loaded.")
+
+    # Check that all entries in the dataset are valid
+    # Essentially, no NaN values
+
+    for img, label in tqdm(dataset, total=size):
+        # assert not np.isnan(img.numpy()).any(), "Image contains NaN values"
+        # print(label)
+        assert not np.isnan(label.numpy()).any(), "Label contains NaN values"
+        # print("No NaN values found in the dataset")
