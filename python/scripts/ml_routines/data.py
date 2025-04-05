@@ -80,7 +80,8 @@ def participant_generator(file, pid, config):
             limit = min(max_samples, total) if max_samples else total
             for i in range(limit):
                 image = group["pixels"][i].astype(np.float32) / 255.0
-                label = group["pog_norm"][i][:2].astype(np.float32)
+                # label = group["pog_norm"][i][:2].astype(np.float32)
+                label = group['pog_cm'][i][:2].astype(np.float32)
                 if config['model']['mode'] == 'autoencoder':
                     yield image, image
                 elif config['model']['mode'] == 'gaze':
@@ -163,7 +164,8 @@ def participant_task_generator(h5_file, pid, config):
             def get_samples(idxs):
                 for i in idxs:
                     image = group["pixels"][i].astype(np.float32) / 255.0
-                    label = group["pog_norm"][i][:2].astype(np.float32)
+                    # label = group["pog_norm"][i][:2].astype(np.float32)
+                    label = group['pog_cms'][i][:2].astype(np.float32)
                     yield image, label
 
             support = list(get_samples(support_indices))
@@ -202,7 +204,8 @@ def prepare_task_generators(h5_file, participants, config):
                 def get_samples(idxs):
                     for i in idxs:
                         image = group["pixels"][i].astype(np.float32) / 255.0
-                        label = group["pog_norm"][i][:2].astype(np.float32)
+                        # label = group["pog_norm"][i][:2].astype(np.float32)
+                        label = group['pog_cm'][i][:2].astype(np.float32)
                         yield image, label
 
                 support = list(get_samples(support_indices))

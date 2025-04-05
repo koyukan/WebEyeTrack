@@ -104,7 +104,8 @@ def maml_train(
     tb_writer=None
 ):
     meta_optimizer = tf.keras.optimizers.Adam(learning_rate=outer_lr)
-    loss_fn = tf.keras.losses.MeanSquaredError()
+    # loss_fn = tf.keras.losses.MeanSquaredError()
+    loss_fn = tf.keras.losses.MeanAbsoluteError()
     train_task_iter = iter(train_maml_dataset)
     train_ids, val_ids, test_ids = ids
 
@@ -197,7 +198,8 @@ def maml_test(
 ):
 
     print("Starting MAML Test...")
-    loss_fn = tf.keras.losses.MeanSquaredError()
+    # loss_fn = tf.keras.losses.MeanSquaredError()
+    loss_fn = tf.keras.losses.MeanAbsoluteError()
     mae_fn = tf.keras.metrics.MeanAbsoluteError()
 
     test_task_iter = iter(test_maml_dataset)
