@@ -10,7 +10,7 @@ dataset:
   query_size: 100
   support_size: 9
   gazecapture:
-    num_of_ids: 20 # -1 means all ids
+    num_of_ids: -1 # -1 means all ids
     max_per_participant: 25 # 32
 
 # Configuration for the optimizer.
@@ -22,7 +22,7 @@ optimizer:
 # Training configuration.
 training:
   batch_size: 8
-  num_outer_steps: 100
+  num_outer_steps: 1000
   num_inner_steps: 5
 
 # Configuration for the model.
