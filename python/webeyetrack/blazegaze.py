@@ -216,34 +216,46 @@ def get_decoder(config: BlazeGazeConfig):
 def get_gaze_model(config):
 
     # handle the inputs
-    x = Input(shape=config.encoder_output, name="encoder_input")
+    cnn_input = Input(shape=config.encoder_output, name="encoder_input")
 
     # Additional 2D Convolutional Layer before pooling
     regularizer = tf.keras.regularizers.l2(1e-4)
-    conv_layer = Conv2D(64, (3,3), activation='relu', padding='same', kernel_regularizer=regularizer)(x)
+    conv_layer = Conv2D(64, (3,3), activation='relu', padding='same', kernel_regularizer=regularizer)(cnn_input)
     conv_layer = Conv2D(32, (3,3), activation='relu', padding='same', kernel_regularizer=regularizer)(conv_layer)
 
     # Flatten instead of pooling to retain spatial information
     flattened_output = Flatten()(conv_layer)
 
-    # Concatenate head rotation with flattened CNN features
-    # concatenated_features = Concatenate()([flattened_output, head_rotation_input])
+    # Handle optional inputs from config
+    additional_inputs = []
+    additional_tensors = []
+
+    for input_cfg in config.gaze_inputs:
+        input_name = input_cfg.name
+        input_shape = input_cfg.input_shape
+        input_tensor = Input(shape=input_shape, name=input_name)
+        additional_inputs.append(input_tensor)
+        additional_tensors.append(input_tensor)
+
+    # Concatenate all features
+    if additional_tensors:
+        concat = Concatenate(name="feature_concat")([flattened_output] + additional_tensors)
+    else:
+        concat = flattened_output
 
     # MLP layers before computing the gaze vector
-    mlp = tf.keras.layers.Dense(128, activation='relu')(flattened_output)
+    mlp = tf.keras.layers.Dense(128, activation='relu')(concat)
     mlp = tf.keras.layers.Dense(64, activation='relu')(mlp)
 
     if config.gaze_output == '2d':
-        # Output xy coordinate on the screen
-        gaze_xy = tf.keras.layers.Dense(2, activation='linear', name="gaze_output")(mlp)
-        return Model(inputs=x, outputs=gaze_xy)
+        output = tf.keras.layers.Dense(2, activation='linear', name="gaze_output")(mlp)
     
     elif config.gaze_output == '3d':
-        # Gaze vector output
         gaze_vector = tf.keras.layers.Dense(3, activation='linear', name="gaze_output")(mlp)
-        # Ensure the output is normalized
-        gaze_norm_vector = tf.keras.layers.Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name="gaze_output_norm")(gaze_vector)
-        return Model(inputs=x, outputs=gaze_norm_vector)
+        output = tf.keras.layers.Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name="gaze_output_norm")(gaze_vector)
+    
+    # Build final model
+    return Model(inputs=[cnn_input] + additional_inputs, outputs=output)
 
 class BlazeGaze():
 
@@ -285,13 +297,29 @@ class BlazeGaze():
             self.encoder = get_mlp_encoder(self.config)
         else:
             raise ValueError("Invalid encoder type. Must be either 'cnn' or 'mlp'")
-        self.gaze_model = get_gaze_model(self.config)
-        self.model = Model(inputs=self.encoder.input, outputs=self.gaze_model(self.encoder.output), name="blazegaze_gaze")
 
+        self.gaze_model = get_gaze_model(self.config)
+
+        # Create Keras Input layers for extra gaze inputs
+        additional_inputs = []
+        for input_cfg in self.config.gaze_inputs:
+            input_tensor = Input(shape=input_cfg.input_shape, name=input_cfg.name)
+            additional_inputs.append(input_tensor)
+
+        # The gaze model takes [encoder_output] + additional_inputs
+        model_inputs = [self.encoder.input] + additional_inputs
+        gaze_outputs = self.gaze_model([self.encoder.output] + additional_inputs)
+
+        self.model = Model(inputs=model_inputs, outputs=gaze_outputs, name="blazegaze_gaze")
+
+        # Load weights if provided
         if self.config.weights_fp:
             self.model.load_weights(self.config.weights_fp)
         else:
-            self.model([tf.random.uniform((1, *self.config.encoder_input_shape))])
+            dummy_inputs = [tf.random.uniform((1, *self.config.encoder_input_shape))] + [
+                tf.random.uniform((1, *inp.input_shape)) for inp in self.config.gaze_inputs
+            ]
+            self.model(dummy_inputs)
 
     def freeze_encoder(self):
         self.encoder.trainable = False

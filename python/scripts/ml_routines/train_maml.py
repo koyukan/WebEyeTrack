@@ -84,8 +84,10 @@ For each meta-epoch:
 """
 
 def inner_loop(gaze_head, support_x, support_y, inner_lr, loss_fn):
+    features = ['encoder_features'] + [x['name'] for x in config['model']['gaze_inputs']]
+    input_list = [support_x[feature] for feature in features]
     with tf.GradientTape() as tape:
-        preds = gaze_head(support_x['encoder_features'], training=True)
+        preds = gaze_head(input_list, training=True)
         loss = loss_fn(support_y, preds)
     grads = tape.gradient(loss, gaze_head.trainable_weights)
     adapted_weights = [w - inner_lr * g for w, g in zip(gaze_head.trainable_weights, grads)]
@@ -135,7 +137,9 @@ def maml_train(
             task_model.set_weights(adapted_weights)
 
         with tf.GradientTape() as outer_tape:
-            query_preds = task_model(query_x['encoder_features'], training=True)
+            features = ['encoder_features'] + [x['name'] for x in config['model']['gaze_inputs']]
+            input_list = [query_x[feature] for feature in features]
+            query_preds = task_model(input_list, training=True)
             query_loss = loss_fn(query_y, query_preds)
 
         grads = outer_tape.gradient(query_loss, task_model.trainable_weights)
@@ -154,13 +158,15 @@ def maml_train(
             for j in tqdm(range(len(val_ids)), desc="Validation Steps"):
                 valid_model.set_weights(gaze_model.get_weights())
                 support_x, support_y, query_x, query_y = next(valid_task_iter)
-                support_x['encoder_features'] = encoder_model(support_x, training=False)
+                support_x['encoder_features'] = encoder_model(support_x['image'], training=False)
                 adapted_weights, support_loss = inner_loop(
                     valid_model, support_x, support_y, inner_lr, loss_fn
                 )
                 valid_model.set_weights(adapted_weights)
-                query_x['features'] = encoder_model(query_x['image'], training=False)
-                query_loss = loss_fn(query_y, valid_model(query_x['features'], training=False))
+                query_x['encoder_features'] = encoder_model(query_x['image'], training=False)
+                features = ['encoder_features'] + [x['name'] for x in config['model']['gaze_inputs']]
+                input_list = [query_x[feature] for feature in features]
+                query_loss = loss_fn(query_y, valid_model(input_list, training=False))
                 val_losses.append(query_loss.numpy())
 
             avg_val_query_loss = np.mean(val_losses)
