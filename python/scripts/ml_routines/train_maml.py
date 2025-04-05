@@ -84,7 +84,7 @@ For each meta-epoch:
 """
 
 def inner_loop(gaze_head, support_x, support_y, inner_lr, loss_fn):
-    features = ['encoder_features'] + [x['name'] for x in config['model']['gaze_inputs']]
+    features = ['encoder_features'] + [x['name'] for x in config['model']['gaze']['inputs']]
     input_list = [support_x[feature] for feature in features]
     with tf.GradientTape() as tape:
         preds = gaze_head(input_list, training=True)
@@ -137,7 +137,7 @@ def maml_train(
             task_model.set_weights(adapted_weights)
 
         with tf.GradientTape() as outer_tape:
-            features = ['encoder_features'] + [x['name'] for x in config['model']['gaze_inputs']]
+            features = ['encoder_features'] + [x['name'] for x in config['model']['gaze']['inputs']]
             input_list = [query_x[feature] for feature in features]
             query_preds = task_model(input_list, training=True)
             query_loss = loss_fn(query_y, query_preds)
@@ -164,7 +164,7 @@ def maml_train(
                 )
                 valid_model.set_weights(adapted_weights)
                 query_x['encoder_features'] = encoder_model(query_x['image'], training=False)
-                features = ['encoder_features'] + [x['name'] for x in config['model']['gaze_inputs']]
+                features = ['encoder_features'] + [x['name'] for x in config['model']['gaze']['inputs']]
                 input_list = [query_x[feature] for feature in features]
                 query_loss = loss_fn(query_y, valid_model(input_list, training=False))
                 val_losses.append(query_loss.numpy())
@@ -260,8 +260,8 @@ def train(config):
         yaml.dump(config, f)
 
     # Modify the encoder_weights_fp
-    if config['model']['encoder_weights_fp'] is not None:
-        dir = SAVED_MODELS_DIR / config['model']['encoder_weights_fp']
+    if config['model']['encoder']['weights_fp'] is not None:
+        dir = SAVED_MODELS_DIR / config['model']['encoder']['weights_fp']
 
         # Find the .h5 file that starts with 'encoder'
         encoder_weights_fp = None
@@ -271,8 +271,8 @@ def train(config):
                 break
         if encoder_weights_fp is None:
             raise ValueError(f"No encoder weights file found in {dir}")
-        config['model']['encoder_weights_fp'] = encoder_weights_fp
-        print(f"Encoder weights path: {config['model']['encoder_weights_fp']}")
+        config['model']['encoder']['weights_fp'] = encoder_weights_fp
+        print(f"Encoder weights path: {config['model']['encoder']['weights_fp']}")
     else:
         print("No encoder weights path provided, using default.")
 

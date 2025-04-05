@@ -206,7 +206,7 @@ def prepare_task_generators(h5_file, participants, config):
     query_size = config['dataset']['query_size']
     total_required = support_size + query_size
     h5_ref = h5py.File(h5_file, 'r')
-    pixels_label = config['model']['encoder_input_name']
+    pixels_label = config['model']['encoder']['input_name']
 
     for pid in participants:
         group = h5_ref[str(pid)]
@@ -269,7 +269,7 @@ def fast_task_sampler(task_generators, participants):
         yield task_generators[pid]()
 
 def get_maml_task_dataset(h5_file, participants, config):
-    input_shape = config['model']['encoder_input_shape']
+    input_shape = config['model']['encoder']['input_shape']
     support_size = config['dataset']['support_size']
     query_size = config['dataset']['query_size']
 

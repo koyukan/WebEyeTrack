@@ -31,30 +31,23 @@ model:
   model_weights_fp: null
   
   # Encoder configuration.
-  encoder_weights_fp: 'autoencoder_2025-03-29-12-30-25'
-  encoder_input_shape: [128,512,3]
-  encoder_input_name: 'pixels'
-  encoder_type: 'cnn' # 'mlp' or 'cnn'
-  embedding_size: 512
-  encoder_output: [8, 32, 96]
-  
-  # Decoder configuration.
-  decoder_output: [128, 512, 3]
+  encoder:
+    weights_fp: 'autoencoder_2025-03-29-12-30-25'
+    input_shape: [128,512,3]
+    input_name: 'pixels'
+    type: 'cnn' # 'mlp' or 'cnn'
+    embedding_size: 512
+    output_shape: [8, 32, 96]
 
   # Gaze Estimation configuration.
-  gaze_output: '2d'
-  gaze_inputs:
-    - name: 'head_vector'
-      input_shape: [3]
-    - name: 'face_origin_3d'
-      input_shape: [3]
-
-  # Preprocessing configuration.
-  fourier_transform: false
-  fourier_transform_params:
-    trainable: true
-    mapping_size: 256
-    scale: 1
+  gaze:
+    weights:fp: ''
+    inputs:
+      - name: 'head_vector'
+        input_shape: [3]
+      - name: 'face_origin_3d'
+        input_shape: [3]
+    output: '2d'
 
 # Configuration for the loss function.
 loss:
