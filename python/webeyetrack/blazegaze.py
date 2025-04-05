@@ -1,5 +1,5 @@
-from typing import Optional, Literal
-from dataclasses import dataclass
+from typing import Optional, Literal, List
+from dataclasses import dataclass, field
 import numpy as np
 
 import tensorflow as tf
@@ -24,6 +24,11 @@ class FourierTransformParams:
     mapping_size: int = 256
     scale: float = 10.0
 
+@dataclass
+class ModalityInput:
+    name: str
+    input_shape: tuple
+
 # EMBEDDING_SIZE = 128
 @dataclass
 class BlazeGazeConfig:
@@ -35,7 +40,7 @@ class BlazeGazeConfig:
 
     # Encoder
     encoder_type: Literal['mlp', 'cnn'] = 'mlp'
-    input_shape: tuple = (128, 512, 3)
+    encoder_input_shape: tuple = (128, 512, 3)
     embedding_size: int = 512
     encoder_output: tuple = (8, 32, 96)
 
@@ -44,6 +49,7 @@ class BlazeGazeConfig:
 
     # MLP
     gaze_output: Literal['2d', '3d'] = '3d'
+    gaze_inputs: List[ModalityInput] = field(default_factory=lambda: [])
 
     # Preprocessing
     fourier_transform: bool = False
@@ -122,7 +128,7 @@ class FourierFeatureVectorMapping(tf.keras.layers.Layer):
         return tf.concat([tf.sin(x_proj), tf.cos(x_proj)], axis=-1)
 
 def get_cnn_encoder(config: BlazeGazeConfig):
-    x = Input(shape=config.input_shape)
+    x = Input(shape=config.encoder_input_shape)
 
     if config.fourier_transform:
         x_mapped = FourierFeatureMapping(
@@ -149,7 +155,7 @@ def get_cnn_encoder(config: BlazeGazeConfig):
     return Model(inputs=x, outputs=double_6)
 
 def get_mlp_encoder(config: BlazeGazeConfig):
-    input_layer = Input(shape=config.input_shape)
+    input_layer = Input(shape=config.encoder_input_shape)
 
     x = input_layer
     x = Flatten()(x)  # [B, H*W*C]
@@ -270,7 +276,7 @@ class BlazeGaze():
         if self.config.weights_fp:
             self.model.load_weights(self.config.weights_fp)
         else:
-            self.model([tf.random.uniform((1, *self.config.input_shape))])
+            self.model([tf.random.uniform((1, *self.config.encoder_input_shape))])
 
     def set_gazemodel(self):
         if self.config.encoder_type == 'cnn':
@@ -285,7 +291,7 @@ class BlazeGaze():
         if self.config.weights_fp:
             self.model.load_weights(self.config.weights_fp)
         else:
-            self.model([tf.random.uniform((1, *self.config.input_shape))])
+            self.model([tf.random.uniform((1, *self.config.encoder_input_shape))])
 
     def freeze_encoder(self):
         self.encoder.trainable = False

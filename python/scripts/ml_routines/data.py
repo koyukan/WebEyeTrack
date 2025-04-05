@@ -143,101 +143,49 @@ def load_total_dataset(
 # MAML dataset loading
 # ------------------------------------------------------------------------------------------------
 
-def participant_task_generator(h5_file, pid, config):
-    support_size = config['dataset']['support_size']
-    query_size = config['dataset']['query_size']
+# def participant_task_generator(h5_file, pid, config):
+#     support_size = config['dataset']['support_size']
+#     query_size = config['dataset']['query_size']
     
-    def _gen():
-        with h5py.File(h5_file, 'r') as hf:
-            group = hf[str(pid)]
-            total = group["pixels"].shape[0]
-            indices = np.arange(total)
-            np.random.shuffle(indices)
+#     def _gen():
+#         with h5py.File(h5_file, 'r') as hf:
+#             group = hf[str(pid)]
+#             total = group["pixels"].shape[0]
+#             indices = np.arange(total)
+#             np.random.shuffle(indices)
 
-            # Clip support and query sizes to the total number of samples
-            safe_support_size = min(support_size, total)
-            safe_query_size = min(query_size, total - support_size)
+#             # Clip support and query sizes to the total number of samples
+#             safe_support_size = min(support_size, total)
+#             safe_query_size = min(query_size, total - support_size)
 
-            support_indices = indices[:safe_support_size]
-            query_indices = indices[safe_support_size:safe_support_size + safe_query_size]
+#             support_indices = indices[:safe_support_size]
+#             query_indices = indices[safe_support_size:safe_support_size + safe_query_size]
 
-            def get_samples(idxs):
-                for i in idxs:
-                    image = group["pixels"][i].astype(np.float32) / 255.0
-                    # label = group["pog_norm"][i][:2].astype(np.float32)
-                    label = group['pog_cms'][i][:2].astype(np.float32)
-                    yield image, label
+#             def get_samples(idxs):
+#                 for i in idxs:
+#                     image = group["pixels"][i].astype(np.float32) / 255.0
+#                     # label = group["pog_norm"][i][:2].astype(np.float32)
+#                     label = group['pog_cms'][i][:2].astype(np.float32)
+#                     yield image, label
 
-            support = list(get_samples(support_indices))
-            query = list(get_samples(query_indices))
+#             support = list(get_samples(support_indices))
+#             query = list(get_samples(query_indices))
 
-        return support, query
-    return _gen
+#         return support, query
+#     return _gen
 
-def prepare_task_generators(h5_file, participants, config):
-    task_generators = {}
-    support_size = config['dataset']['support_size']
-    query_size = config['dataset']['query_size']
-    total_required = support_size + query_size
+# def task_sampler(h5_file, participants, config):
+#     while True:
+#         pid = np.random.choice(participants)
+#         task_gen = participant_task_generator(h5_file, pid, config)
+#         support, query = task_gen()
+#         support_x, support_y = zip(*support)
+#         query_x, query_y = zip(*query)
 
-    # Open file once and keep reference (still lazy loading)
-    h5_ref = h5py.File(h5_file, 'r')
-
-    for pid in participants:
-        group = h5_ref[str(pid)]
-        total = group["pixels"].shape[0]
-
-        if total < total_required:
-            print(f"Skipping participant {pid} with only {total} samples (requires {total_required})")
-            continue
-
-        def _make_task_fn(pid=pid):
-            def sample_task():
-                group = h5_ref[str(pid)]
-                total = group["pixels"].shape[0]
-                indices = np.arange(total)
-                np.random.shuffle(indices)
-
-                support_indices = indices[:support_size]
-                query_indices = indices[support_size:support_size + query_size]
-
-                def get_samples(idxs):
-                    for i in idxs:
-                        image = group["pixels"][i].astype(np.float32) / 255.0
-                        # label = group["pog_norm"][i][:2].astype(np.float32)
-                        label = group['pog_cm'][i][:2].astype(np.float32)
-                        yield image, label
-
-                support = list(get_samples(support_indices))
-                query = list(get_samples(query_indices))
-                support_x, support_y = zip(*support)
-                query_x, query_y = zip(*query)
-                return (
-                    tf.stack(support_x), tf.stack(support_y),
-                    tf.stack(query_x), tf.stack(query_y)
-                )
-            return sample_task
-
-        task_generators[pid] = _make_task_fn()
-
-    if len(task_generators) == 0:
-        raise ValueError("No valid participants found with enough samples for support + query sets.")
-
-    return task_generators
-
-
-def task_sampler(h5_file, participants, config):
-    while True:
-        pid = np.random.choice(participants)
-        task_gen = participant_task_generator(h5_file, pid, config)
-        support, query = task_gen()
-        support_x, support_y = zip(*support)
-        query_x, query_y = zip(*query)
-
-        yield (
-            tf.stack(support_x), tf.stack(support_y),
-            tf.stack(query_x), tf.stack(query_y)
-        )
+#         yield (
+#             tf.stack(support_x), tf.stack(support_y),
+#             tf.stack(query_x), tf.stack(query_y)
+#         )
 
 # def task_sampler_sequential(h5_file, participants, config):
 #     while True:  # Infinite loop for dataset
@@ -252,6 +200,66 @@ def task_sampler(h5_file, participants, config):
 #                 tf.stack(query_x), tf.stack(query_y)
 #             )
 
+def prepare_task_generators(h5_file, participants, config):
+    task_generators = {}
+    support_size = config['dataset']['support_size']
+    query_size = config['dataset']['query_size']
+    total_required = support_size + query_size
+    h5_ref = h5py.File(h5_file, 'r')
+    pixels_label = config['model']['encoder_input_name']
+
+    for pid in participants:
+        group = h5_ref[str(pid)]
+        total = group[pixels_label].shape[0]
+
+        if total < total_required:
+            print(f"Skipping participant {pid} with only {total} samples (requires {total_required})")
+            continue
+
+        def _make_task_fn(pid=pid):
+            def sample_task():
+                group = h5_ref[str(pid)]
+                total = group[pixels_label].shape[0]
+                indices = np.random.permutation(total)
+
+                support_indices = indices[:support_size]
+                query_indices = indices[support_size:support_size + query_size]
+
+                def get_samples(idxs):
+                    for i in idxs:
+                        yield {
+                            "image": group[pixels_label][i].astype(np.float32) / 255.0,
+                            "head_vector": group["head_vector"][i][:3].astype(np.float32),
+                            "face_origin_3d": group["face_origin_3d"][i][:3].astype(np.float32),
+                        }, group["pog_cm"][i][:2].astype(np.float32)
+
+                support = list(get_samples(support_indices))
+                query = list(get_samples(query_indices))
+
+                support_x, support_y = zip(*support)
+                query_x, query_y = zip(*query)
+
+                # Stack dict of lists into dict of tensors
+                def stack_dict(samples):
+                    return {
+                        key: tf.stack([d[key] for d in samples])
+                        for key in samples[0]
+                    }
+
+                return (
+                    stack_dict(support_x), tf.stack(support_y),
+                    stack_dict(query_x), tf.stack(query_y)
+                )
+            return sample_task
+
+        task_generators[pid] = _make_task_fn()
+
+    if not task_generators:
+        raise ValueError("No valid participants found with enough samples.")
+
+    return task_generators
+
+
 def fast_task_sampler(task_generators, participants):
     available_pids = list(task_generators.keys())
     if len(available_pids) == 0:
@@ -261,21 +269,30 @@ def fast_task_sampler(task_generators, participants):
         yield task_generators[pid]()
 
 def get_maml_task_dataset(h5_file, participants, config):
+    input_shape = config['model']['encoder_input_shape']
     support_size = config['dataset']['support_size']
     query_size = config['dataset']['query_size']
-    
-    output_signature = (
-        tf.TensorSpec(shape=(support_size, *config['model']['input_shape']), dtype=tf.float32),
-        tf.TensorSpec(shape=(support_size, 2), dtype=tf.float32),
-        tf.TensorSpec(shape=(None, *config['model']['input_shape']), dtype=tf.float32), # None to support variable batch size
-        tf.TensorSpec(shape=(None, 2), dtype=tf.float32),
-    )
+
+    def tensor_spec(shape): return tf.TensorSpec(shape=shape, dtype=tf.float32)
+
+    input_signature = {
+        "image": tensor_spec((None, *input_shape)),
+        "head_vector": tensor_spec((None, 3)),
+        "face_origin_3d": tensor_spec((None, 3)),
+    }
 
     return tf.data.Dataset.from_generator(
-        # lambda: task_sampler(h5_file, participants, config),
-        lambda: fast_task_sampler(prepare_task_generators(h5_file, participants, config), participants),
-        output_signature=output_signature
+        lambda: fast_task_sampler(
+            prepare_task_generators(h5_file, participants, config), participants
+        ),
+        output_signature=(
+            input_signature,                   # support_x
+            tensor_spec((support_size, 2)),    # support_y
+            input_signature,                   # query_x
+            tensor_spec((query_size, 2))       # query_y
+        )
     )
+
 
 if __name__ == '__main__':
 

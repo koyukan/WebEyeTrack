@@ -83,15 +83,16 @@ For each meta-epoch:
     Update meta-model: θ ← θ - β * meta_grads     # β = outer learning rate
 """
 
-def inner_loop(gaze_head, support_features, support_y, inner_lr, loss_fn):
+def inner_loop(gaze_head, support_x, support_y, inner_lr, loss_fn):
     with tf.GradientTape() as tape:
-        preds = gaze_head(support_features, training=True)
+        preds = gaze_head(support_x['encoder_features'], training=True)
         loss = loss_fn(support_y, preds)
     grads = tape.gradient(loss, gaze_head.trainable_weights)
     adapted_weights = [w - inner_lr * g for w, g in zip(gaze_head.trainable_weights, grads)]
     return adapted_weights, loss
 
 def maml_train(
+    config,
     encoder_model,
     gaze_model,
     train_maml_dataset,
@@ -120,21 +121,21 @@ def maml_train(
 
         # --- Train Task ---
         support_x, support_y, query_x, query_y = next(train_task_iter)
-        support_features = encoder_model(support_x, training=False)
-        query_features = encoder_model(query_x, training=False)
+        support_x['encoder_features'] = encoder_model(support_x['image'], training=False)
+        query_x['encoder_features'] = encoder_model(query_x['image'], training=False)
 
         task_model = tf.keras.models.clone_model(gaze_model)
-        task_model.build(support_features.shape)
+        task_model.build(support_x['encoder_features'].shape)
         task_model.set_weights(gaze_model.get_weights())
 
         for _ in range(steps_inner):
             adapted_weights, support_loss = inner_loop(
-                task_model, support_features, support_y, inner_lr, loss_fn
+                task_model, support_x, support_y, inner_lr, loss_fn
             )
             task_model.set_weights(adapted_weights)
 
         with tf.GradientTape() as outer_tape:
-            query_preds = task_model(query_features, training=True)
+            query_preds = task_model(query_x['encoder_features'], training=True)
             query_loss = loss_fn(query_y, query_preds)
 
         grads = outer_tape.gradient(query_loss, task_model.trainable_weights)
@@ -153,13 +154,13 @@ def maml_train(
             for j in tqdm(range(len(val_ids)), desc="Validation Steps"):
                 valid_model.set_weights(gaze_model.get_weights())
                 support_x, support_y, query_x, query_y = next(valid_task_iter)
-                support_features = encoder_model(support_x, training=False)
+                support_x['encoder_features'] = encoder_model(support_x, training=False)
                 adapted_weights, support_loss = inner_loop(
-                    valid_model, support_features, support_y, inner_lr, loss_fn
+                    valid_model, support_x, support_y, inner_lr, loss_fn
                 )
                 valid_model.set_weights(adapted_weights)
-                query_features = encoder_model(query_x, training=False)
-                query_loss = loss_fn(query_y, valid_model(query_features, training=False))
+                query_x['features'] = encoder_model(query_x['image'], training=False)
+                query_loss = loss_fn(query_y, valid_model(query_x['features'], training=False))
                 val_losses.append(query_loss.numpy())
 
             avg_val_query_loss = np.mean(val_losses)
@@ -186,6 +187,7 @@ def maml_train(
     return gaze_model
 
 def maml_test(
+    config,
     encoder_model,
     gaze_model,
     test_maml_dataset,
@@ -301,6 +303,7 @@ def train(config):
     
     # Running the MAML training
     model.gaze_model = maml_train(
+        config=config,
         encoder_model=encoder,
         gaze_model=model.gaze_model,
         train_maml_dataset=train_maml_dataset,
@@ -315,6 +318,7 @@ def train(config):
 
     # Run the test dataset
     maml_test(
+        config=config,
         encoder_model=encoder,
         gaze_model=model.gaze_model,
         test_maml_dataset=test_maml_dataset,
