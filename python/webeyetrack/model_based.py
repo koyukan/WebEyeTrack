@@ -25,6 +25,60 @@ def compute_ear(facial_landmarks, side):
     return ear
 
 ########################################################################################
+# Preprocessing
+########################################################################################
+
+def obtain_eyepatch(
+        frame: np.ndarray, 
+        face_landmarks: np.ndarray,
+        face_padding_coefs: Tuple[float, float] = [0.4, 0.2],
+        face_crop_size: int = 512,
+        dst_img_size: Tuple[int, int] = (512, 128)):
+    
+        # Compute the homography matrix (4 pts) from the points to a final flat rectangle
+    lefttop = face_landmarks[103]
+    leftbottom = face_landmarks[150]
+    righttop = face_landmarks[332]
+    rightbottom = face_landmarks[379]
+    center = face_landmarks[4]
+
+    src_pts = np.array([
+        lefttop,
+        leftbottom,
+        rightbottom,
+        righttop
+    ], dtype=np.float32)
+
+    # Add padding to the points, radially away from the center
+    src_direction = src_pts - center
+    src_pts = src_pts + np.array(face_padding_coefs) * src_direction
+
+    dst_pts = np.array([
+        [0, 0],
+        [0, face_crop_size],
+        [face_crop_size, face_crop_size],
+        [face_crop_size, 0],
+    ], dtype=np.float32)
+
+    # Compute the homography matrix
+    M, _ = cv2.findHomography(src_pts, dst_pts)
+    warped_face_crop = cv2.warpPerspective(frame, M, (face_crop_size, face_crop_size))
+
+    # Apply the homography matrix to the facial landmarks
+    warped_facial_landmarks = np.dot(M, np.vstack((face_landmarks.T, np.ones((1, face_landmarks.shape[0])))))
+    warped_facial_landmarks = (warped_facial_landmarks[:2, :] / warped_facial_landmarks[2, :]).T.astype(np.int32)
+
+    # Generate crops for the eyes and each eye separately
+    top_eyes_patch = warped_facial_landmarks[151]
+    bottom_eyes_patch = warped_facial_landmarks[195]
+    eyes_patch = warped_face_crop[top_eyes_patch[1]:bottom_eyes_patch[1], :]
+
+    # Reshape the eyes patch to the same size
+    eyes_patch = cv2.resize(eyes_patch, dst_img_size)
+    return eyes_patch
+
+
+########################################################################################
 # 3D Face Reconstruction
 ########################################################################################
 

@@ -179,16 +179,6 @@ def load_datasets(args):
                 # per_participant_size=10
             )
             person_datasets[participant] = dataset
-    # elif (args.dataset == 'EyeDiap'):
-    #     dataset = EyeDiapDataset(
-    #         GIT_ROOT / pathlib.Path(config['datasets']['EyeDiap']['path']),
-    #         participants=1,
-    #         # dataset_size=20,
-    #         # per_participant_size=10,
-    #         # video_type='hd'
-    #         video_type='vga',
-    #         frame_skip_rate=5
-    #     )
     elif (args.dataset == 'GazeCapture'):
         person_datasets = {}
         for participant in tqdm(GAZE_CAPTURE_IDS, desc='Participants'):

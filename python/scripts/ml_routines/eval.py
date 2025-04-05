@@ -1,7 +1,9 @@
 import os
+import sys
 import pathlib
 from collections import defaultdict
 import argparse
+import json
 
 import cv2
 import matplotlib.pyplot as plt
@@ -14,16 +16,20 @@ import yaml
 import matplotlib
 matplotlib.use('TkAgg')
 
-from webeyetrack import WebEyeTrack
+from webeyetrack import WebEyeTrack, WebEyeTrackConfig
 from webeyetrack.constants import GIT_ROOT
-from webeyetrack.datasets import MPIIFaceGazeDataset, GazeCaptureDataset, EyeDiapDataset
 import webeyetrack.vis as vis
 from webeyetrack.model_based import vector_to_pitch_yaw, compute_pog
 from webeyetrack.utilities import create_transformation_matrix
 from webeyetrack.data_protocols import GazeResult
 
+
 CWD = pathlib.Path(__file__).parent
-FILE_DIR = pathlib.Path(__file__).parent
+sys.path.append(str(CWD.parent / 'preprocessing'))
+from mpiifacegaze import MPIIFaceGazeDataset
+from gazecapture import GazeCaptureDataset
+
+FILE_DIR = CWD.parent
 OUTPUTS_DIR = CWD / 'outputs'
 SKIP_COUNT = 100
 # SKIP_COUNT = 2
@@ -38,6 +44,13 @@ CALIBRATION_POINTS = np.array([ # 9 points
     [0.1, 0.5],
     [0.9, 0.5]
 ])
+
+# Load the GazeCapture participant IDs
+with open(CWD.parent / 'GazeCapture_participant_ids.json', 'r') as f:
+    GAZE_CAPTURE_IDS = json.load(f)
+
+TOTAL_DATASET = 100
+PER_PARTICIPANT_SIZE = 5
 
 with open(FILE_DIR / 'config.yaml', 'r') as f:
     config = yaml.safe_load(f)
@@ -83,32 +96,19 @@ def eval(args):
     if (args.dataset == 'MPIIFaceGaze'):
         dataset = MPIIFaceGazeDataset(
             GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
-            participants=config['datasets']['MPIIFaceGaze']['val_subjects'] + config['datasets']['MPIIFaceGaze']['train_subjects'],
-            # participants=[5, 6, 7, 8, 9],
-            # participants=[5],
-            # img_size=[244,244],
-            # face_size=[244,244],
-            # dataset_size=100,
-            # per_participant_size=500
-            # per_participant_size=5
+            participants=[x for x in range(14)],
+            dataset_size=TOTAL_DATASET,
+            per_participant_size=PER_PARTICIPANT_SIZE
         )
-    elif (args.dataset == 'EyeDiap'):
-        dataset = EyeDiapDataset(
-            GIT_ROOT / pathlib.Path(config['datasets']['EyeDiap']['path']),
-            participants=1,
-            # dataset_size=20,
-            # per_participant_size=10,
-            # video_type='hd'
-            video_type='vga',
-            frame_skip_rate=5
+    elif (args.dataset == 'GazeCapture'):
+        dataset = GazeCaptureDataset(
+            GIT_ROOT / pathlib.Path(config['datasets']['GazeCapture']['path']),
+            participants=GAZE_CAPTURE_IDS,
+            dataset_size=TOTAL_DATASET,
+            per_participant_size=PER_PARTICIPANT_SIZE
         )
     else:
         raise ValueError(f"Dataset {args.dataset} not supported")
-    
-    # Create pipeline
-    algo = WebEyeTrack(
-        str(GIT_ROOT / 'python' / 'weights' / 'face_landmarker_v2_with_blendshapes.task'),
-    )
 
     RUN_TIMESTAMP = pd.Timestamp.now().strftime('%Y%m%d%H%M%S')
     RUN_DIR = OUTPUTS_DIR / f"{RUN_TIMESTAMP}_{args.dataset}"
@@ -126,18 +126,11 @@ def eval(args):
     # Group data by participant
     for group_name, group in tqdm(meta_df.groupby('participant_id')):
 
-        first_sample_meta_df = group.iloc[0]
-        first_sample = dataset.__getitem__(first_sample_meta_df.name)
-
-        # Update the configurations
-        algo.config(
-            face_width_cm=None, # Reset the head scale estimation
-            intrinsics=first_sample['intrinsics'],
-            screen_RT=first_sample['screen_RT'],
-            screen_width_cm=first_sample['screen_width_cm'],
-            screen_height_cm=first_sample['screen_height_cm'],
-            screen_width_px=first_sample['screen_width_px'],
-            screen_height_px=first_sample['screen_height_px'],
+        # Create the WebEyeTrack object
+        wet = WebEyeTrack(
+            WebEyeTrackConfig(
+                blaze_weights_fp=GIT_ROOT
+            )
         )
 
         # For each participant, perform calibration first by selecting 9 samples
@@ -160,24 +153,23 @@ def eval(args):
             sample = dataset.__getitem__(meta_data.name)
 
             # Get sample and load the image
-            img = np.moveaxis(sample['image'], 0, -1) * 255
+            img = sample['image']
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
             if type(img) == type(None):
                 print(f"Image is None for {sample['image_fp']}")
                 continue
 
-            # Update the last configs
-            algo.config(
-                frame_height=img.shape[0],
-                frame_width=img.shape[1],
-            )
+            # Show the image
+            cv2.imshow('img', img)
+            # if cv2.waitKey(0) & 0xFF == ord('q'):
+            #     break
 
             # Process the sample
-            results = algo.step(
+            results = wet.step(
+                img,
                 sample['facial_landmarks'], 
                 sample['facial_rt'], 
-                sample['face_blendshapes']
             )
 
             # For testing purposes, let's use the gt gaze vector and see how well we can predict it
@@ -223,38 +215,38 @@ def eval(args):
             # results.right.pog = eyes_pog['right']
 
             # Compute the error
-            metrics['face_gaze_vector'].append(angle(sample['face_gaze_vector'], results.face_gaze))
-            metrics['face_origin'].append(euclidean_distance(sample['face_origin_3d'], results.face_origin)) # cm
-            metrics['face_origin_2d'].append(euclidean_distance(sample['face_origin_2d'], results.face_origin_2d))
-            metrics['face_origin_x'].append(euclidean_distance(sample['face_origin_3d'][1], results.face_origin[1]))
-            metrics['face_origin_y'].append(euclidean_distance(sample['face_origin_3d'][0], results.face_origin[0]))
-            metrics['face_origin_z'].append(euclidean_distance(sample['face_origin_3d'][2], results.face_origin[2]))
-            metrics['pog_px'].append(euclidean_distance(sample['pog_px'], results.pog.pog_px))
-            metrics['pog_norm'].append(euclidean_distance(sample['pog_norm'], results.pog.pog_norm))
-            metrics['pog_cm_c'].append(euclidean_distance(sample['gaze_target_3d'][:2], results.pog.pog_cm_c[:2]))
+            # metrics['face_gaze_vector'].append(angle(sample['face_gaze_vector'], results.face_gaze))
+            # metrics['face_origin'].append(euclidean_distance(sample['face_origin_3d'], results.face_origin)) # cm
+            # metrics['face_origin_2d'].append(euclidean_distance(sample['face_origin_2d'], results.face_origin_2d))
+            # metrics['face_origin_x'].append(euclidean_distance(sample['face_origin_3d'][1], results.face_origin[1]))
+            # metrics['face_origin_y'].append(euclidean_distance(sample['face_origin_3d'][0], results.face_origin[0]))
+            # metrics['face_origin_z'].append(euclidean_distance(sample['face_origin_3d'][2], results.face_origin[2]))
+            # metrics['pog_px'].append(euclidean_distance(sample['pog_px'], results.pog.pog_px))
+            # metrics['pog_norm'].append(euclidean_distance(sample['pog_norm'], results.pog.pog_norm))
+            # metrics['pog_cm_c'].append(euclidean_distance(sample['gaze_target_3d'][:2], results.pog.pog_cm_c[:2]))
 
-            if i % SKIP_COUNT == 0:
-                # Write to the output directory
-                drawn_img = visualize_differences(img.copy(), sample, results)
-                cv2.imwrite(str(RUN_DIR/ 'imgs' / f'{group_name}_gaze_diff_{i}.png'), drawn_img)
+            # if i % SKIP_COUNT == 0:
+            #     # Write to the output directory
+            #     drawn_img = visualize_differences(img.copy(), sample, results)
+            #     cv2.imwrite(str(RUN_DIR/ 'imgs' / f'{group_name}_gaze_diff_{i}.png'), drawn_img)
 
-                output_fp = RUN_DIR / 'imgs' / f'{group_name}_gaze_render_{i}.png'
-                drawn_img = vis.render_3d_gaze_with_frame(img.copy(), results, output_fp)
-                cv2.imwrite(str(output_fp), drawn_img)
+            #     output_fp = RUN_DIR / 'imgs' / f'{group_name}_gaze_render_{i}.png'
+            #     drawn_img = vis.render_3d_gaze_with_frame(img.copy(), results, output_fp)
+            #     cv2.imwrite(str(output_fp), drawn_img)
 
-                output_fp = RUN_DIR / 'imgs' / f'{group_name}_pog_render_{i}_screen.png'
-                drawn_img = vis.render_pog_with_screen(
-                    img.copy(), 
-                    results, 
-                    output_fp, 
-                    screen_RT=sample['screen_RT'],
-                    screen_height_cm=sample['screen_height_cm'],
-                    screen_width_cm=sample['screen_width_cm'],
-                    screen_height_px=sample['screen_height_px'],
-                    screen_width_px=sample['screen_width_px'],
-                    gt_pog_px=sample['pog_px'],
-                )
-                cv2.imwrite(str(output_fp), drawn_img)
+            #     output_fp = RUN_DIR / 'imgs' / f'{group_name}_pog_render_{i}_screen.png'
+            #     drawn_img = vis.render_pog_with_screen(
+            #         img.copy(), 
+            #         results, 
+            #         output_fp, 
+            #         screen_RT=sample['screen_RT'],
+            #         screen_height_cm=sample['screen_height_cm'],
+            #         screen_width_cm=sample['screen_width_cm'],
+            #         screen_height_px=sample['screen_height_px'],
+            #         screen_width_px=sample['screen_width_px'],
+            #         gt_pog_px=sample['pog_px'],
+            #     )
+            #     cv2.imwrite(str(output_fp), drawn_img)
 
     # Generate box plots for the metrics
     df = pd.DataFrame(metrics)
@@ -310,8 +302,7 @@ def eval(args):
 if __name__ == '__main__':
     # Parse arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, required=True, choices=['MPIIFaceGaze', 'EyeDiap'], help='Dataset to evaluate')
-    # parser.add_argument('--method', type=str, required=True, choices=['blendshape', 'landmark2d', 'model-based'], help='Method to evaluate')
+    parser.add_argument('--dataset', type=str, required=True, choices=['MPIIFaceGaze', 'GazeCapture'], help='Dataset to evaluate')
     args = parser.parse_args()
 
     eval(args)

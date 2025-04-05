@@ -1,8 +1,9 @@
 from .__logger import setup
-from .webeyetrack import WebEyeTrack
+from .webeyetrack import WebEyeTrack, WebEyeTrackConfig
 
 setup()
 
 __all__ = [
-    'WebEyeTrack'
+    'WebEyeTrack',
+    'WebEyeTrackConfig',
 ]
