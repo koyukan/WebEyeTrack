@@ -37,7 +37,62 @@ class WebEyeTrack():
         self.face_landmarker = vision.FaceLandmarker.create_from_options(options)
 
         # Load the BlazeGaze model
-        self.blazegaze = tf.keras.models.load_model(config.blazegaze_model_fp)        
+        self.blazegaze = tf.keras.models.load_model(config.blazegaze_model_fp)
+
+        # Freeze encoder layers
+        for layer in self.blazegaze.layers:
+            if 'cnn_encoder' in layer.name or 'encoder' in layer.name:
+                layer.trainable = False
+
+    def adapt(self, samples, steps_inner=5, lr_inner=1e-3):
+        """
+        Performs MAML-style adaptation on the gaze head using support samples.
+        
+        Args:
+            samples (dict): Dictionary with support input features and labels.
+            steps_inner (int): Number of inner-loop adaptation steps.
+            lr_inner (float): Inner-loop learning rate.
+        """
+        # Perform the eye patch extraction
+        eye_patches = []
+        for sample in samples:
+            # Perform preprocessing to obtain the eye patch
+            frame = sample['image']
+            face_landmarks_2d = sample['facial_landmarks'][:, :2]
+            face_landmarks_2d = face_landmarks_2d * np.array([frame.shape[1], frame.shape[0]])
+            eye_patch = obtain_eyepatch(
+                frame, 
+                face_landmarks_2d,
+            )
+            eye_patches.append(eye_patch)
+
+        # Create the input from the samples
+        support_x = np.stack(eye_patches)
+        support_x = tf.convert_to_tensor(support_x, dtype=tf.float32)
+        support_y = np.stack([y['pog_cm'] for y in samples])
+        support_y = tf.convert_to_tensor(support_y, dtype=tf.float32)
+
+        # Inner-loop gradient updates
+        loss_fn = tf.keras.losses.MeanAbsoluteError()
+        losses = []
+        for _ in range(steps_inner):
+            with tf.GradientTape() as tape:
+                preds = self.blazegaze([support_x], training=True)
+                loss = loss_fn(support_y, preds)
+            grads = tape.gradient(loss, self.blazegaze.trainable_variables)
+            losses.append(loss)
+
+            # Filter grads to only update gaze head
+            # import pdb; pdb.set_trace()
+            trainable_vars = [v for v in self.blazegaze.trainable_variables]
+            gaze_grads = [g for g, v in zip(grads, self.blazegaze.trainable_variables)]
+
+            for var, grad in zip(trainable_vars, gaze_grads):
+                if grad is not None:
+                    var.assign_sub(lr_inner * grad)
+
+        # Report the loss
+        print(f"Adaptation Loss: {losses}")
 
     def step(
             self,
@@ -57,7 +112,7 @@ class WebEyeTrack():
         )
 
         cv2.imshow('Eye Patch', eye_patch)
-        if cv2.waitKey(0) & 0xFF == ord('q'):
+        if cv2.waitKey(1) & 0xFF == ord('q'):
             cv2.destroyAllWindows()
 
         # Perform the gaze estimation via BlazeGaze Model

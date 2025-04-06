@@ -49,8 +49,8 @@ CALIBRATION_POINTS = np.array([ # 9 points
 with open(CWD.parent / 'GazeCapture_participant_ids.json', 'r') as f:
     GAZE_CAPTURE_IDS = json.load(f)
 
-TOTAL_DATASET = 100
-PER_PARTICIPANT_SIZE = 5
+TOTAL_DATASET = 1000
+PER_PARTICIPANT_SIZE = 100
 
 with open(FILE_DIR / 'config.yaml', 'r') as f:
     config = yaml.safe_load(f)
@@ -129,18 +129,12 @@ def eval(args):
         # Create the WebEyeTrack object
         wet = WebEyeTrack()
 
-        # For each participant, perform calibration first by selecting 9 samples
-        # by finding the closet point to the calibration points
-        # calib_samples = []
-        # for calib_point in CALIBRATION_POINTS:
-        #     # Find the closest point to the calibration point
-        #     distances = group.apply(lambda x: np.linalg.norm(x['pog_norm'].reshape(2) - calib_point), axis=1)
-        #     idx = np.argmin(distances)
-        #     sample = group.iloc[idx]
-        #     calib_samples.append(sample)
+        # Select 9 random numbers from 0 to len(group) - 1
+        support_sample_indices = np.random.choice(len(group), size=min(9, len(group)), replace=False)
+        support_samples = [dataset.__getitem__(i) for i in support_sample_indices]
 
         # Perform calibration
-        # algo.calibrate(calib_samples)
+        wet.adapt(support_samples)
 
         # for i in tqdm(range(len(group))):
         for i, meta_data in tqdm(group.iterrows(), total=len(group)):
