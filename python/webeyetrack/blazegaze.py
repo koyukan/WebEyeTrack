@@ -32,7 +32,7 @@ class ModalityInput:
 @dataclass
 class EncoderConfig:
     weights_fp: Optional[str] = None
-    type: Literal['mlp', 'cnn'] = 'mlp'
+    type: Literal['mlp', 'cnn'] = 'cnn'
     input_shape: tuple = (128, 512, 3)
     embedding_size: int = 512
     output_shape: tuple = (8, 32, 96)
@@ -56,7 +56,6 @@ class BlazeGazeConfig:
     encoder: EncoderConfig = field(default_factory=lambda: EncoderConfig())
     decoder: DecoderConfig = field(default_factory=lambda: DecoderConfig())
     gaze: GazeConfig = field(default_factory=lambda: GazeConfig())
-
 # ------------------------------------------------------------------------
 # Encoder
 # ------------------------------------------------------------------------
@@ -154,7 +153,8 @@ def get_cnn_encoder(config: BlazeGazeConfig):
     double_5 = double_blaze_block(double_4, [24, 96])
     double_6 = double_blaze_block(double_5, [24, 96])
 
-    return Model(inputs=x, outputs=double_6)
+    return Model(inputs=x, outputs=double_6, name="cnn_encoder")
+
 
 def get_mlp_encoder(config: BlazeGazeConfig):
     input_layer = Input(shape=config.encoder.input_shape)
@@ -209,7 +209,7 @@ def get_decoder(config: BlazeGazeConfig):
     # Final RGB reconstruction
     x = Conv2D(3, (3, 3), padding="same", activation="sigmoid")(x)  # Output in [0, 1]
 
-    return Model(inputs=encoded_input, outputs=x)
+    return Model(inputs=encoded_input, outputs=x, name="cnn_decoder")
 
 # ------------------------------------------------------------------------
 # Gaze Model
@@ -257,7 +257,43 @@ def get_gaze_model(config):
         output = tf.keras.layers.Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name="gaze_output_norm")(gaze_vector)
     
     # Build final model
-    return Model(inputs=[cnn_input] + additional_inputs, outputs=output)
+    return Model(inputs=[cnn_input] + additional_inputs, outputs=output, name="gaze_head")
+
+# ------------------------------------------------------------------------
+# Production - Inference
+# ------------------------------------------------------------------------
+
+def build_full_inference_model(encoder, gaze_head, config):
+
+    # Inputs
+    image_input = Input(shape=config.encoder.input_shape, name='image')
+
+    # Optional inputs
+    additional_inputs = []
+    additional_tensors = []
+    for item in config.gaze.inputs:
+        input_tensor = Input(shape=item['input_shape'], name=item['name'])
+        additional_inputs.append(input_tensor)
+        additional_tensors.append(input_tensor)
+
+    # Pass image through encoder
+    encoder_features = encoder(image_input, training=False)
+
+    # Pass encoder features + additional inputs to gaze head
+    gaze_inputs = [encoder_features] + additional_tensors
+    gaze_output = gaze_head(gaze_inputs, training=False)
+
+    # Final model with all inputs
+    full_model = Model(
+        inputs=[image_input] + additional_inputs,
+        outputs=gaze_output,
+        name="full_gaze_inference_model"
+    )
+
+    return full_model
+
+# The BlazeGaze class is the main entry point for using the BlazeGaze model.
+# It initializes the model based on the provided configuration and sets up the encoder, decoder, and gaze model.
 
 class BlazeGaze():
 
@@ -334,13 +370,20 @@ if __name__ == "__main__":
     # Test both models
     config = BlazeGazeConfig(
         # Mode
-        mode='autoencoder',
-        fourier_transform=True,
-        fourier_transform_params=FourierTransformParams(trainable=True),
+        mode='gaze',
     )
     model = BlazeGaze(config)
     model.model.summary()
 
+    inference_model = build_full_inference_model(
+        encoder=model.encoder,
+        gaze_head=model.gaze_model,
+        config=config
+    )
+    inference_model.summary()
+
+    for layer in inference_model.layers:
+        print(layer.name, layer.trainable)
 
     # config = BlazeGazeConfig(
     #     # Mode

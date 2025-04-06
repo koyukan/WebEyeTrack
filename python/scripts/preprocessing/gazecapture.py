@@ -341,6 +341,9 @@ class GazeCaptureDataset():
         # Convert the samples to a DataFrame
         self.samples = pd.DataFrame(self.samples)
 
+    def get_samples_meta_df(self):
+        return self.samples
+
     def __getitem__(self, index: int):
         sample = self.samples.iloc[index]
         calibration_data = self.sample_calibration_data[index]
@@ -350,7 +353,7 @@ class GazeCaptureDataset():
         image_np = np.array(image)
 
         # Get the calibration
-        # calibration_data = self.participant_calibration_data[sample.participant_id]
+        # calibration_ffffdata = self.participant_calibration_data[sample.participant_id]
 
         # Load the annotations
         with open(sample.annotation_fp, 'rb') as f:

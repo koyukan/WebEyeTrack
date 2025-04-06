@@ -127,11 +127,7 @@ def eval(args):
     for group_name, group in tqdm(meta_df.groupby('participant_id')):
 
         # Create the WebEyeTrack object
-        wet = WebEyeTrack(
-            WebEyeTrackConfig(
-                blaze_weights_fp=GIT_ROOT
-            )
-        )
+        wet = WebEyeTrack()
 
         # For each participant, perform calibration first by selecting 9 samples
         # by finding the closet point to the calibration points
@@ -166,87 +162,18 @@ def eval(args):
             #     break
 
             # Process the sample
-            results = wet.step(
+            pog_cm = wet.step(
                 img,
                 sample['facial_landmarks'], 
                 sample['facial_rt'], 
             )
 
-            # For testing purposes, let's use the gt gaze vector and see how well we can predict it
-            # gt_vector = sample['face_gaze_vector']
-            # gt_face_origin = sample['face_origin_3d']
-            # face_pog, eyes_pog = compute_pog(
-            #     gaze_origins={
-            #         # 'face_origin_3d': results.face_origin,
-            #         # 'face_origin_2d': results.face_origin_2d,
-            #         # 'eye_origins_3d': {'left': results.left.origin, 'right': results.right.origin},
-            #         # 'eye_origins_2d': {'left': results.left.origin_2d, 'right': results.right.origin_2d},
-            #         'face_origin_3d': gt_face_origin,
-            #         'face_origin_2d': sample['face_origin_2d'],
-            #         'eye_origins_3d': {'left': gt_face_origin, 'right': gt_face_origin},
-            #         'eye_origins_2d': {'left': sample['face_origin_2d'], 'right': sample['face_origin_2d']},
-            #     },
-            #     gaze_vectors={
-            #         'face': gt_vector,
-            #         'eyes': {
-            #             'is_closed': {'left': False, 'right': False},
-            #             'vector': {'left': gt_vector, 'right': gt_vector},
-            #             'meta_data': {
-            #                 'left': {},
-            #                 'right': {}
-            #             }
-            #         }
-            #     },
-            #     screen_RT=algo.screen_RT,
-            #     screen_width_cm=algo.screen_width_cm,
-            #     screen_height_cm=algo.screen_height_cm,
-            #     screen_width_px=algo.screen_width_px,
-            #     screen_height_px=algo.screen_height_px,
-            # )
-            # results.face_gaze = gt_vector
-            # results.left.direction = gt_vector
-            # results.right.direction = gt_vector
-            # results.face_origin = gt_face_origin
-            # results.face_origin_2d = sample['face_origin_2d']
-            # results.left.origin = gt_face_origin
-            # results.right.origin = gt_face_origin
-            # results.pog = face_pog
-            # results.left.pog = eyes_pog['left']
-            # results.right.pog = eyes_pog['right']
+            # Compute the POG error in euclidean distance (cm)
+            pog_error = euclidean_distance(sample['pog_cm'], pog_cm)
 
-            # Compute the error
-            # metrics['face_gaze_vector'].append(angle(sample['face_gaze_vector'], results.face_gaze))
-            # metrics['face_origin'].append(euclidean_distance(sample['face_origin_3d'], results.face_origin)) # cm
-            # metrics['face_origin_2d'].append(euclidean_distance(sample['face_origin_2d'], results.face_origin_2d))
-            # metrics['face_origin_x'].append(euclidean_distance(sample['face_origin_3d'][1], results.face_origin[1]))
-            # metrics['face_origin_y'].append(euclidean_distance(sample['face_origin_3d'][0], results.face_origin[0]))
-            # metrics['face_origin_z'].append(euclidean_distance(sample['face_origin_3d'][2], results.face_origin[2]))
-            # metrics['pog_px'].append(euclidean_distance(sample['pog_px'], results.pog.pog_px))
-            # metrics['pog_norm'].append(euclidean_distance(sample['pog_norm'], results.pog.pog_norm))
-            # metrics['pog_cm_c'].append(euclidean_distance(sample['gaze_target_3d'][:2], results.pog.pog_cm_c[:2]))
-
-            # if i % SKIP_COUNT == 0:
-            #     # Write to the output directory
-            #     drawn_img = visualize_differences(img.copy(), sample, results)
-            #     cv2.imwrite(str(RUN_DIR/ 'imgs' / f'{group_name}_gaze_diff_{i}.png'), drawn_img)
-
-            #     output_fp = RUN_DIR / 'imgs' / f'{group_name}_gaze_render_{i}.png'
-            #     drawn_img = vis.render_3d_gaze_with_frame(img.copy(), results, output_fp)
-            #     cv2.imwrite(str(output_fp), drawn_img)
-
-            #     output_fp = RUN_DIR / 'imgs' / f'{group_name}_pog_render_{i}_screen.png'
-            #     drawn_img = vis.render_pog_with_screen(
-            #         img.copy(), 
-            #         results, 
-            #         output_fp, 
-            #         screen_RT=sample['screen_RT'],
-            #         screen_height_cm=sample['screen_height_cm'],
-            #         screen_width_cm=sample['screen_width_cm'],
-            #         screen_height_px=sample['screen_height_px'],
-            #         screen_width_px=sample['screen_width_px'],
-            #         gt_pog_px=sample['pog_px'],
-            #     )
-            #     cv2.imwrite(str(output_fp), drawn_img)
+            # Store the metrics
+            metrics['pog_error'].append(pog_error)
+            # metrics['participant_id'].append(group_name)
 
     # Generate box plots for the metrics
     df = pd.DataFrame(metrics)

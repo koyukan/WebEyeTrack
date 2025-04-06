@@ -2,6 +2,7 @@ import pathlib
 from typing import Union, Any, Tuple, Optional
 from dataclasses import dataclass
 
+import tensorflow as tf
 import cv2
 import numpy as np
 from mediapipe.tasks import python
@@ -14,21 +15,21 @@ from .data_protocols import GazeResult, EyeResult
 
 @dataclass
 class WebEyeTrackConfig():
-    blaze_weights_fp: Union[str, pathlib.Path]
-
-    # Optional
+    blazegaze_model_fp: Union[str, pathlib.Path] = GIT_ROOT / 'python' / 'weights' / 'blazegaze_model.h5'
     ear_threshold: float = 0.2
-    mediapipe_flm_model: Union[str, pathlib.Path] = GIT_ROOT / 'python' / 'weights' / 'face_landmarker_v2_with_blendshapes.task'
+    mediapipe_flm_model_fp: Union[str, pathlib.Path] = GIT_ROOT / 'python' / 'weights' / 'face_landmarker_v2_with_blendshapes.task'
 
 class WebEyeTrack():
 
     config: WebEyeTrackConfig
 
-    def __init__(self, config: WebEyeTrackConfig):
+    def __init__(self, config: Optional[WebEyeTrackConfig] = None):
+        if config is None:
+            config = WebEyeTrackConfig()
         self.config = config
 
         # Setup MediaPipe Face Facial Landmark model
-        base_options = python.BaseOptions(model_asset_path=config.mediapipe_flm_model)
+        base_options = python.BaseOptions(model_asset_path=config.mediapipe_flm_model_fp)
         options = vision.FaceLandmarkerOptions(base_options=base_options,
                                             output_face_blendshapes=True,
                                             output_facial_transformation_matrixes=True,
@@ -36,7 +37,7 @@ class WebEyeTrack():
         self.face_landmarker = vision.FaceLandmarker.create_from_options(options)
 
         # Load the BlazeGaze model
-        
+        self.blazegaze = tf.keras.models.load_model(config.blazegaze_model_fp)        
 
     def step(
             self,
@@ -60,6 +61,10 @@ class WebEyeTrack():
             cv2.destroyAllWindows()
 
         # Perform the gaze estimation via BlazeGaze Model
+        pog_estimation = self.blazegaze.predict({
+            "image": np.expand_dims(eye_patch, axis=0)
+        }, verbose=0)
+        return pog_estimation[0]
 
     def process_frame(
             self,
