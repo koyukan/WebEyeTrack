@@ -49,7 +49,7 @@ CALIBRATION_POINTS = np.array([ # 9 points
 with open(CWD.parent / 'GazeCapture_participant_ids.json', 'r') as f:
     GAZE_CAPTURE_IDS = json.load(f)
 
-TOTAL_DATASET = 1000
+TOTAL_DATASET = 10000
 PER_PARTICIPANT_SIZE = 100
 
 with open(FILE_DIR / 'config.yaml', 'r') as f:
@@ -97,15 +97,15 @@ def eval(args):
         dataset = MPIIFaceGazeDataset(
             GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
             participants=[x for x in range(14)],
-            dataset_size=TOTAL_DATASET,
-            per_participant_size=PER_PARTICIPANT_SIZE
+            # dataset_size=TOTAL_DATASET,
+            # per_participant_size=PER_PARTICIPANT_SIZE
         )
     elif (args.dataset == 'GazeCapture'):
         dataset = GazeCaptureDataset(
             GIT_ROOT / pathlib.Path(config['datasets']['GazeCapture']['path']),
             participants=GAZE_CAPTURE_IDS,
-            dataset_size=TOTAL_DATASET,
-            per_participant_size=PER_PARTICIPANT_SIZE
+            # dataset_size=TOTAL_DATASET,
+            # per_participant_size=PER_PARTICIPANT_SIZE
         )
     else:
         raise ValueError(f"Dataset {args.dataset} not supported")
@@ -156,18 +156,19 @@ def eval(args):
             #     break
 
             # Process the sample
-            pog_cm = wet.step(
+            status, pog_cm = wet.step(
                 img,
                 sample['facial_landmarks'], 
                 sample['facial_rt'], 
             )
 
-            # Compute the POG error in euclidean distance (cm)
-            pog_error = euclidean_distance(sample['pog_cm'], pog_cm)
+            if status:
+                # Compute the POG error in euclidean distance (cm)
+                pog_error = euclidean_distance(sample['pog_cm'], pog_cm)
 
-            # Store the metrics
-            metrics['pog_error'].append(pog_error)
-            # metrics['participant_id'].append(group_name)
+                # Store the metrics
+                metrics['pog_error'].append(pog_error)
+                # metrics['participant_id'].append(group_name)
 
     # Generate box plots for the metrics
     df = pd.DataFrame(metrics)

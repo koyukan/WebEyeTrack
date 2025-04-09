@@ -272,7 +272,7 @@ def build_full_inference_model(encoder, gaze_head, config):
     additional_inputs = []
     additional_tensors = []
     for item in config.gaze.inputs:
-        input_tensor = Input(shape=item['input_shape'], name=item.name)
+        input_tensor = Input(shape=item.input_shape, name=item.name)
         additional_inputs.append(input_tensor)
         additional_tensors.append(input_tensor)
 

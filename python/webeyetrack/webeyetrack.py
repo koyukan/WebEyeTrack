@@ -106,10 +106,14 @@ class WebEyeTrack():
         face_landmarks_2d = face_landmarks_2d * np.array([frame.shape[1], frame.shape[0]])
         
         # Perform preprocessing to obtain the eye patch
-        eye_patch = obtain_eyepatch(
-            frame, 
-            face_landmarks_2d,
-        )
+        try:
+            eye_patch = obtain_eyepatch(
+                frame, 
+                face_landmarks_2d,
+            )
+        except Exception as e:
+            print(f"Error in obtaining eye patch: {e}")
+            return False, None
 
         cv2.imshow('Eye Patch', eye_patch)
         if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -119,7 +123,7 @@ class WebEyeTrack():
         pog_estimation = self.blazegaze.predict({
             "image": np.expand_dims(eye_patch, axis=0)
         }, verbose=0)
-        return pog_estimation[0]
+        return True, pog_estimation[0]
 
     def process_frame(
             self,
