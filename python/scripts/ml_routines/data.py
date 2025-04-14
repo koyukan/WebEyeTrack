@@ -80,8 +80,8 @@ def participant_generator(file, pid, config):
             limit = min(max_samples, total) if max_samples else total
             for i in range(limit):
                 image = group["pixels"][i].astype(np.float32) / 255.0
-                # label = group["pog_norm"][i][:2].astype(np.float32)
-                label = group['pog_cm'][i][:2].astype(np.float32)
+                label = group["pog_norm"][i][:2].astype(np.float32)
+                # label = group['pog_cm'][i][:2].astype(np.float32)
                 if config['model']['mode'] == 'autoencoder':
                     yield image, image
                 elif config['model']['mode'] == 'gaze':
@@ -231,7 +231,9 @@ def prepare_task_generators(h5_file, participants, config):
                             "image": group[pixels_label][i].astype(np.float32) / 255.0,
                             "head_vector": group["head_vector"][i][:3].astype(np.float32),
                             "face_origin_3d": group["face_origin_3d"][i][:3].astype(np.float32),
-                        }, group["pog_cm"][i][:2].astype(np.float32)
+                            'screen_info': np.stack([group['screen_height_cm'][i],
+                                                     group['screen_width_cm'][i]]).astype(np.float32),
+                        }, group["pog_norm"][i][:2].astype(np.float32)
 
                 support = list(get_samples(support_indices))
                 query = list(get_samples(query_indices))
@@ -279,6 +281,7 @@ def get_maml_task_dataset(h5_file, participants, config):
         "image": tensor_spec((None, *input_shape)),
         "head_vector": tensor_spec((None, 3)),
         "face_origin_3d": tensor_spec((None, 3)),
+        'screen_info': tensor_spec((None, 2)),
     }
 
     return tf.data.Dataset.from_generator(

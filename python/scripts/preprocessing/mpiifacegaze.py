@@ -137,8 +137,8 @@ class MPIIFaceGazeDataset():
                     data_id = f"{day_id}_{img_id}"
 
                     # If the annotation exists, store the path instead
-                    if (annotations_dir / f"{data_id}.pkl").is_file():
-                    # if False:
+                    # if (annotations_dir / f"{data_id}.pkl").is_file():
+                    if False:
                         self.samples['id'].append(data_id)
                         self.samples['participant_id'].append(participant_id)
                         self.samples['image_fp'].append(participant_dir / day_id / f"{img_id}.jpg")
@@ -249,14 +249,14 @@ class MPIIFaceGazeDataset():
                     # Convert face_blendshapes to a proper numpy array
                     np_face_blendshapes = np.array([x.score for x in face_blendshapes])
 
-                    # # Extract the PoG
-                    # pog_px=np.array(items[1:3], dtype=np.float32)
+                    # Extract the PoG
+                    pog_px=np.array(items[1:3], dtype=np.float32)
 
-                    # # Compute the normalized PoG
-                    # pog_norm = np.array([
-                    #     pog_px[0] / calibration_data.monitor_width_px,
-                    #     pog_px[1] / calibration_data.monitor_height_px
-                    # ])
+                    # Compute the normalized PoG
+                    pog_norm = np.array([
+                        pog_px[0] / calibration_data.monitor_width_px,
+                        pog_px[1] / calibration_data.monitor_height_px
+                    ])
 
                     # # Compute the PoG in mm
                     # pog_cm = np.array([
@@ -270,14 +270,14 @@ class MPIIFaceGazeDataset():
                     gaze_target_3d_screen = np.linalg.inv(calibration_data.screen_RT) @ gaze_target_3d_h
                     gaze_target_3d_screen = gaze_target_3d_screen[:3] / gaze_target_3d_screen[3]
                     pog_cm = gaze_target_3d_screen[:2]
-                    pog_norm = np.array([
-                        gaze_target_3d_screen[0] / calibration_data.monitor_width_cm,
-                        gaze_target_3d_screen[1] / calibration_data.monitor_height_cm
-                    ])
-                    pog_px = np.array([
-                        pog_norm[0] * calibration_data.monitor_width_px,
-                        pog_norm[1] * calibration_data.monitor_height_px
-                    ])
+                    # pog_norm = np.array([
+                    #     gaze_target_3d_screen[0] / calibration_data.monitor_width_cm,
+                    #     gaze_target_3d_screen[1] / calibration_data.monitor_height_cm
+                    # ])
+                    # pog_px = np.array([
+                    #     pog_norm[0] * calibration_data.monitor_width_px,
+                    #     pog_norm[1] * calibration_data.monitor_height_px
+                    # ])
 
                     annotation = Annotations(
                         original_img_size=np.array(image_np.shape),
@@ -358,18 +358,18 @@ class MPIIFaceGazeDataset():
     def __len__(self):
         return len(self.samples)
 
-# if __name__ == '__main__':
+if __name__ == '__main__':
 
-#     from ..constants import DEFAULT_CONFIG
-#     with open(DEFAULT_CONFIG, 'r') as f:
-#         config = yaml.safe_load(f)
+    from webeyetrack.constants import DEFAULT_CONFIG
+    with open(DEFAULT_CONFIG, 'r') as f:
+        config = yaml.safe_load(f)
 
-#     dataset = MPIIFaceGazeDataset(
-#         GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
-#         dataset_size=2,
-#         participants=[1]
-#     )
-#     print(len(dataset))
+    dataset = MPIIFaceGazeDataset(
+        GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
+        dataset_size=2,
+        participants=[1]
+    )
+    print(len(dataset))
 
-#     sample = dataset[0]
-#     print(json.dumps({k: str(v) for k, v in sample.items()}, indent=4))
+    sample = dataset[0]
+    print(json.dumps({k: str(v) for k, v in sample.items()}, indent=4))

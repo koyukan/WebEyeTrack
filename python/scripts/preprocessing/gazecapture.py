@@ -40,6 +40,45 @@ RIGHT_EYE_LANDMARKS = [33, 133, 159, 145, 153]
 with open(CWD.parent / 'GazeCapture_participant_ids.json', 'r') as f:
     GAZE_CAPTURE_IDS = json.load(f)
 
+# References
+# https://github.com/CSAILVision/GazeCapture/blob/master/code/cam2screen.m
+# https://github.com/CSAILVision/GazeCapture/tree/master?tab=readme-ov-file#dotinfojson
+
+def cam2screen_single(x_cam_cm, y_cam_cm, device_name, apple_device_df):
+    """
+    Convert camera-space (cm) to screen-space (cm) for a single device and orientation == 1.
+
+    Args:
+        x_cam_cm (float): X coordinate in camera space (cm).
+        y_cam_cm (float): Y coordinate in camera space (cm).
+        device_name (str): Name of the Apple device (e.g., 'iPhone 6s').
+        apple_device_df (pd.DataFrame): Loaded Apple device specs.
+
+    Returns:
+        (x_screen_cm, y_screen_cm): Tuple of converted screen-space coordinates in cm.
+    """
+    row = apple_device_df[apple_device_df['DeviceName'] == device_name]
+    if row.empty:
+        raise ValueError(f"Device '{device_name}' not found in device spec.")
+
+    row = row.iloc[0]
+    dX = row['DeviceCameraToScreenXMm']
+    dY = row['DeviceCameraToScreenYMm']
+
+    # Convert input from cm to mm
+    x_cam_mm = x_cam_cm * 10
+    y_cam_mm = y_cam_cm * 10
+
+    # Orientation == 1 (portrait)
+    x_screen_mm = x_cam_mm + dX
+    y_screen_mm = -y_cam_mm - dY
+
+    # Convert back to cm
+    x_screen_cm = x_screen_mm / 10.0
+    y_screen_cm = y_screen_mm / 10.0
+
+    return x_screen_cm, y_screen_cm
+
 class GazeCaptureDataset():
 
     def __init__(
@@ -56,6 +95,7 @@ class GazeCaptureDataset():
         if isinstance(dataset_dir, str):
             dataset_dir = pathlib.Path(dataset_dir)
         assert dataset_dir.is_dir(), f"Dataset directory {dataset_dir} does not exist."
+        
         self.dataset_dir = dataset_dir
         self.dataset_size = dataset_size
         self.per_participant_size = per_participant_size
@@ -63,6 +103,9 @@ class GazeCaptureDataset():
         self.img_size = img_size
         self.participants = participants
         self.face_landmarker = None
+
+        self.apple_devices = pd.read_csv(CWD / "apple_device_data.csv")
+        self.apple_devices['DeviceName'] = self.apple_devices['DeviceName'].str.lower()
         self.preprocessing()
 
     def load_model(self):
@@ -113,7 +156,21 @@ class GazeCaptureDataset():
             with open(part_dir / 'screen.json', 'r') as f:
                 screen_info = json.load(f)
             screen_info_df = pd.DataFrame(screen_info)
-            
+            with open(part_dir / 'info.json', 'r') as f:
+                device_info = json.load(f)
+            """
+            {
+                "TotalFrames": 99,
+                "NumFaceDetections": 97,
+                "NumEyeDetections": 56,
+                "Dataset": "train",
+                "DeviceName": "iPhone 6"
+            }
+            """
+            device_name = device_info['DeviceName'].lower()
+            device_meta = self.apple_devices[self.apple_devices['DeviceName'] == device_name]
+            assert len(device_meta) == 1, f"Device {device_name} not found in device specs."
+
             per_participant_samples = 0
             face_width_cm = None
             intrinsics = None
@@ -154,10 +211,10 @@ class GazeCaptureDataset():
                 # Assume the camera is at the top center of the screen (in portrait mode)
                 # Compute the PoG
                 pog_px = np.array([dot_info['XPts'], dot_info['YPts']])
-                pog_cm = np.array([dot_info['XCam'], dot_info['YCam']])
+                pog_cm = np.array([dot_info['XCam'], dot_info['YCam']]) # Camera Coordinate Space
                 s_width, s_height = screen_info['W'], screen_info['H']
                 pog_norm = np.array([pog_px[0] / s_width, pog_px[1] / s_height])
-                s_width_cm, s_height_cm = pog_cm[0] / s_width, pog_cm[1] / s_height
+                s_height_cm, s_width_cm = device_meta['DeviceScreenHeightMm'].values[0] / 10, device_meta['DeviceScreenWidthMm'].values[0] / 10
 
                 """
                 Orientation: The orientation of the interface, as described by the enumeration UIInterfaceOrientation, where:
@@ -166,14 +223,18 @@ class GazeCaptureDataset():
                 3: landscape, with home button on the right
                 4: landscape, with home button on the left
                 """
+                # Only consider the portrait mode for now - as this is the most common and matches phones, tablets and PCs
                 if screen_info['Orientation'] == 1:
                     camera_location = np.array([s_width_cm/2, 0, 0])
                 elif screen_info['Orientation'] == 2:
-                    camera_location = np.array([s_width_cm/2, s_height_cm, 0])
+                    continue
+                    # camera_location = np.array([s_width_cm/2, s_height_cm, 0])
                 elif screen_info['Orientation'] == 3:
-                    camera_location = np.array([0, s_width_cm/2, 0])
+                    continue
+                    # camera_location = np.array([0, s_width_cm/2, 0])
                 elif screen_info['Orientation'] == 4:
-                    camera_location = np.array([s_height_cm, s_width_cm/2, 0])
+                    continue
+                    # camera_location = np.array([s_height_cm, s_width_cm/2, 0])
                 else:
                     raise ValueError(f"Orientation {screen_info['Orientation']} is not recognized.")
 
@@ -384,7 +445,7 @@ if __name__ == "__main__":
 
     dataset = GazeCaptureDataset(
         dataset_dir=GIT_ROOT / pathlib.Path(config['datasets']['GazeCapture']['path']),
-        # per_participant_size=10,
+        per_participant_size=10,
         # dataset_size=20
         participants=GAZE_CAPTURE_IDS
     )

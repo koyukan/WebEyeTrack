@@ -104,7 +104,7 @@ def eval(args):
         dataset = GazeCaptureDataset(
             GIT_ROOT / pathlib.Path(config['datasets']['GazeCapture']['path']),
             participants=GAZE_CAPTURE_IDS,
-            # dataset_size=TOTAL_DATASET,
+            dataset_size=TOTAL_DATASET,
             # per_participant_size=PER_PARTICIPANT_SIZE
         )
     else:
@@ -164,7 +164,7 @@ def eval(args):
 
             if status:
                 # Compute the POG error in euclidean distance (cm)
-                pog_error = euclidean_distance(sample['pog_cm'], pog_cm)
+                pog_error = euclidean_distance(sample['pog_norm'], pog_cm)
 
                 # Store the metrics
                 metrics['pog_error'].append(pog_error)

@@ -83,12 +83,31 @@ For each meta-epoch:
     Update meta-model: θ ← θ - β * meta_grads     # β = outer learning rate
 """
 
-def inner_loop(gaze_head, support_x, support_y, inner_lr, loss_fn, model_config):
+def mae_cm_loss(y_true, y_pred, screen_info):
+    """
+    Convert normalized predictions and labels to cm using screen_info
+    and compute MAE in cm.
+
+    Args:
+        y_true: Tensor of shape (batch_size, 2), normalized labels [0,1]
+        y_pred: Tensor of shape (batch_size, 2), normalized predictions [0,1]
+        screen_info: Tensor of shape (batch_size, 2), in cm: [height, width]
+
+    Returns:
+        Scalar MAE loss in cm
+    """
+    # Convert from normalized [0,1] to cm by multiplying by screen dimensions
+    true_cm = y_true * screen_info
+    pred_cm = y_pred * screen_info
+
+    return tf.reduce_mean(tf.abs(true_cm - pred_cm))  # MAE in cm
+
+def inner_loop(gaze_head, support_x, support_y, inner_lr, model_config):
     features = ['encoder_features'] + [x.name for x in model_config.gaze.inputs]
     input_list = [support_x[feature] for feature in features]
     with tf.GradientTape() as tape:
         preds = gaze_head(input_list, training=True)
-        loss = loss_fn(support_y, preds)
+        loss = mae_cm_loss(support_y, preds, support_x['screen_info'])
     grads = tape.gradient(loss, gaze_head.trainable_weights)
     adapted_weights = [w - inner_lr * g for w, g in zip(gaze_head.trainable_weights, grads)]
     return adapted_weights, loss
@@ -107,7 +126,6 @@ def maml_train(
     tb_writer=None
 ):
     meta_optimizer = tf.keras.optimizers.Adam(learning_rate=outer_lr)
-    loss_fn = tf.keras.losses.MeanAbsoluteError()
     train_task_iter = iter(train_maml_dataset)
     train_ids, val_ids, test_ids = ids
 
@@ -133,7 +151,7 @@ def maml_train(
 
         for _ in range(steps_inner):
             adapted_weights, support_loss = inner_loop(
-                task_model, support_x, support_y, inner_lr, loss_fn, model_config
+                task_model, support_x, support_y, inner_lr, model_config
             )
             task_model.set_weights(adapted_weights)
 
@@ -141,7 +159,7 @@ def maml_train(
             features = ['encoder_features'] + [x.name for x in model_config.gaze.inputs]
             input_list = [query_x[feature] for feature in features]
             query_preds = task_model(input_list, training=True)
-            query_loss = loss_fn(query_y, query_preds)
+            query_loss = mae_cm_loss(query_y, query_preds, query_x['screen_info'])
 
         grads = outer_tape.gradient(query_loss, task_model.trainable_weights)
         meta_optimizer.apply_gradients(zip(grads, gaze_model.trainable_weights))
@@ -161,13 +179,13 @@ def maml_train(
                 support_x, support_y, query_x, query_y = next(valid_task_iter)
                 support_x['encoder_features'] = encoder_model(support_x['image'], training=False)
                 adapted_weights, support_loss = inner_loop(
-                    valid_model, support_x, support_y, inner_lr, loss_fn, model_config
+                    valid_model, support_x, support_y, inner_lr, model_config
                 )
                 valid_model.set_weights(adapted_weights)
                 query_x['encoder_features'] = encoder_model(query_x['image'], training=False)
                 features = ['encoder_features'] + [x.name for x in model_config.gaze.inputs]
                 input_list = [query_x[feature] for feature in features]
-                query_loss = loss_fn(query_y, valid_model(input_list, training=False))
+                query_loss = mae_cm_loss(query_y, valid_model(input_list, training=False), query_x['screen_info'])
                 val_losses.append(query_loss.numpy())
 
             avg_val_query_loss = np.mean(val_losses)
@@ -211,15 +229,12 @@ def maml_test(
 ):
 
     print("Starting MAML Test...")
-    loss_fn = tf.keras.losses.MeanAbsoluteError()
-    mae_fn = tf.keras.metrics.MeanAbsoluteError()
 
     test_task_iter = iter(test_maml_dataset)
     train_ids, val_ids, test_ids = ids
     max_steps = steps_test or len(test_ids)
 
     all_query_losses = []
-    all_query_maes = []
 
     for step in tqdm(range(max_steps), desc="Meta Test Steps"):
         # Sample test task
@@ -241,7 +256,7 @@ def maml_test(
         for _ in range(steps_inner):
             with tf.GradientTape() as tape:
                 support_preds = task_model(input_list, training=True)
-                support_loss = loss_fn(support_y, support_preds)
+                support_loss = mae_cm_loss(support_y, support_preds, support_x['screen_info'])
             grads = tape.gradient(support_loss, task_model.trainable_weights)
             for w, g in zip(task_model.trainable_weights, grads):
                 w.assign_sub(inner_lr * g)
@@ -251,20 +266,17 @@ def maml_test(
 
         # Evaluate on query set
         query_preds = task_model(input_list, training=False)
-        query_loss = loss_fn(query_y, query_preds).numpy()
-        query_mae = mae_fn(query_y, query_preds).numpy()
+        query_loss = mae_cm_loss(query_y, query_preds, query_x['screen_info']).numpy()
 
         all_query_losses.append(query_loss)
-        all_query_maes.append(query_mae)
 
         if tb_writer:
             with tb_writer.as_default():
                 tf.summary.scalar("test_query_loss", query_loss, step=step)
-                tf.summary.scalar("test_query_mae", query_mae, step=step)
                 tb_writer.flush()
 
-    print(f"MAML Test Finished — Avg Query Loss: {np.mean(all_query_losses):.4f}, Avg MAE: {np.mean(all_query_maes):.4f}")
-    return all_query_losses, all_query_maes
+    print(f"MAML Test Finished — Avg Query Loss (MAE): {np.mean(all_query_losses):.4f}")
+    return all_query_losses
 
 def train(config):
 
