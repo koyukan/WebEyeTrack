@@ -77,6 +77,11 @@ def obtain_eyepatch(
     eyes_patch = cv2.resize(eyes_patch, dst_img_size)
     return eyes_patch
 
+def get_head_vector(rt):
+    pitch, yaw, roll = rotation_matrix_to_euler_angles(rt[:3, :3])
+    h_pitch, h_yaw, h_roll = -yaw, pitch, roll
+    f_h = pitch_yaw_roll_to_gaze_vector(h_pitch, h_yaw, h_roll)
+    return f_h
 
 ########################################################################################
 # 3D Face Reconstruction

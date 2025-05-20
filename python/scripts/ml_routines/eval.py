@@ -49,8 +49,8 @@ CALIBRATION_POINTS = np.array([ # 9 points
 with open(CWD.parent / 'GazeCapture_participant_ids.json', 'r') as f:
     GAZE_CAPTURE_IDS = json.load(f)
 
-TOTAL_DATASET = 10000
-PER_PARTICIPANT_SIZE = 100
+TOTAL_DATASET = 2000
+PER_PARTICIPANT_SIZE = 30
 
 with open(FILE_DIR / 'config.yaml', 'r') as f:
     config = yaml.safe_load(f)
@@ -104,7 +104,7 @@ def eval(args):
         dataset = GazeCaptureDataset(
             GIT_ROOT / pathlib.Path(config['datasets']['GazeCapture']['path']),
             participants=GAZE_CAPTURE_IDS,
-            dataset_size=TOTAL_DATASET,
+            # dataset_size=TOTAL_DATASET,
             # per_participant_size=PER_PARTICIPANT_SIZE
         )
     else:
@@ -156,15 +156,26 @@ def eval(args):
             #     break
 
             # Process the sample
-            status, pog_cm = wet.step(
+            status, pog_norm = wet.step(
                 img,
                 sample['facial_landmarks'], 
                 sample['facial_rt'], 
             )
 
             if status:
+
+                # Compute the PoG in centimeters
+                # import pdb; pdb.set_trace()
+                screen_info = np.array([sample['screen_width_cm'], sample['screen_height_cm']])
+                pog_norm_error = sample['pog_norm'] - pog_norm
+                pog_error = pog_norm_error * screen_info
+
+                # Compute the PoG as the norm of the vector
+                pog_error = np.linalg.norm(pog_error)
+                
                 # Compute the POG error in euclidean distance (cm)
-                pog_error = euclidean_distance(sample['pog_norm'], pog_cm)
+                # pog_error = euclidean_distance(sample['pog_cm'], pog_cm)
+                # pog_error = euclidean_distance(sample['pog_cm'], pog_norm)
 
                 # Store the metrics
                 metrics['pog_error'].append(pog_error)

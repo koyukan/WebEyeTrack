@@ -32,6 +32,8 @@ from webeyetrack.model_based import (
 from webeyetrack.constants import GIT_ROOT
 from webeyetrack.data_protocols import Annotations, CalibrationData, Sample
 
+from utils import data_normalization_entry
+
 CWD = pathlib.Path(__file__).parent
 LEFT_EYE_LANDMARKS = [263, 362, 386, 374, 380]
 RIGHT_EYE_LANDMARKS = [33, 133, 159, 145, 153]
@@ -211,10 +213,18 @@ class GazeCaptureDataset():
                 # Assume the camera is at the top center of the screen (in portrait mode)
                 # Compute the PoG
                 pog_px = np.array([dot_info['XPts'], dot_info['YPts']])
-                pog_cm = np.array([dot_info['XCam'], dot_info['YCam']]) # Camera Coordinate Space
+                pog_cm_cam = np.array([dot_info['XCam'], dot_info['YCam']]) # Camera Coordinate Space
                 s_width, s_height = screen_info['W'], screen_info['H']
                 pog_norm = np.array([pog_px[0] / s_width, pog_px[1] / s_height])
                 s_height_cm, s_width_cm = device_meta['DeviceScreenHeightMm'].values[0] / 10, device_meta['DeviceScreenWidthMm'].values[0] / 10
+
+                # Convert the camera space to screen space
+                pog_cm = cam2screen_single(
+                    x_cam_cm=dot_info['XCam'],
+                    y_cam_cm=dot_info['YCam'],
+                    device_name=device_name,
+                    apple_device_df=self.apple_devices
+                )
 
                 """
                 Orientation: The orientation of the interface, as described by the enumeration UIInterfaceOrientation, where:
@@ -238,6 +248,8 @@ class GazeCaptureDataset():
                 else:
                     raise ValueError(f"Orientation {screen_info['Orientation']} is not recognized.")
 
+                # print(f"pog_cm: {pog_cm}, pog_cm_cam: {pog_cm_cam}")
+
                 screen_RT = create_transformation_matrix(
                     scale=np.array([1, 1, 1]),
                     translation=camera_location,
@@ -260,6 +272,7 @@ class GazeCaptureDataset():
                 annotation_fp = part_dir / 'samples' / f'{frame}.pkl'
                 meta_fp = part_dir / 'samples' / f'meta.json'
                 if annotation_fp.exists():
+                # if False:
                     self.samples['id'].append(f"{participant_id}_{i}")
                     self.samples['participant_id'].append(participant_id)
                     self.samples['image_fp'].append(frame_fp)
@@ -445,12 +458,21 @@ if __name__ == "__main__":
 
     dataset = GazeCaptureDataset(
         dataset_dir=GIT_ROOT / pathlib.Path(config['datasets']['GazeCapture']['path']),
-        per_participant_size=10,
-        # dataset_size=20
-        participants=GAZE_CAPTURE_IDS
+        per_participant_size=3,
+        dataset_size=100
+        # participants=GAZE_CAPTURE_IDS
     )
     print(len(dataset))
 
     sample = dataset[0]
     # print(json.dumps({k: str(v.dtype) for k, v in sample.items()}, indent=4))
     print(dataset.samples.head())
+    print(sample.keys())
+
+    for sample in dataset:
+        sample['image'] = cv2.cvtColor(sample['image'], cv2.COLOR_BGR2RGB)
+        data_normalization_entry(0, sample)
+    # import pdb; pdb.set_trace()
+    # cv2.imshow('image', sample['image'])
+    # cv2.waitKey(1000)
+    # cv2.destroyAllWindows()

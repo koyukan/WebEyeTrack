@@ -10,7 +10,15 @@ from mediapipe.tasks.python import vision
 import mediapipe as mp
 
 from .constants import GIT_ROOT
-from .model_based import obtain_eyepatch
+from .model_based import (
+    obtain_eyepatch, 
+    get_head_vector,
+    estimate_face_width,
+    estimate_camera_intrinsics,
+    create_perspective_matrix,
+    face_reconstruction,
+    estimate_gaze_origins
+)
 from .data_protocols import GazeResult, EyeResult
 
 @dataclass
@@ -44,6 +52,68 @@ class WebEyeTrack():
             if 'cnn_encoder' in layer.name or 'encoder' in layer.name:
                 layer.trainable = False
 
+        # Keep track of the face width cm estimate
+        self.face_width_cm = None
+        self.intrinsics = None
+
+    def compute_face_origin_3d(self, image_np: np.ndarray, face_landmarks_all: np.ndarray, face_landmarks_rt: np.ndarray):
+
+        # Get image shape
+        height, width, _ = image_np.shape
+
+        # Estimate the face width
+        if self.face_width_cm is None:
+            self.face_width_cm = estimate_face_width(face_landmarks_all[:, :2], face_landmarks_rt)
+        if self.intrinsics is None:
+            # Use the first frame to estimate the intrinsics
+            self.intrinsics = estimate_camera_intrinsics(np.zeros((height, width, 3)))
+
+        facial_landmarks_px = face_landmarks_all[:, :2] * np.array([width, height])
+
+        perspective_matrix = create_perspective_matrix(aspect_ratio=image_np.shape[1] / image_np.shape[0])
+        inv_perspective_matrix = np.linalg.inv(perspective_matrix)
+
+        # Perform 3D face reconstruction and determine the pose in 3D centimeters
+        metric_transform, metric_face = face_reconstruction(
+            perspective_matrix=perspective_matrix,
+            face_landmarks=face_landmarks_all[:, :3],
+            face_width_cm=self.face_width_cm,
+            face_rt=face_landmarks_rt,
+            K=self.intrinsics,
+            frame_height=height,
+            frame_width=width,
+            frame=image_np
+        )
+
+        # Obtain the gaze origins based on the metric face pts
+        gaze_origins = estimate_gaze_origins(
+            face_landmarks_3d=metric_face,
+            face_landmarks=facial_landmarks_px,
+        )
+
+        return gaze_origins['face_origin_3d']
+
+    def prepare_input(self, image: np.ndarray, facial_landmarks: np.ndarray, facial_rt: np.ndarray):
+        
+        # Perform preprocessing to obtain the eye patch
+        face_landmarks_2d = facial_landmarks[:, :2]
+        face_landmarks_2d = face_landmarks_2d * np.array([image.shape[1], image.shape[0]])
+        eye_patch = obtain_eyepatch(
+            image, 
+            face_landmarks_2d,
+        )
+        face_origin_3d = self.compute_face_origin_3d(
+            image,
+            facial_landmarks,
+            facial_rt
+        )
+
+        return [
+            eye_patch,
+            get_head_vector(facial_rt),
+            face_origin_3d
+        ]
+
     def adapt(self, samples, steps_inner=5, lr_inner=1e-3):
         """
         Performs MAML-style adaptation on the gaze head using support samples.
@@ -53,23 +123,34 @@ class WebEyeTrack():
             steps_inner (int): Number of inner-loop adaptation steps.
             lr_inner (float): Inner-loop learning rate.
         """
-        # Perform the eye patch extraction
+        # support_x_list = self.prepare_input(samples)
         eye_patches = []
+        head_vectors = []
+        face_origin_3ds = []
         for sample in samples:
-            # Perform preprocessing to obtain the eye patch
-            frame = sample['image']
-            face_landmarks_2d = sample['facial_landmarks'][:, :2]
-            face_landmarks_2d = face_landmarks_2d * np.array([frame.shape[1], frame.shape[0]])
-            eye_patch = obtain_eyepatch(
-                frame, 
-                face_landmarks_2d,
+            data = self.prepare_input(
+                sample['image'],
+                sample['facial_landmarks'],
+                sample['facial_rt']
             )
-            eye_patches.append(eye_patch)
+            # Store
+            eye_patches.append(data[0])
+            head_vectors.append(data[1])
+            face_origin_3ds.append(data[2])
 
         # Create the input from the samples
-        support_x = np.stack(eye_patches)
-        support_x = tf.convert_to_tensor(support_x, dtype=tf.float32)
-        support_y = np.stack([y['pog_cm'] for y in samples])
+        support_x_eyes = np.stack(eye_patches)
+        support_x_eyes = tf.convert_to_tensor(support_x_eyes, dtype=tf.float32)
+        support_x_head = np.stack(head_vectors)
+        support_x_head = tf.convert_to_tensor(support_x_head, dtype=tf.float32)
+        support_x_face = np.stack(face_origin_3ds)
+        support_x_face = tf.convert_to_tensor(support_x_face, dtype=tf.float32)
+        support_x_list = [
+            support_x_eyes,
+            support_x_head,
+            support_x_face
+        ]
+        support_y = np.stack([y['pog_norm'] for y in samples])
         support_y = tf.convert_to_tensor(support_y, dtype=tf.float32)
 
         # Inner-loop gradient updates
@@ -77,7 +158,7 @@ class WebEyeTrack():
         losses = []
         for _ in range(steps_inner):
             with tf.GradientTape() as tape:
-                preds = self.blazegaze([support_x], training=True)
+                preds = self.blazegaze(support_x_list, training=True)
                 loss = loss_fn(support_y, preds)
             grads = tape.gradient(loss, self.blazegaze.trainable_variables)
             losses.append(loss)
@@ -107,9 +188,14 @@ class WebEyeTrack():
         
         # Perform preprocessing to obtain the eye patch
         try:
-            eye_patch = obtain_eyepatch(
-                frame, 
-                face_landmarks_2d,
+            # eye_patch = obtain_eyepatch(
+            #     frame, 
+            #     face_landmarks_2d,
+            # )
+            eye_patch, head_vector, face_origin_3d = self.prepare_input(
+                frame,
+                face_landmarks,
+                face_rt
             )
         except Exception as e:
             print(f"Error in obtaining eye patch: {e}")
@@ -121,7 +207,9 @@ class WebEyeTrack():
 
         # Perform the gaze estimation via BlazeGaze Model
         pog_estimation = self.blazegaze.predict({
-            "image": np.expand_dims(eye_patch, axis=0)
+            "image": np.expand_dims(eye_patch, axis=0),
+            "head_vector": np.expand_dims(head_vector, axis=0),
+            "face_origin_3d": np.expand_dims(face_origin_3d, axis=0)
         }, verbose=0)
         return True, pog_estimation[0]
 

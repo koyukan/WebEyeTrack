@@ -196,7 +196,7 @@ def maml_train(
                 best_val_query_loss = avg_val_query_loss
                 gaze_model.save_weights(best_model_path)
 
-                # Also save the entire model for inference use later
+                # Also save thAdame entire model for inference use later
                 full_model = build_full_inference_model(encoder_model, gaze_model, model_config)
                 full_model.save(best_full_model_path)
 
