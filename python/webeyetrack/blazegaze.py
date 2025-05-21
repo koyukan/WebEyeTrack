@@ -18,6 +18,9 @@ from tensorflow.keras.layers import (
     BatchNormalization
 )
 
+# Optional: Enable XLA for optimization
+tf.config.optimizer.set_jit(True)
+
 @dataclass
 class FourierTransformParams:
     trainable: bool = False
@@ -375,6 +378,11 @@ if __name__ == "__main__":
     model = BlazeGaze(config)
     model.model.summary()
 
+    # Wrap in @tf.function
+    @tf.function
+    def infer_fn(*inputs):
+        return model.model(inputs)
+
     inference_model = build_full_inference_model(
         encoder=model.encoder,
         gaze_head=model.gaze_model,
@@ -391,3 +399,35 @@ if __name__ == "__main__":
     # )
     # model = BlazeGaze(config)
     # model.model.summary()
+
+    # Test passing data through the model
+    dummy_inputs = [
+        tf.random.uniform((1, *config.encoder.input_shape))
+    ] + [
+        tf.random.uniform((1, *inp.input_shape)) for inp in config.gaze.inputs
+    ]
+    dummy_outputs = model.model(dummy_inputs)
+    print("Dummy outputs shape:", [out.shape for out in dummy_outputs])
+
+    # Warm-up
+    infer_fn(*dummy_inputs)
+
+    # Now run for N=100 and determine the time taken
+    import time
+    import tqdm
+    N = 100
+    run_times = []
+    for i in tqdm.tqdm(range(N), total=N):
+        dummy_inputs = [
+            tf.random.uniform((1, *config.encoder.input_shape))
+        ] + [
+            tf.random.uniform((1, *inp.input_shape)) for inp in config.gaze.inputs
+        ]
+        start_time = time.time()
+        # dummy_outputs = model.model(dummy_inputs)
+        _ = infer_fn(*dummy_inputs)
+        end_time = time.time()
+        run_times.append(end_time - start_time)
+
+    print("Average time taken for inference:", np.mean(run_times))
+    print("FPS:", 1 / np.mean(run_times))

@@ -223,7 +223,6 @@ def eval(args):
             
             # Set the title with mean and std
             axes.set_title(f'{name.capitalize()}\nMean: {mean:.2f}, Std: {std:.2f}')
-
         
     # plt.tight_layout()
     # plt.show()
