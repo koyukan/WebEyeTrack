@@ -20,6 +20,7 @@ from webeyetrack.constants import GIT_ROOT
 import webeyetrack.vis as vis
 from webeyetrack.model_based import vector_to_pitch_yaw, compute_pog
 from webeyetrack.data_protocols import GazeResult
+from webeyetrack.kalman_filter import create_kalman_filter
 from webeyetrack.utilities import (
     estimate_camera_intrinsics, 
     transform_for_3d_scene,
@@ -116,6 +117,8 @@ dot_test_final: Final Dot Test task.
 thank_you: Questionnaire.
 """
 
+print("FINISHED IMPORTS and SETUP")
+
 def preprocess_csv(csv_path) -> pd.DataFrame:
     data = pd.read_csv(csv_path)
 
@@ -127,8 +130,74 @@ def preprocess_csv(csv_path) -> pd.DataFrame:
 
     return data
 
+def visualize_scanpath(par, csv_data, screen_height_px, screen_width_px) -> plt.Figure:
+
+    screen_img = np.zeros((screen_height_px, screen_width_px, 3), dtype=np.uint8)
+
+    # Create a kalman filter for the gaze
+    tobii_kf = create_kalman_filter(dt=1/120)
+    
+    for i, row in tqdm(csv_data.iterrows(), total=len(csv_data), desc=f'Visualizing scanpath for {par}'):
+        
+        # Load the image
+        img_path = EYE_OF_THE_TYPER_DATASET / par / "/".join(row['frameImageFile'].split('/')[3:])
+        assert img_path.exists(), f"Image not found at {img_path}"
+        img = cv2.imread(str(img_path))
+
+        # Compute the normalized gaze point from the Tobii (left and right).
+        # If both available, average them.
+        # If -1 for one of the eyes, use the other eye.
+        # If both are -1, return None
+        left_gaze = (row['tobiiLeftScreenGazeX'], row['tobiiLeftScreenGazeY'])
+        right_gaze = (row['tobiiRightScreenGazeX'], row['tobiiRightScreenGazeY'])
+        gaze = None
+        if left_gaze[0] != -1 and right_gaze[0] != -1:
+            gaze = ((left_gaze[0] + right_gaze[0]) / 2, (left_gaze[1] + right_gaze[1]) / 2)
+        elif left_gaze[0] != -1:
+            gaze = left_gaze
+        elif right_gaze[0] != -1:
+            gaze = right_gaze
+
+        # Apply the Kalman filter to the gaze point
+        if gaze is not None:
+            # Apply the Kalman filter
+            tobii_kf.predict()
+            tobii_kf.update(np.array(gaze_px))
+            smooth_gaze = (tobii_kf.x[0], tobii_kf.x[1])
+
+        # Obtain the webgazer gaze point
+        webgazer_gaze = (row['webGazerX'], row['webGazerY'])
+
+        # Display the gaze point
+        if gaze is not None:
+            cv2.circle(screen_img, (int(gaze[0]*screen_width_px), int(gaze[1]*screen_height_px)), 5, (0, 255, 0), -1)
+            cv2.circle(screen_img, (int(smooth_gaze[0]*screen_width_px), int(smooth_gaze[1]*screen_height_px)), 5, (255, 0, 0), -1)
+            
+        # cv2.circle(screen_img, (int(webgazer_gaze[0]*screen_width_px), int(webgazer_gaze[1]*screen_height_px)), 5, (255, 0, 0), -1)
+        # cv2.circle(screen_img, (int(webeyetrack_gaze[0]*screen_width_px), int(webeyetrack_gaze[1]*screen_height_px)), 5, (0, 0, 255), -1)
+
+        # Display the image
+        cv2.imshow('Image', img)
+        cv2.imshow('Screen', screen_img)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    # Close the windows
+    cv2.destroyAllWindows()
+
+    # Create the figure from the screen image
+    fig, ax = plt.subplots(figsize=(10, 10))
+    ax.imshow(screen_img)
+    ax.axis('off')
+    ax.set_title(f'Scanpath for {par}')
+    plt.tight_layout()
+    plt.show()
+    return fig
+
 
 def main():
+
+    print("Starting Eye of the Typer evaluation...")
 
     timestamp = pd.Timestamp.now().strftime('%Y%m%d%H%M%S')
     RUN_DIR = OUTPUTS_DIR / f'EyeOfTheTyper-{timestamp}'
@@ -138,6 +207,8 @@ def main():
     p_dirs = [p for p in EYE_OF_THE_TYPER_DATASET.iterdir() if p.is_dir()]
     gaze_csvs = [p for p in EYE_OF_THE_TYPER_DATASET.iterdir() if p.is_file() and p.suffix == '.csv']
     options = set(['study' + p.stem.split('-study')[1] for p in gaze_csvs])
+
+    print(f"Found {len(p_dirs)} participants and {len(gaze_csvs)} gaze CSVs.")
 
     # Sort the gaze into separate containers for each participant
     gaze_by_participant = defaultdict(list)
@@ -153,10 +224,11 @@ def main():
                 gaze_by_participant[option].append(None)
 
     gaze_by_participant = pd.DataFrame(gaze_by_participant)
+    print(f"Formed gaze_by_participant dataframe with {len(gaze_by_participant)} rows and {len(gaze_by_participant.columns)} columns.")
 
     # For each CSV, read the data and display the gaze
     participants_metrics = []
-    for par, csvs in tqdm(gaze_by_participant.groupby('par'), total=len(gaze_by_participant), desc='Processing participants'):
+    for par, csvs in tqdm(gaze_by_participant.groupby('par'), total=len(gaze_by_participant), desc=f'Processing participants data'):
 
         # Create the WebEyeTrack object
         wet = WebEyeTrack()
@@ -179,10 +251,10 @@ def main():
             continue
 
         # Load the calibration data
-        data = preprocess_csv(calib_csv)
+        dot_test_data = preprocess_csv(calib_csv)
         
         # Use the mouse clicks to calibrate
-        mouse_click_data = data[data['mouseClickX'] != '[]']
+        mouse_click_data = dot_test_data[dot_test_data['mouseClickX'] != '[]']
         if len(mouse_click_data) == 0:
             print(f"No mouse clicks found for participant {par}. Skipping.")
             continue
@@ -222,111 +294,23 @@ def main():
             norm_pogs.append((eval(row['mouseClickX'])[0], eval(row['mouseClickY'])[0]))
 
         # Perform the calibration
-        import pdb; pdb.set_trace()
         wet.adapt_from_frames(frames, norm_pogs)
 
-        participant_metrics = defaultdict(list)
-        for csv in tqdm(csvs, total=len(csvs), desc=f'Processing sessions for participant {par}'):
-            # data = pd.read_csv(csv, names=fieldnames)
-            data = pd.read_csv(csv)
+        # First, visualize the scanpath of the original dot test that we used for calibration
+        # For this section, we want to visualize only the scanpath right after the first click and the last click
+        # Get the first and last click
+        first_click = mouse_click_data.iloc[0]
+        last_click = mouse_click_data.iloc[-1]
+        within_dot_test = dot_test_data[(dot_test_data['frameNum'] >= first_click['frameNum']) & (dot_test_data['frameNum'] <= last_click['frameNum'])]
 
-            # Obtain the session name
-            session_name = 'study' + csv.stem.split('-study')[1]
-
-            # Iterate over the rows of the CSV and display the data
-            per_session_wg_error = []
-            per_session_wet_error = []
-            for i, row in tqdm(data.iterrows(), total=len(data), desc=f'Processing session {par}/{session_name}'):
-                
-                # Load the image
-                img_path = EYE_OF_THE_TYPER_DATASET / par / "/".join(row['frameImageFile'].split('/')[3:])
-                assert img_path.exists(), f"Image not found at {img_path}"
-                img = cv2.imread(str(img_path))
-
-                # Update the last configs
-                height, width = img.shape[:2]
-                # algo.config(
-                #     frame_height=height,
-                #     frame_width=width,
-                #     intrinsics=K
-                # )
-
-                # Process the sample
-                result, detection_results = wet.process_frame(img)
-
-                # if type(result) == type(None):
-                #     continue
-
-                # Compute the normalized gaze point from the Tobii (left and right).
-                # If both available, average them.
-                # If -1 for one of the eyes, use the other eye.
-                # If both are -1, return None
-                left_gaze = (row['tobiiLeftScreenGazeX'], row['tobiiLeftScreenGazeY'])
-                right_gaze = (row['tobiiRightScreenGazeX'], row['tobiiRightScreenGazeY'])
-                gaze = None
-                if left_gaze[0] != -1 and right_gaze[0] != -1:
-                    gaze = ((left_gaze[0] + right_gaze[0]) / 2, (left_gaze[1] + right_gaze[1]) / 2)
-                elif left_gaze[0] != -1:
-                    gaze = left_gaze
-                elif right_gaze[0] != -1:
-                    gaze = right_gaze
-
-                # Obtain the webgazer gaze point
-                webgazer_gaze = (row['webGazerX'], row['webGazerY'])
-
-                # Obtain the WebEyeTrack gaze point in px
-                # webeyetrack_gaze = result.pog.pog_norm
-
-                if VISUALIZE:
-                    # Construct the screen
-                    screen_img = np.zeros((screen_height_px, screen_width_px, 3), dtype=np.uint8)
-
-                    # Display the gaze point
-                    if gaze is not None:
-                        cv2.circle(screen_img, (int(gaze[0]*screen_width_px), int(gaze[1]*screen_height_px)), 5, (0, 255, 0), -1)
-                    cv2.circle(screen_img, (int(webgazer_gaze[0]*screen_width_px), int(webgazer_gaze[1]*screen_height_px)), 5, (255, 0, 0), -1)
-                    # cv2.circle(screen_img, (int(webeyetrack_gaze[0]*screen_width_px), int(webeyetrack_gaze[1]*screen_height_px)), 5, (0, 0, 255), -1)
-
-                    cv2.imshow('screen', screen_img)
-                    # cv2.imshow('image', draw_frame)
-                    if cv2.waitKey(1) == ord('q'):
-                        break
-
-                # Store the errors in cm
-                if gaze is not None:
-                    tobii_gaze_cm = np.array([gaze[0] * screen_width_cm, gaze[1] * screen_height_cm])
-                    wg_gaze_cm = np.array([webgazer_gaze[0] * screen_width_cm, webgazer_gaze[1] * screen_height_cm])
-                    # wet_gaze_cm = np.array([webeyetrack_gaze[0] * screen_width_cm, webeyetrack_gaze[1] * screen_height_cm])
-                    per_session_wg_error.append(np.linalg.norm(tobii_gaze_cm - wg_gaze_cm))
-                    # per_session_wet_error.append(np.linalg.norm(tobii_gaze_cm - wet_gaze_cm))
-
-            # Plot the error
-            plt.figure()
-            plt.title(f"{session_name} Error (cm)")
-            plt.plot(per_session_wg_error, label='WebGazer Error')
-            plt.plot(per_session_wet_error, label='WebEyeTrack Error')
-            plt.legend()
-            plt.savefig(par_output_dir / f'{session_name}.png')
-
-            # Store the mean, median, and std
-            participant_metrics['session'].append(session_name)
-            participant_metrics['wg_mean'].append(np.mean(per_session_wg_error))
-            participant_metrics['wg_median'].append(np.median(per_session_wg_error))
-            participant_metrics['wg_std'].append(np.std(per_session_wg_error))
-            participant_metrics['wet_mean'].append(np.mean(per_session_wet_error))
-            participant_metrics['wet_median'].append(np.median(per_session_wet_error))
-            participant_metrics['wet_std'].append(np.std(per_session_wet_error))
-
-        # Construct a dataframe for the participant
-        participant_metrics_df = pd.DataFrame(participant_metrics)
-        participant_metrics_df.to_excel(par_output_dir / 'metrics.xlsx', index=False)
-        participants_metrics.append(participant_metrics_df)
-
-        # Plot the distrubution of error for each method (showing the mean for a single participant)
-        plt.figure()
-        plt.title(f"{par} - Error (cm)")
-        sns.boxplot(data=participant_metrics_df[['wg_mean', 'wet_mean']])
-        plt.savefig(par_output_dir / 'mean_error.png')
+        # Create the figure
+        fig = visualize_scanpath(
+            par, 
+            within_dot_test,
+            screen_height_px,
+            screen_width_px
+        )
+        break
 
 
 if __name__ == '__main__':
