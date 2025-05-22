@@ -1,5 +1,6 @@
-from typing import Any, Dict, Tuple, Optional
+from typing import Any, Dict, Tuple, Optional, Literal
 from dataclasses import dataclass, field
+from enum import Enum
 import numpy as np
 import pathlib
 import mediapipe.python as mp
@@ -77,8 +78,38 @@ class EyeResult:
     pog: Optional[PoGResult] = None
     meta_data: Dict[str, Any] = field(default_factory=dict)
 
+# @dataclass
+# class GazeResult:
+#     # Inputs
+#     facial_landmarks: np.ndarray # [N, 5]
+#     face_rt: np.ndarray # [4, 4]
+#     face_blendshapes: np.ndarray # [N, 1]
+
+#     # Face Reconstruction
+#     metric_face: np.ndarray # [N, 486]
+#     metric_transform: np.ndarray # [4, 4]
+
+#     # Face Gaze
+#     face_origin: np.ndarray # X, Y, Z
+#     face_origin_2d: np.ndarray # X, Y
+#     face_gaze: np.ndarray # X, Y, Z
+
+#     # Per eye results
+#     left: EyeResult
+#     right: EyeResult
+
+#     # Meta data
+#     duration: float # seconds
+#     eyeball_radius: float
+#     eyeball_centers: Tuple[np.ndarray, np.ndarray]
+#     perspective_matrix: np.ndarray
+
+#     # PoG
+#     pog: Optional[PoGResult] = None
+
 @dataclass
 class GazeResult:
+    
     # Inputs
     facial_landmarks: np.ndarray # [N, 5]
     face_rt: np.ndarray # [4, 4]
@@ -88,20 +119,15 @@ class GazeResult:
     metric_face: np.ndarray # [N, 486]
     metric_transform: np.ndarray # [4, 4]
 
-    # Face Gaze
-    face_origin: np.ndarray # X, Y, Z
-    face_origin_2d: np.ndarray # X, Y
-    face_gaze: np.ndarray # X, Y, Z
+    # Gaze state (blinking)
+    gaze_state: Literal['open', 'closed'] = 'open'
 
-    # Per eye results
-    left: EyeResult
-    right: EyeResult
+    # PoG (normalized screen coordinates)
+    pog: Optional[PoGResult] = None
 
     # Meta data
-    duration: float # seconds
-    eyeball_radius: float
-    eyeball_centers: Tuple[np.ndarray, np.ndarray]
-    perspective_matrix: np.ndarray
+    duration: float = -1 # seconds
 
-    # PoG
-    pog: Optional[PoGResult] = None
+class TrackingStatus(Enum):
+    FAILED = 0
+    SUCCESS = 1
