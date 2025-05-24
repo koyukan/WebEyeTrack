@@ -17,12 +17,11 @@ matplotlib.use('TkAgg')
 
 from webeyetrack.vis import draw_axis, draw_landmarks_simple
 from webeyetrack.constants import GIT_ROOT
-from webeyetrack.utilities import vector_to_pitch_yaw, rotation_matrix_to_euler_angles, pitch_yaw_roll_to_gaze_vector
 
 from mpiifacegaze import MPIIFaceGazeDataset
 from eyediap import EyeDiapDataset
 from gazecapture import GazeCaptureDataset
-from utils import data_normalization_entry, draw_gaze, vector_to_pitchyaw
+from utils import data_normalization_entry
 
 CWD = pathlib.Path(__file__).parent
 SCRIPTS_DIR = CWD.parent
@@ -61,6 +60,17 @@ def load_datasets(args):
                 GIT_ROOT / pathlib.Path(config['datasets']['GazeCapture']['path']),
                 participants=[participant],
                 # dataset_size=20,
+                # per_participant_size=10,
+            )
+            person_datasets[participant] = dataset
+    elif (args.dataset == 'EyeDiap'):
+        person_datasets = {}
+        total_participants = list(range(1, 17)) # 1-16
+        for participant in tqdm(total_participants, desc='Participants'):
+            dataset = EyeDiapDataset(
+                GIT_ROOT / pathlib.Path(config['datasets']['EyeDiap']['path']),
+                participants=[participant],
+                # dataset_size=200,
                 # per_participant_size=10,
             )
             person_datasets[participant] = dataset
@@ -142,7 +152,7 @@ if __name__ == '__main__':
 
     # Parse arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, required=True, choices=['MPIIFaceGaze', 'GazeCapture'], help='Dataset to evaluate')
+    parser.add_argument('--dataset', type=str, required=True, choices=['MPIIFaceGaze', 'GazeCapture', 'EyeDiap'], help='Dataset to evaluate')
     args = parser.parse_args()
     
     # Generate the dataset

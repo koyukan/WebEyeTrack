@@ -133,7 +133,7 @@ def data_normalization_entry(i, sample):
         cv2.imshow('warped_face_crop', warped_face_crop)
         cv2.imshow('draw_frame', draw_frame)
         cv2.imshow('normalized_patch', to_visualize)
-        cv2.waitKey(0)
+        cv2.waitKey(1)
 
     return {
         'pixels': eyes_patch,

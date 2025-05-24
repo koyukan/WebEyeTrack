@@ -22,9 +22,11 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 from webeyetrack.constants import GIT_ROOT
-from webeyetrack.vis import draw_gaze_origin, draw_axis
+from webeyetrack.vis import draw_gaze_origin, draw_axis, draw_landmarks_on_image
 from webeyetrack.data_protocols import Annotations, CalibrationData, Sample
 from webeyetrack.model_based import vector_to_pitch_yaw
+
+from utils import data_normalization_entry
 
 CWD = pathlib.Path(__file__).parent
 
@@ -38,7 +40,8 @@ Please note that we do not discard the challenging floating target sequences
 from EYEDIAP.
 
 References:
-https://www.idiap.ch/en/scientific-research/data/eyediap#publications
+[1] https://www.idiap.ch/en/scientific-research/data/eyediap#publications
+[2] https://publications.idiap.ch/attachments/reports/2014/FunesMora_Idiap-RR-08-2014.pdf
 """
 
 # Static head pose sessions
@@ -211,7 +214,7 @@ class EyeDiapDataset():
             dataset_size: Optional[int] = None,
             per_participant_size: Optional[int] = None,
             frame_skip_rate: int = 30,
-            video_type: Literal['vga', 'hd'] = 'vga',
+            video_type: Literal['vga', 'hd'] = 'hd',
             visualize: bool = False
         ):
 
@@ -245,7 +248,8 @@ class EyeDiapDataset():
         self.face_landmarker = vision.FaceLandmarker.create_from_options(options)
 
         # Saving information
-        self.samples: List[Sample] = []
+        # self.samples: List[Sample] = []
+        self.samples = defaultdict(list)
 
         num_samples = 0
 
@@ -256,6 +260,10 @@ class EyeDiapDataset():
                 break
 
             P, C, T, H = sessions[session_id]
+
+            # Do not process the session if it is not in the list of participants
+            if P not in self.participants:
+                continue
 
             # Skip T='FT', as it does not contain PoG 
             if T == 'FT':
@@ -341,10 +349,10 @@ class EyeDiapDataset():
                     dist_coeffs=None,
                     camera_retval=None,
                     screen_RT=None,
-                    monitor_height_cm=None,
-                    monitor_height_px=None,
-                    monitor_width_cm=None,
-                    monitor_width_px=None
+                    monitor_height_cm=29.5,
+                    monitor_height_px=740,
+                    monitor_width_cm=53.4,
+                    monitor_width_px=1340
                 )
             elif self.video_type == 'hd':
                 calibration_data = CalibrationData(
@@ -352,10 +360,10 @@ class EyeDiapDataset():
                     dist_coeffs=None,
                     camera_retval=None,
                     screen_RT=None,
-                    monitor_height_cm=None,
-                    monitor_height_px=None,
-                    monitor_width_cm=None,
-                    monitor_width_px=None
+                    monitor_height_cm=29.5,
+                    monitor_height_px=740,
+                    monitor_width_cm=53.4,
+                    monitor_width_px=1340
                 )
             else:
                 raise ValueError("Invalid video type. Must be 'vga' or 'hd'.")
@@ -427,11 +435,14 @@ class EyeDiapDataset():
 
                     # If the sample already exists, load it
                     # import pdb; pdb.set_trace()
-                    sample_fp = session_fp / f'samples_{self.video_type}' / f'{frameIndex}.pkl'
-                    if sample_fp.exists() and not OVERWRITE_SESSIONS:
-                        with open(sample_fp, 'rb') as f:
-                            sample = pickle.load(f)
-                        self.samples.append(sample)
+                    annotation_fp = session_fp / f'samples_{self.video_type}' / f'{frameIndex}.pkl'
+                    frame_fp = session_fp / 'frames' / f'{frameIndex}_{self.video_type}.png'
+                    if annotation_fp.exists() and not OVERWRITE_SESSIONS:
+                        self.samples['id'].append(f"{P}_{frameIndex}_{self.video_type}_{T}")
+                        self.samples['participant_id'].append(P)
+                        self.samples['image_fp'].append(frame_fp)
+                        self.samples['annotation_fp'].append(annotation_fp)
+
                         pbar.update(1)
                         frameIndex += 1
                         num_samples += 1
@@ -509,12 +520,20 @@ class EyeDiapDataset():
                             frameIndex += 1
                             continue
 
+                        # Draw the landmarks and see
+                        # Draw the landmarks on the image
+                        # image_landmarks = draw_landmarks_on_image(desired_frame, detection_results)
+                        # cv2.imshow('image', image_landmarks)
+                        # cv2.waitKey(0)
+
+                        i_h, i_w, _ = desired_frame.shape
+
                         # Face landmakrs
                         face_landmarks_all = np.array([[lm.x, lm.y, lm.z, lm.visibility, lm.presence] for lm in face_landmarks_proto])
                         face_landmarks_rt = detection_results.facial_transformation_matrixes[0]
                         face_blendshapes = detection_results.face_blendshapes[0]
                         face_blendshapes = np.array([x.score for x in face_blendshapes])
-                        face_landmarks = np.array([[lm.x * desired_frame.shape[0], lm.y * desired_frame.shape[1]] for lm in face_landmarks_proto])
+                        face_landmarks = np.array([[lm.x * i_w, lm.y * i_h] for lm in face_landmarks_proto])
 
                         # Compute the bounding box
                         face_bbox = np.array([
@@ -593,23 +612,18 @@ class EyeDiapDataset():
                             is_closed = gaze_vals[0] == 'BK'
 
                         # Convert the PoG by using the gaze target 3d
-                        import pdb; pdb.set_trace()
-                        gaze_target_3d_h = np.append(gaze_target_3d/10, 1)
-                        gaze_target_3d_screen = np.linalg.inv(calibration_data.screen_RT) @ gaze_target_3d_h
-                        gaze_target_3d_screen = gaze_target_3d_screen[:3] / gaze_target_3d_screen[3]
-                        pog_cm = gaze_target_3d_screen[:2]
+                        pog_px = gaze_target_2d
                         pog_norm = np.array([
-                            gaze_target_3d_screen[0] / calibration_data.monitor_width_cm,
-                            gaze_target_3d_screen[1] / calibration_data.monitor_height_cm
+                            gaze_target_2d[0] / calibration_data.monitor_width_px,
+                            gaze_target_2d[1] / calibration_data.monitor_height_px
                         ])
-                        pog_px = np.array([
-                            pog_norm[0] * calibration_data.monitor_width_px,
-                            pog_norm[1] * calibration_data.monitor_height_px
+                        pog_cm = np.array([
+                            pog_norm[0] * calibration_data.monitor_width_cm,
+                            pog_norm[1] * calibration_data.monitor_height_cm
                         ])
 
-                        # Create an annotation
                         annotation = Annotations(
-                            original_img_size=np.array([desired_frame.shape[0], desired_frame.shape[1],desired_frame.shape[2]]),
+                            original_img_size=np.array(desired_frame.shape),
                             intrinsics=desired_calibration['intrinsics'],
                             # Facial landmarks
                             facial_detection_results=detection_results,
@@ -617,50 +631,58 @@ class EyeDiapDataset():
                             facial_landmarks_2d=face_landmarks,
                             facial_rt=face_landmarks_rt,
                             face_blendshapes=face_blendshapes,
-                            face_bbox=face_bbox,
-                            head_pose_3d=np.array(head_vals[:6]),
+                            face_bbox=np.array([]), # Not important
+                            head_pose_3d=np.array([]),
                             # Face Gaze
                             face_origin_3d=face_origin_3d,
                             face_origin_2d=face_origin_2d,
                             face_gaze_vector=face_gaze_vector,
-                            # EyeGaze
-                            left_eye_origin_3d=left_eye_origin_3d,
-                            right_eye_origin_3d=right_eye_origin_3d,
-                            left_eye_origin_2d=left_eye_origin_2d,
-                            right_eye_origin_2d=right_eye_origin_3d,
-                            left_gaze_vector=left_gaze_vector,
-                            right_gaze_vector=right_gaze_vector,
+                            # Eye Gaze
+                            left_eye_origin_3d=np.empty((3, 0), dtype=np.float32),
+                            left_eye_origin_2d=np.empty((2, 0), dtype=np.float32),
+                            left_gaze_vector=np.empty((3, 0), dtype=np.float32),
+                            right_eye_origin_3d=np.empty((3, 0), dtype=np.float32),
+                            right_eye_origin_2d=np.empty((2, 0), dtype=np.float32),
+                            right_gaze_vector=np.empty((3, 0), dtype=np.float32),
                             # Target information
                             gaze_target_3d=gaze_target_3d,
-                            gaze_target_2d=gaze_target_2d,
-                            pog_px=gaze_target_2d,
+                            gaze_target_2d=np.zeros((2, 0), dtype=np.float32),
+                            pog_px=pog_px,
                             pog_norm=pog_norm,
                             pog_cm=pog_cm,
                             # Gaze State Information
-                            is_closed=np.array([is_closed])
+                            is_closed=np.array([False])
                         )
 
                         # Write frame into a folder
                         os.makedirs(session_fp / 'frames', exist_ok=True)
-                        frame_fp = session_fp / 'frames' / f'{frameIndex}_{self.video_type}.png'
                         if not frame_fp.exists():
                             cv2.imwrite(str(frame_fp), desired_frame)
 
+                        # Save the annotations
+                        with open(annotation_fp, 'wb') as f:
+                            pickle.dump(annotation, f)
+
                         # Create a sample
-                        sample = Sample(
-                            participant_id=P,
-                            image_fp=frame_fp,
-                            annotations=annotation
-                        )
-                        self.samples.append(sample)
+                        # sample = Sample(
+                        #     participant_id=P,
+                        #     image_fp=frame_fp,
+                        #     annotations=annotation
+                        # )
+                        # self.samples.append(sample)
+                        # Create a sample
+                        self.samples['id'].append(f"{P}_{frameIndex}_{self.video_type}_{T}")
+                        self.samples['participant_id'].append(P)
+                        self.samples['image_fp'].append(frame_fp)
+                        self.samples['annotation_fp'].append(annotation_fp)
                         num_samples += 1
                         per_participant_size += 1
                         pbar.update(1)
 
                         # Save the sample within the ``samples`` directory to avoid having to reprocess the data, as a pickle
-                        os.makedirs(session_fp / f'samples_{self.video_type}', exist_ok=True)
-                        with open(session_fp / f'samples_{self.video_type}' / f'{frameIndex}.pkl', 'wb') as f:
-                            pickle.dump(sample, f)
+                        # os.makedirs(session_fp / f'samples_{self.video_type}', exist_ok=True)
+                        # with open(session_fp / f'samples_{self.video_type}' / f'{frameIndex}.pkl', 'wb') as f:
+                        #     pickle.dump(sample, f)
 
                         if self.visualize:
                             # Draw the landmarks
@@ -739,6 +761,9 @@ class EyeDiapDataset():
 
             cv2.destroyAllWindows()
 
+        # Convert the samples to a DataFrame
+        self.samples = pd.DataFrame(self.samples)
+
     def obtain_facial_landmarks(self, frame):
 
         # Detect the facial landmarks via MediaPipe
@@ -764,7 +789,7 @@ class EyeDiapDataset():
         image_np = np.array(image)
 
         # Get the calibration
-        calibration_data = self.participant_calibration_data[sample.participant_id]
+        # calibration_data = self.participant_calibration_data[sample.participant_id]
 
         # Load the annotations
         with open(sample.annotation_fp, 'rb') as f:
@@ -773,18 +798,17 @@ class EyeDiapDataset():
         item_dict = {
             'person_id': sample.participant_id,
             'image': image_np,
-            'intrinsics': calibration_data.camera_matrix,
-            'dist_coeffs': calibration_data.dist_coeffs,
-            'screen_RT': calibration_data.screen_RT.astype(np.float32),
-            'screen_height_cm': calibration_data.monitor_height_cm,
-            'screen_height_px': calibration_data.monitor_height_px,
-            'screen_width_cm': calibration_data.monitor_width_cm,
-            'screen_width_px': calibration_data.monitor_width_px,
+            # 'intrinsics': calibration_data.camera_matrix,
+            # 'dist_coeffs': calibration_data.dist_coeffs,
+            # 'screen_RT': calibration_data.screen_RT.astype(np.float32),
+            'screen_height_cm': 29.5,
+            'screen_height_px': 740,
+            'screen_width_cm': 53.4,
+            'screen_width_px': 1340,
         }
         item_dict.update(asdict(annotations))
         return item_dict
         
-
     def __getitem__(self, index: int) -> Dict[str, np.ndarray]:
         return self.get_sample(index)
 
@@ -800,22 +824,28 @@ class EyeDiapDataset():
         return pd.DataFrame(data)
         
 
-# if __name__ == '__main__':
+if __name__ == '__main__':
 
-#     from ..constants import DEFAULT_CONFIG
-#     with open(DEFAULT_CONFIG, 'r') as f:
-#         config = yaml.safe_load(f)
+    from webeyetrack.constants import DEFAULT_CONFIG
+    with open(DEFAULT_CONFIG, 'r') as f:
+        config = yaml.safe_load(f)
 
-#     dataset = EyeDiapDataset(
-#         GIT_ROOT / pathlib.Path(config['datasets']['EyeDiap']['path']),
-#         # dataset_size=10,
-#         participants=[1],
-#         # per_participant_size=2,
-#         video_type='hd',
-#         visualize=True,
-#         frame_skip_rate=4
-#     )
-#     print(len(dataset))
+    dataset = EyeDiapDataset(
+        GIT_ROOT / pathlib.Path(config['datasets']['EyeDiap']['path']),
+        dataset_size=10,
+        participants=[1],
+        # per_participant_size=2,
+        video_type='hd',
+        visualize=False,
+        frame_skip_rate=4
+    )
+    print(len(dataset))
     
-#     sample = dataset[0]
-#     print(json.dumps({k: str(v.dtype) for k, v in sample.items()}, indent=4))
+    sample = dataset[0]
+    # print(json.dumps({k: str(v.dtype) for k, v in sample.items()}, indent=4))
+    print(dataset.samples.head())
+    print(sample.keys())
+
+    for sample in dataset:
+        sample['image'] = cv2.cvtColor(sample['image'], cv2.COLOR_BGR2RGB)
+        data_normalization_entry(0, sample)

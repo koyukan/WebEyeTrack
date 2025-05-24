@@ -135,8 +135,8 @@ def maml_train(
 
     # Track best validation loss
     best_val_query_loss = float("inf")
-    best_model_path = RUN_DIR / 'maml_gaze_model_best.h5'
-    best_full_model_path = RUN_DIR / 'full_model_best.h5'
+    best_model_path = RUN_DIR / 'maml_gaze_model_best.keras'
+    best_full_model_path = RUN_DIR / 'full_model_best.keras'
 
     for step in tqdm(range(steps_outer), desc="Meta Training Steps"):
 
@@ -194,7 +194,7 @@ def maml_train(
             # Save best model
             if avg_val_query_loss < best_val_query_loss:
                 best_val_query_loss = avg_val_query_loss
-                gaze_model.save_weights(best_model_path)
+                gaze_model.save(best_model_path)
 
                 # Also save thAdame entire model for inference use later
                 full_model = build_full_inference_model(encoder_model, gaze_model, model_config)

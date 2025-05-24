@@ -28,6 +28,7 @@ CWD = pathlib.Path(__file__).parent
 sys.path.append(str(CWD.parent / 'preprocessing'))
 from mpiifacegaze import MPIIFaceGazeDataset
 from gazecapture import GazeCaptureDataset
+from eyediap import EyeDiapDataset
 
 FILE_DIR = CWD.parent
 OUTPUTS_DIR = CWD / 'outputs'
@@ -49,7 +50,7 @@ CALIBRATION_POINTS = np.array([ # 9 points
 with open(CWD.parent / 'GazeCapture_participant_ids.json', 'r') as f:
     GAZE_CAPTURE_IDS = json.load(f)
 
-TOTAL_DATASET = 2000
+TOTAL_DATASET = 100
 PER_PARTICIPANT_SIZE = 30
 
 with open(FILE_DIR / 'config.yaml', 'r') as f:
@@ -106,6 +107,13 @@ def eval(args):
             participants=GAZE_CAPTURE_IDS,
             # dataset_size=TOTAL_DATASET,
             # per_participant_size=PER_PARTICIPANT_SIZE
+        )
+    elif (args.dataset == 'EyeDiap'):
+        dataset = EyeDiapDataset(
+            GIT_ROOT / pathlib.Path(config['datasets']['EyeDiap']['path']),
+            participants=[x for x in range(1, 10)],
+            dataset_size=TOTAL_DATASET,
+            per_participant_size=PER_PARTICIPANT_SIZE
         )
     else:
         raise ValueError(f"Dataset {args.dataset} not supported")
@@ -234,7 +242,7 @@ def eval(args):
 if __name__ == '__main__':
     # Parse arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, required=True, choices=['MPIIFaceGaze', 'GazeCapture'], help='Dataset to evaluate')
+    parser.add_argument('--dataset', type=str, required=True, choices=['MPIIFaceGaze', 'GazeCapture', 'EyeDiap'], help='Dataset to evaluate')
     args = parser.parse_args()
 
     eval(args)

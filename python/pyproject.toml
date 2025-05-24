@@ -5,7 +5,7 @@ description = "WebEyeTrack: Robust & Scalable Gaze Tracking for Web Applications
 authors = [
     {name = "Eduardo Davalos", email="eduardo.davalos.anaya@vanderbilt.edu"}
 ]
-license = {file = "LICENSE.txt"}
+license = 'MIT'
 readme = "README.md"
 requires-python = ">3.6"
 
@@ -23,13 +23,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = [
-
+threed = [
+    'trimesh',
+    'open3d'
 ]
 
 [project.urls]
-homepath = "https://github.com/reading-analytics-group"
-repository = "https://github.com/reading-analytics-group/WebEyeTrack"
+homepath = "https://github.com/RedForestAI"
+repository = "https://github.com/RedForestAI/WebEyeTrack"
 
 [build-system]
 requires = ["setuptools", "wheel"]
@@ -47,10 +48,6 @@ ignore = ["E501"]
 select = ["E", "W", "F", "C", "B", "I"]
 ignore-init-module-imports = true
 fixable = ["I001"]  # isort fix only
-
-[tool.ruff.per-file-ignores]
-"__init__.py" = ["E402", "F401"]
-"chimerapy/pipelines/__version__.py" = ["E402"]
 
 # Reference:
 # https://stackoverflow.com/questions/4673373/logging-within-pytest-tests

@@ -19,9 +19,18 @@ def get_dataset_metadata(config):
 
     if config['dataset']['name'] == 'MPIIFaceGaze':
         h5_file = GENERATED_DATASET_DIR / 'MPIIFaceGaze_entire.h5'
-        train_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-        val_ids = [13, 14]
-        test_ids = []
+        # train_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        # val_ids = [13, 14]
+        # test_ids = []
+        train_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+        val_ids = [10, 11, 12]
+        test_ids = [13, 14]
+
+    elif config['dataset']['name'] == 'EyeDiap':
+        h5_file = GENERATED_DATASET_DIR / 'EyeDiap_entire.h5'
+        train_ids = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        val_ids = [11, 12, 13]
+        test_ids = [14, 15, 16]
 
     elif config['dataset']['name'] == 'GazeCapture':
         h5_file = GENERATED_DATASET_DIR / 'GazeCapture_entire.h5'
