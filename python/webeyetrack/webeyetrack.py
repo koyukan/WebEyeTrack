@@ -1,3 +1,4 @@
+import time
 import pathlib
 from typing import Union, Any, Tuple, Optional
 from dataclasses import dataclass
@@ -19,7 +20,7 @@ from .model_based import (
     face_reconstruction,
     estimate_gaze_origins
 )
-from .data_protocols import GazeResult, EyeResult
+from .data_protocols import GazeResult, TrackingStatus
 
 @dataclass
 class WebEyeTrackConfig():
@@ -92,6 +93,22 @@ class WebEyeTrack():
         )
 
         return gaze_origins['face_origin_3d']
+    
+    def detect_facial_landmarks(self, frame: np.ndarray) -> Tuple[bool, Tuple[Optional[np.ndarray], Optional[np.ndarray], Any]]:
+        # Detect the landmarks
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame.astype(np.uint8))
+        detection_results = self.face_landmarker.detect(mp_image)
+
+        # Compute the face bounding box based on the MediaPipe landmarks
+        try:
+            face_landmarks_proto = detection_results.face_landmarks[0]
+        except:
+            return False, (None, None, detection_results)
+        
+        # Extract information fro the results
+        face_landmarks = np.array([[lm.x, lm.y, lm.z, lm.visibility, lm.presence] for lm in face_landmarks_proto])
+        face_rt = detection_results.facial_transformation_matrixes[0]
+        return True, (face_landmarks, face_rt, detection_results)
 
     def prepare_input(self, image: np.ndarray, facial_landmarks: np.ndarray, facial_rt: np.ndarray):
         
@@ -113,31 +130,25 @@ class WebEyeTrack():
             get_head_vector(facial_rt),
             face_origin_3d
         ]
-
-    def adapt(self, samples, steps_inner=5, lr_inner=1e-3):
+    
+    def adapt(self, 
+            eye_patches: list, 
+            head_vectors: list,
+            face_origin_3ds: list,
+            pog_norms: list,
+            steps_inner=5, 
+            lr_inner=1e-3,
+        ):
         """
         Performs MAML-style adaptation on the gaze head using support samples.
         
         Args:
-            samples (dict): Dictionary with support input features and labels.
+            eye_patches (list): List of eye patches.
+            head_vectors (list): List of head vectors.
+            face_origin_3ds (list): List of face origin 3D vectors.
             steps_inner (int): Number of inner-loop adaptation steps.
             lr_inner (float): Inner-loop learning rate.
         """
-        # support_x_list = self.prepare_input(samples)
-        eye_patches = []
-        head_vectors = []
-        face_origin_3ds = []
-        for sample in samples:
-            data = self.prepare_input(
-                sample['image'],
-                sample['facial_landmarks'],
-                sample['facial_rt']
-            )
-            # Store
-            eye_patches.append(data[0])
-            head_vectors.append(data[1])
-            face_origin_3ds.append(data[2])
-
         # Create the input from the samples
         support_x_eyes = np.stack(eye_patches)
         support_x_eyes = tf.convert_to_tensor(support_x_eyes, dtype=tf.float32)
@@ -150,7 +161,7 @@ class WebEyeTrack():
             support_x_head,
             support_x_face
         ]
-        support_y = np.stack([y['pog_norm'] for y in samples])
+        support_y = np.stack(pog_norms)
         support_y = tf.convert_to_tensor(support_y, dtype=tf.float32)
 
         # Inner-loop gradient updates
@@ -174,6 +185,75 @@ class WebEyeTrack():
 
         # Report the loss
         print(f"Adaptation Loss: {losses}")
+    
+    def adapt_from_frames(self, frames: list, norm_pogs: list, steps_inner=5, lr_inner=1e-3):
+        
+        # For each frame, obtain the eye patch and head vector
+        eye_patches = []
+        head_vectors = []
+        face_origin_3ds = []
+        valid_norm_pogs = []
+        for frame in frames:
+            status, (face_landmarks, face_rt, detection_results) = self.detect_facial_landmarks(frame)
+            if not status:
+                print("Failed to detect facial landmarks")
+                continue
+
+            # Perform preprocessing to obtain the eye patch
+            data = self.prepare_input(
+                frame,
+                face_landmarks,
+                face_rt
+            )
+            eye_patches.append(data[0])
+            head_vectors.append(data[1])
+            face_origin_3ds.append(data[2])
+            valid_norm_pogs.append(norm_pogs)
+
+        # Perform the adaptation
+        self.adapt(
+            eye_patches=eye_patches,
+            head_vectors=head_vectors,
+            face_origin_3ds=face_origin_3ds,
+            pog_norms=valid_norm_pogs,
+            steps_inner=steps_inner,
+            lr_inner=lr_inner
+        )
+
+    def adapt_from_samples(self, samples, steps_inner=5, lr_inner=1e-3):
+        """
+        Performs MAML-style adaptation on the gaze head using support samples.
+        
+        Args:
+            samples (dict): Dictionary with support input features and labels.
+            steps_inner (int): Number of inner-loop adaptation steps.
+            lr_inner (float): Inner-loop learning rate.
+        """
+        eye_patches = []
+        head_vectors = []
+        face_origin_3ds = []
+        valid_norm_pogs = []
+        for sample in samples:
+            data = self.prepare_input(
+                sample['image'],
+                sample['facial_landmarks'],
+                sample['facial_rt']
+            )
+            # Store
+            eye_patches.append(data[0])
+            head_vectors.append(data[1])
+            face_origin_3ds.append(data[2])
+            valid_norm_pogs.append(sample['pog_norm'])
+
+        # Perform the adaptation
+        self.adapt(
+            eye_patches=eye_patches,
+            head_vectors=head_vectors,
+            face_origin_3ds=face_origin_3ds,
+            pog_norms=valid_norm_pogs,
+            steps_inner=steps_inner,
+            lr_inner=lr_inner
+        )
 
     def step(
             self,
@@ -181,6 +261,7 @@ class WebEyeTrack():
             face_landmarks: np.ndarray,
             face_rt: np.ndarray
         ):
+        tic = time.perf_counter()
 
         # Extract the 2D coordinates of the face landmarks
         face_landmarks_2d = face_landmarks[:, :2]
@@ -188,10 +269,6 @@ class WebEyeTrack():
         
         # Perform preprocessing to obtain the eye patch
         try:
-            # eye_patch = obtain_eyepatch(
-            #     frame, 
-            #     face_landmarks_2d,
-            # )
             eye_patch, head_vector, face_origin_3d = self.prepare_input(
                 frame,
                 face_landmarks,
@@ -199,7 +276,7 @@ class WebEyeTrack():
             )
         except Exception as e:
             print(f"Error in obtaining eye patch: {e}")
-            return False, None
+            return TrackingStatus.FAILED, None
 
         cv2.imshow('Eye Patch', eye_patch)
         if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -211,31 +288,40 @@ class WebEyeTrack():
             "head_vector": np.expand_dims(head_vector, axis=0),
             "face_origin_3d": np.expand_dims(face_origin_3d, axis=0)
         }, verbose=0)
-        return True, pog_estimation[0]
+        toc = time.perf_counter()
+
+
+        # return True, pog_estimation[0]
+        return TrackingStatus.SUCCESS, GazeResult(
+            facial_landmarks=face_landmarks,
+            face_rt=face_rt,
+            face_blendshapes=None,
+            metric_face=None,
+            metric_transform=None,
+            gaze_state='open',
+            pog=pog_estimation[0],
+            duration=toc-tic
+        )
 
     def process_frame(
             self,
             frame: np.ndarray
-    ) -> Tuple[Optional[GazeResult], Any]:
-        
-        # Detect the landmarks
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame.astype(np.uint8))
-        detection_results = self.face_landmarker.detect(mp_image)
+    ) -> Tuple[TrackingStatus, Optional[GazeResult], Any]:
+        tic = time.perf_counter()
 
-        # Compute the face bounding box based on the MediaPipe landmarks
-        try:
-            face_landmarks_proto = detection_results.face_landmarks[0]
-        except:
-            return None, detection_results
-        
-        # Extract information fro the results
-        face_landmarks = np.array([[lm.x, lm.y, lm.z, lm.visibility, lm.presence] for lm in face_landmarks_proto])
-        face_rt = detection_results.facial_transformation_matrixes[0]
+        # Detect the facial landmarks
+        tracking_status, (face_landmarks, face_rt, detection_results) = self.detect_facial_landmarks(frame)
+        if not tracking_status:
+            return TrackingStatus.FAILED, None, detection_results
         
         # Perform step
-        # return self.step(
-        #     frame,
-        #     face_landmarks,
-        #     face_rt
-        # ), detection_results
-        return None, detection_results
+        tracking_status, gaze_result = self.step(
+            frame,
+            face_landmarks,
+            face_rt
+        )
+        toc = time.perf_counter()
+        if tracking_status == TrackingStatus.SUCCESS:
+            gaze_result.duration = toc - tic
+        
+        return tracking_status, gaze_result, detection_results
