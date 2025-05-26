@@ -29,8 +29,8 @@ def get_dataset_metadata(config):
     elif config['dataset']['name'] == 'EyeDiap':
         h5_file = GENERATED_DATASET_DIR / 'EyeDiap_entire.h5'
         train_ids = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-        val_ids = [11, 12, 13]
-        test_ids = [14, 15, 16]
+        val_ids = [10, 11]
+        test_ids = [14, 15]
 
     elif config['dataset']['name'] == 'GazeCapture':
         h5_file = GENERATED_DATASET_DIR / 'GazeCapture_entire.h5'

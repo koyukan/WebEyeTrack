@@ -123,7 +123,7 @@ class GazeResult:
     gaze_state: Literal['open', 'closed'] = 'open'
 
     # PoG (normalized screen coordinates)
-    norm_pog: np.ndarray
+    norm_pog: np.ndarray = np.array([0.5, 0.5])
 
     # Meta data
     duration: float = -1 # seconds
