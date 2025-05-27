@@ -227,6 +227,7 @@ class WebEyeTrack():
             inner_lr (float): Inner-loop learning rate.
         """
         steps_inner = 100
+        inner_lr=1e-6
 
         encoder_model = self.blazegaze.encoder
         gaze_model = self.blazegaze.gaze_model
@@ -249,9 +250,8 @@ class WebEyeTrack():
         for _ in range(steps_inner):
             with tf.GradientTape() as tape:
                 support_preds = gaze_model(input_list, training=True)
-                print(support_preds.numpy())
                 support_loss = mae_cm_loss(support_y, support_preds, support_x['screen_info'])
-                print(support_loss.numpy())
+                print(f"Support loss: {support_loss.numpy():.4f}")
             grads = tape.gradient(support_loss, gaze_model.trainable_weights)
             for w, g in zip(gaze_model.trainable_weights, grads):
                 w.assign_sub(inner_lr * g)
@@ -269,7 +269,6 @@ class WebEyeTrack():
         query_loss = mae_cm_loss(query_y, query_preds, query_x['screen_info']).numpy()
 
         print(f"Adaptation completed. Support loss: {support_loss:.4f}, Query loss: {query_loss:.4f}")
-        import pdb; pdb.set_trace()
 
     def adapt_from_frames(self, frames: list, norm_pogs: np.ndarray, steps_inner=5, inner_lr=1e-5):
         

@@ -112,7 +112,7 @@ def preprocess_csv(csv_path) -> pd.DataFrame:
 
     return data
 
-def visualize_scanpath(par, csv_data, screen_height_px, screen_width_px, wet) -> plt.Figure:
+def visualize_scanpath(par, calib_pts, csv_data, screen_height_px, screen_width_px, wet) -> plt.Figure:
 
     screen_img = np.zeros((screen_height_px, screen_width_px, 3), dtype=np.uint8)
 
@@ -163,6 +163,11 @@ def visualize_scanpath(par, csv_data, screen_height_px, screen_width_px, wet) ->
 
         # cv2.circle(screen_img, (int(webgazer_gaze[0]*screen_width_px), int(webgazer_gaze[1]*screen_height_px)), 5, (255, 0, 0), -1)
         # cv2.circle(screen_img, (int(webeyetrack_gaze[0]*screen_width_px), int(webeyetrack_gaze[1]*screen_height_px)), 5, (0, 0, 255), -1)
+
+        # If this is a calibration point, make a big yellow circle
+        if row['frameNum'] in [pt['frameNum'] for pt in calib_pts]:
+            x, y = eval(row['mouseClickX'])[0], eval(row['mouseClickY'])[0]
+            cv2.circle(screen_img, (int(x * screen_width_px), int(y * screen_height_px)), 10, (0, 255, 255), -1)
 
         # Display the image
         cv2.imshow('Image', img)
@@ -255,9 +260,12 @@ def main():
             continue
 
         # Extract the 9-point calibration data (which should be top-left, top-center, top-right, center-left, center-center, center-right, bottom-left, bottom-center, bottom-right)
-        x_coords, y_coords = [0.025, 0.5, 0.975], [0.15, 0.5, 0.85]
+        # x_coords, y_coords = [0.15, 0.5, 0.85], [0.15, 0.5, 0.85]
+        x_coords, y_coords = [0.15, 0.85], [0.15, 0.85]
         pts = [(x, y) for x in x_coords for y in y_coords]
-        pts = pts[:3]
+        # pts = pts[:2]
+        # pts = [pts[3]]
+        print(pts)
 
         # Create the calibration points by finding the closest points in the mouse clicks
         calib_pts = []
@@ -275,6 +283,8 @@ def main():
                     closest_click_info = row
             if closest_click is not None:
                 calib_pts.append(closest_click_info)
+
+        # print(calib_pts)
 
         # Create the frame and point lists
         frames = []
@@ -303,7 +313,8 @@ def main():
 
         # Create the figure
         fig = visualize_scanpath(
-            par, 
+            par,
+            calib_pts,
             within_dot_test,
             screen_height_px,
             screen_width_px,
