@@ -55,7 +55,7 @@ class GazeConfig:
 class BlazeGazeConfig:
 
     # Mode
-    mode: Literal['autoencoder', 'gaze'] = 'autoencoder'
+    mode: Literal['autoencoder', 'gaze'] = 'gaze'
     weights_fp: Optional[str] = None
 
     encoder: EncoderConfig = field(default_factory=lambda: EncoderConfig())

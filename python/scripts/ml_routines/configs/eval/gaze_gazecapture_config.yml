@@ -41,7 +41,7 @@ model:
 
   # Gaze Estimation configuration.
   gaze:
-    weights:fp: ''
+    weights_fp: ''
     inputs:
       - name: 'head_vector'
         input_shape: [3]

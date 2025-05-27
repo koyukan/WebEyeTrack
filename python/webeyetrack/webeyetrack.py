@@ -2,6 +2,7 @@ import time
 import pathlib
 from typing import Union, Any, Tuple, Optional
 from dataclasses import dataclass
+import random
 
 import tensorflow as tf
 import cv2
@@ -21,12 +22,84 @@ from .model_based import (
     estimate_gaze_origins
 )
 from .data_protocols import GazeResult, TrackingStatus
+from .blazegaze import BlazeGaze, BlazeGazeConfig
+
+def mae_cm_loss(y_true, y_pred, screen_info):
+    """
+    Convert normalized predictions and labels to cm using screen_info
+    and compute MAE in cm.
+
+    Args:
+        y_true: Tensor of shape (batch_size, 2), normalized labels [0,1]
+        y_pred: Tensor of shape (batch_size, 2), normalized predictions [0,1]
+        screen_info: Tensor of shape (batch_size, 2), in cm: [height, width]
+
+    Returns:
+        Scalar MAE loss in cm
+    """
+    # Convert from normalized [0,1] to cm by multiplying by screen dimensions
+    true_cm = y_true * screen_info
+    pred_cm = y_pred * screen_info
+
+    return tf.reduce_mean(tf.abs(true_cm - pred_cm))  # MAE in cm
+
+def list_to_tensor(input_list: list, dtype=tf.float32):
+    return tf.convert_to_tensor(np.stack(input_list), dtype=dtype)
+
+def generate_support_and_query_samples(
+        eye_patches, 
+        head_vectors, 
+        face_origin_3ds, 
+        pog_norms, 
+        screen_cm_dimensions,
+        split_ratio=0.7
+    ):
+
+    # Shuffle in unison to ensure
+    # combined = list(zip(eye_patches, head_vectors, face_origin_3ds, pog_norms))
+    # random.shuffle(combined)
+    # eye_patches, head_vectors, face_origin_3ds, pog_norms = zip(*combined)
+
+    # Do a 0.7/0.3 split for support and query sets, in a random fashion
+    split_index = int(split_ratio * len(eye_patches))
+    support_x_eyes = eye_patches[:split_index]
+    support_x_head = head_vectors[:split_index]
+    support_x_face = face_origin_3ds[:split_index]
+    support_x_screen_info = [screen_cm_dimensions] * split_index
+    support_y = list_to_tensor(pog_norms[:split_index])
+
+    support_x = {
+        'image': list_to_tensor(support_x_eyes, dtype=tf.float32) / 255.0,
+        'head_vector': list_to_tensor(support_x_head, dtype=tf.float32),
+        'face_origin_3d': list_to_tensor(support_x_face, dtype=tf.float32),
+        'screen_info': list_to_tensor(support_x_screen_info, dtype=tf.float32)
+    }
+
+    if split_ratio != 1:
+        query_x_eyes = eye_patches[split_index:]
+        query_x_head = head_vectors[split_index:]
+        query_x_face = face_origin_3ds[split_index:]
+        query_x_screen_info = [screen_cm_dimensions] * (len(eye_patches) - split_index)
+        query_y = list_to_tensor(pog_norms[split_index:])
+        query_x = {
+            'image': list_to_tensor(query_x_eyes, dtype=tf.float32) / 255.0,
+            'head_vector': list_to_tensor(query_x_head, dtype=tf.float32),
+            'face_origin_3d': list_to_tensor(query_x_face, dtype=tf.float32),
+            'screen_info': list_to_tensor(query_x_screen_info, dtype=tf.float32)
+        }
+    else:
+        query_x = None
+        query_y = None
+
+    return support_x, support_y, query_x, query_y
 
 @dataclass
 class WebEyeTrackConfig():
     blazegaze_model_fp: Union[str, pathlib.Path] = BLAZEGAZE_PATH
     ear_threshold: float = 0.2
     mediapipe_flm_model_fp: Union[str, pathlib.Path] = FACE_LANDMARKER_PATH
+    screen_px_dimensions: Tuple[int, int] = (1920, 1080)
+    screen_cm_dimensions: Tuple[float, float] = (53.1, 29.8)
 
 class WebEyeTrack():
 
@@ -46,12 +119,10 @@ class WebEyeTrack():
         self.face_landmarker = vision.FaceLandmarker.create_from_options(options)
 
         # Load the BlazeGaze model
-        self.blazegaze = tf.keras.models.load_model(config.blazegaze_model_fp)
-
-        # Freeze encoder layers
-        for layer in self.blazegaze.layers:
-            if 'cnn_encoder' in layer.name or 'encoder' in layer.name:
-                layer.trainable = False
+        model_config = BlazeGazeConfig(
+            weights_fp=self.config.blazegaze_model_fp
+        )
+        self.blazegaze = BlazeGaze(model_config)
 
         # Keep track of the face width cm estimate
         self.face_width_cm = None
@@ -135,9 +206,9 @@ class WebEyeTrack():
             eye_patches: list, 
             head_vectors: list,
             face_origin_3ds: list,
-            pog_norms: list,
+            pog_norms: np.ndarray,
             steps_inner=5, 
-            lr_inner=1e-3,
+            inner_lr=1e-5,
         ):
         """
         Performs MAML-style adaptation on the gaze head using support samples.
@@ -147,53 +218,60 @@ class WebEyeTrack():
             head_vectors (list): List of head vectors.
             face_origin_3ds (list): List of face origin 3D vectors.
             steps_inner (int): Number of inner-loop adaptation steps.
-            lr_inner (float): Inner-loop learning rate.
+            inner_lr (float): Inner-loop learning rate.
         """
-        # Create the input from the samples
-        support_x_eyes = np.stack(eye_patches)
-        support_x_eyes = tf.convert_to_tensor(support_x_eyes, dtype=tf.float32)
-        support_x_head = np.stack(head_vectors)
-        support_x_head = tf.convert_to_tensor(support_x_head, dtype=tf.float32)
-        support_x_face = np.stack(face_origin_3ds)
-        support_x_face = tf.convert_to_tensor(support_x_face, dtype=tf.float32)
-        support_x_list = [
-            support_x_eyes,
-            support_x_head,
-            support_x_face
-        ]
-        support_y = np.stack(pog_norms)
-        support_y = tf.convert_to_tensor(support_y, dtype=tf.float32)
 
-        # Inner-loop gradient updates
-        loss_fn = tf.keras.losses.MeanAbsoluteError()
-        losses = []
+        encoder_model = self.blazegaze.encoder
+        gaze_model = self.blazegaze.gaze_model
+        support_x, support_y, query_x, query_y = generate_support_and_query_samples(
+            eye_patches=eye_patches,
+            head_vectors=head_vectors,
+            face_origin_3ds=face_origin_3ds,
+            pog_norms=pog_norms,
+            screen_cm_dimensions=self.config.screen_cm_dimensions,
+            split_ratio=1
+        )
+
+        # Encode features (encoder is frozen)
+        support_x['encoder_features'] = encoder_model(support_x['image'], training=False)
+
+        features = ['encoder_features', 'head_vector', 'face_origin_3d']
+        input_list = [support_x[feature] for feature in features]
+
+        # Adapt on support set
         for _ in range(steps_inner):
             with tf.GradientTape() as tape:
-                preds = self.blazegaze(support_x_list, training=True)
-                loss = loss_fn(support_y, preds)
-            grads = tape.gradient(loss, self.blazegaze.trainable_variables)
-            losses.append(loss)
+                support_preds = gaze_model(input_list, training=True)
+                print(support_preds.numpy())
+                support_loss = mae_cm_loss(support_y, support_preds, support_x['screen_info'])
+                print(support_loss.numpy())
+            grads = tape.gradient(support_loss, gaze_model.trainable_weights)
+            for w, g in zip(gaze_model.trainable_weights, grads):
+                w.assign_sub(inner_lr * g)
 
-            # Filter grads to only update gaze head
-            # import pdb; pdb.set_trace()
-            trainable_vars = [v for v in self.blazegaze.trainable_variables]
-            gaze_grads = [g for g, v in zip(grads, self.blazegaze.trainable_variables)]
+        if query_x is None or query_y is None:
+            print(f"Adaptation completed. Support loss: {support_loss.numpy():.4f}")
+            return
+        
+        query_x['encoder_features'] = encoder_model(query_x['image'], training=False)
+        features = ['encoder_features', 'head_vector', 'face_origin_3d']
+        query_input_list = [query_x[feature] for feature in features]
 
-            for var, grad in zip(trainable_vars, gaze_grads):
-                if grad is not None:
-                    var.assign_sub(lr_inner * grad)
+        # Evaluate on query set
+        query_preds = gaze_model(query_input_list, training=False)
+        query_loss = mae_cm_loss(query_y, query_preds, query_x['screen_info']).numpy()
 
-        # Report the loss
-        print(f"Adaptation Loss: {losses}")
-    
-    def adapt_from_frames(self, frames: list, norm_pogs: list, steps_inner=5, lr_inner=1e-3):
+        print(f"Adaptation completed. Support loss: {support_loss:.4f}, Query loss: {query_loss:.4f}")
+        import pdb; pdb.set_trace()
+
+    def adapt_from_frames(self, frames: list, norm_pogs: np.ndarray, steps_inner=5, inner_lr=1e-5):
         
         # For each frame, obtain the eye patch and head vector
         eye_patches = []
         head_vectors = []
         face_origin_3ds = []
         valid_norm_pogs = []
-        for frame in frames:
+        for i, frame in enumerate(frames):
             status, (face_landmarks, face_rt, detection_results) = self.detect_facial_landmarks(frame)
             if not status:
                 print("Failed to detect facial landmarks")
@@ -208,7 +286,7 @@ class WebEyeTrack():
             eye_patches.append(data[0])
             head_vectors.append(data[1])
             face_origin_3ds.append(data[2])
-            valid_norm_pogs.append(norm_pogs)
+            valid_norm_pogs.append(norm_pogs[i])
 
         # Perform the adaptation
         self.adapt(
@@ -217,17 +295,17 @@ class WebEyeTrack():
             face_origin_3ds=face_origin_3ds,
             pog_norms=valid_norm_pogs,
             steps_inner=steps_inner,
-            lr_inner=lr_inner
+            inner_lr=inner_lr
         )
 
-    def adapt_from_samples(self, samples, steps_inner=5, lr_inner=1e-3):
+    def adapt_from_samples(self, samples, steps_inner=5, inner_lr=1e-5):
         """
         Performs MAML-style adaptation on the gaze head using support samples.
         
         Args:
             samples (dict): Dictionary with support input features and labels.
             steps_inner (int): Number of inner-loop adaptation steps.
-            lr_inner (float): Inner-loop learning rate.
+            inner_lr (float): Inner-loop learning rate.
         """
         eye_patches = []
         head_vectors = []
@@ -252,7 +330,7 @@ class WebEyeTrack():
             face_origin_3ds=face_origin_3ds,
             pog_norms=valid_norm_pogs,
             steps_inner=steps_inner,
-            lr_inner=lr_inner
+            inner_lr=inner_lr
         )
 
     def step(
@@ -283,13 +361,12 @@ class WebEyeTrack():
             cv2.destroyAllWindows()
 
         # Perform the gaze estimation via BlazeGaze Model
-        pog_estimation = self.blazegaze.predict({
-            "image": np.expand_dims(eye_patch, axis=0),
+        pog_estimation = self.blazegaze.model.predict({
+            "image": np.expand_dims(eye_patch/255.0, axis=0),
             "head_vector": np.expand_dims(head_vector, axis=0),
             "face_origin_3d": np.expand_dims(face_origin_3d, axis=0)
         }, verbose=0)
         toc = time.perf_counter()
-
 
         # return True, pog_estimation[0]
         return TrackingStatus.SUCCESS, GazeResult(

@@ -10,31 +10,13 @@ import numpy as np
 import seaborn as sns
 import pandas as pd
 import yaml
-import open3d as o3d
 
 import matplotlib
 matplotlib.use('TkAgg')
 
-from webeyetrack import WebEyeTrack
-from webeyetrack.constants import GIT_ROOT
-import webeyetrack.vis as vis
-from webeyetrack.model_based import vector_to_pitch_yaw, compute_pog
-from webeyetrack.data_protocols import GazeResult
-from webeyetrack.kalman_filter import create_kalman_filter
-from webeyetrack.utilities import (
-    estimate_camera_intrinsics, 
-    transform_for_3d_scene,
-    transform_3d_to_3d,
-    transform_3d_to_2d,
-    get_rotation_matrix_from_vector,
-    rotation_matrix_to_euler_angles,
-    euler_angles_to_rotation_matrix,
-    OPEN3D_RT,
-    load_3d_axis,
-    load_canonical_mesh,
-    load_eyeball_model,
-    create_transformation_matrix
-)
+from webeyetrack.data_protocols import TrackingStatus
+from webeyetrack import WebEyeTrack, WebEyeTrackConfig
+# from webeyetrack.kalman_filter import create_kalman_filter
 
 CWD = pathlib.Path(__file__).parent
 FILE_DIR = pathlib.Path(__file__).parent.parent
@@ -130,12 +112,12 @@ def preprocess_csv(csv_path) -> pd.DataFrame:
 
     return data
 
-def visualize_scanpath(par, csv_data, screen_height_px, screen_width_px) -> plt.Figure:
+def visualize_scanpath(par, csv_data, screen_height_px, screen_width_px, wet) -> plt.Figure:
 
     screen_img = np.zeros((screen_height_px, screen_width_px, 3), dtype=np.uint8)
 
     # Create a kalman filter for the gaze
-    tobii_kf = create_kalman_filter(dt=1/120)
+    # tobii_kf = create_kalman_filter(dt=1/120)
     
     for i, row in tqdm(csv_data.iterrows(), total=len(csv_data), desc=f'Visualizing scanpath for {par}'):
         
@@ -159,20 +141,26 @@ def visualize_scanpath(par, csv_data, screen_height_px, screen_width_px) -> plt.
             gaze = right_gaze
 
         # Apply the Kalman filter to the gaze point
-        if gaze is not None:
-            # Apply the Kalman filter
-            tobii_kf.predict()
-            tobii_kf.update(np.array(gaze_px))
-            smooth_gaze = (tobii_kf.x[0], tobii_kf.x[1])
+        # if gaze is not None:
+        #     # Apply the Kalman filter
+        #     tobii_kf.predict()
+        #     tobii_kf.update(np.array(gaze_px))
+        #     smooth_gaze = (tobii_kf.x[0], tobii_kf.x[1])
 
         # Obtain the webgazer gaze point
         webgazer_gaze = (row['webGazerX'], row['webGazerY'])
+        status, gaze_result, _ = wet.process_frame(img)
 
         # Display the gaze point
         if gaze is not None:
             cv2.circle(screen_img, (int(gaze[0]*screen_width_px), int(gaze[1]*screen_height_px)), 5, (0, 255, 0), -1)
-            cv2.circle(screen_img, (int(smooth_gaze[0]*screen_width_px), int(smooth_gaze[1]*screen_height_px)), 5, (255, 0, 0), -1)
-            
+            # cv2.circle(screen_img, (int(smooth_gaze[0]*screen_width_px), int(smooth_gaze[1]*screen_height_px)), 5, (255, 0, 0), -1)
+        
+        if status == TrackingStatus.SUCCESS and gaze_result is not None:
+            gaze_point = gaze_result.norm_pog
+            gaze_point = (gaze_point[0] * screen_width_px, gaze_point[1] * screen_height_px)
+            cv2.circle(screen_img, (int(gaze_point[0]), int(gaze_point[1])), 5, (0, 0, 255), -1)
+
         # cv2.circle(screen_img, (int(webgazer_gaze[0]*screen_width_px), int(webgazer_gaze[1]*screen_height_px)), 5, (255, 0, 0), -1)
         # cv2.circle(screen_img, (int(webeyetrack_gaze[0]*screen_width_px), int(webeyetrack_gaze[1]*screen_height_px)), 5, (0, 0, 255), -1)
 
@@ -204,7 +192,8 @@ def main():
     os.makedirs(RUN_DIR, exist_ok=True)
 
     # Iterate over the folders within the dataset
-    p_dirs = [p for p in EYE_OF_THE_TYPER_DATASET.iterdir() if p.is_dir()]
+    p_dirs = [EYE_OF_THE_TYPER_DATASET / 'P_01']
+    # p_dirs = [p for p in EYE_OF_THE_TYPER_DATASET.iterdir() if p.is_dir()]
     gaze_csvs = [p for p in EYE_OF_THE_TYPER_DATASET.iterdir() if p.is_file() and p.suffix == '.csv']
     options = set(['study' + p.stem.split('-study')[1] for p in gaze_csvs])
 
@@ -230,9 +219,6 @@ def main():
     participants_metrics = []
     for par, csvs in tqdm(gaze_by_participant.groupby('par'), total=len(gaze_by_participant), desc=f'Processing participants data'):
 
-        # Create the WebEyeTrack object
-        wet = WebEyeTrack()
-
         # Create a directory for each participant
         par_output_dir = RUN_DIR / par
         os.makedirs(par_output_dir, exist_ok=True)
@@ -243,6 +229,14 @@ def main():
         screen_height_cm = par_config['Screen Height (cm)'].values[0]
         screen_width_px = int(par_config['Display Width (pixels)'].values[0])
         screen_height_px = int(par_config['Display Height (pixels)'].values[0])
+
+        # Create the WebEyeTrack object
+        wet = WebEyeTrack(
+            WebEyeTrackConfig(
+                screen_px_dimensions=(screen_width_px, screen_height_px),
+                screen_cm_dimensions=(screen_width_cm, screen_height_cm),
+            )
+        )
 
         # Perform the calibration using the initial dot test
         calib_csv = csvs[SECTIONS[0]].values[0]
@@ -291,8 +285,10 @@ def main():
                 print(f"Image not found at {img_path}")
                 continue
             frames.append(img)
-            norm_pogs.append((eval(row['mouseClickX'])[0], eval(row['mouseClickY'])[0]))
-
+            norm_pogs.append(np.array([eval(row['mouseClickX'])[0], eval(row['mouseClickY'])[0]]))
+        
+        norm_pogs = np.stack(norm_pogs)
+        
         # Perform the calibration
         wet.adapt_from_frames(frames, norm_pogs)
 
@@ -308,7 +304,8 @@ def main():
             par, 
             within_dot_test,
             screen_height_px,
-            screen_width_px
+            screen_width_px,
+            wet
         )
         break
 
