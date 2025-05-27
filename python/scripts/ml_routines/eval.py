@@ -4,6 +4,8 @@ import pathlib
 from collections import defaultdict
 import argparse
 import json
+import time
+import datetime
 
 import cv2
 import matplotlib.pyplot as plt
@@ -12,26 +14,33 @@ import numpy as np
 import seaborn as sns
 import pandas as pd
 import yaml
+import cattrs
+import tensorflow as tf
 
 import matplotlib
 matplotlib.use('TkAgg')
 
-from webeyetrack import WebEyeTrack, WebEyeTrackConfig
+from webeyetrack.blazegaze import BlazeGaze, BlazeGazeConfig
 from webeyetrack.constants import GIT_ROOT
-import webeyetrack.vis as vis
-from webeyetrack.model_based import vector_to_pitch_yaw, compute_pog
-from webeyetrack.utilities import create_transformation_matrix
-from webeyetrack.data_protocols import GazeResult
-
 
 CWD = pathlib.Path(__file__).parent
-sys.path.append(str(CWD.parent / 'preprocessing'))
-from mpiifacegaze import MPIIFaceGazeDataset
-from gazecapture import GazeCaptureDataset
-from eyediap import EyeDiapDataset
+from train_maml import maml_test
+from data import (
+    get_dataset_metadata,
+    get_maml_task_dataset
+)
 
-FILE_DIR = CWD.parent
-OUTPUTS_DIR = CWD / 'outputs'
+CWD = pathlib.Path(__file__).parent
+FILE_DIR = pathlib.Path(__file__).parent
+GENERATED_DATASET_DIR = GIT_ROOT / 'data' / 'generated'
+SAVED_MODELS_DIR = CWD / 'saved_models'
+
+OUTPUT_DIR = FILE_DIR / 'logs'
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+TIMESTAMP = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+RUN_DIR = OUTPUT_DIR / TIMESTAMP
+os.makedirs(RUN_DIR, exist_ok=True)
+
 SKIP_COUNT = 100
 # SKIP_COUNT = 2
 CALIBRATION_POINTS = np.array([ # 9 points
@@ -53,196 +62,83 @@ with open(CWD.parent / 'GazeCapture_participant_ids.json', 'r') as f:
 TOTAL_DATASET = 100
 PER_PARTICIPANT_SIZE = 30
 
-with open(FILE_DIR / 'config.yaml', 'r') as f:
-    config = yaml.safe_load(f)
+def eval(config):
 
-def distance(y, y_hat):
-    return np.abs(y_hat - y)
+    with open(RUN_DIR / 'config.yaml', 'w') as f:
+        yaml.dump(config, f)
 
-def scale(y, y_hat):
-    return np.abs(y / y_hat)
+    # Create tensorboard writer
+    tb_writer = tf.summary.create_file_writer(str(RUN_DIR))
+    tb_writer.set_as_default()
 
-def angle(y, y_hat):
-    return np.degrees(np.arccos(np.clip(np.dot(y, y_hat), -1.0, 1.0)))
+    # Load model
+    model_config = cattrs.structure(config['model'], BlazeGazeConfig)
+    model = BlazeGaze(model_config)
+    model.freeze_encoder()
 
-def euclidean_distance(y, y_hat):
-    return np.linalg.norm(y - y_hat)
+    encoder = model.encoder
+    gaze_model = model.gaze_model
 
-def visualize_differences(img, sample, results: GazeResult):
+    # Get dataset metadata
+    h5_file, train_ids, val_ids, test_ids = get_dataset_metadata(config)
 
-    # Draw the facial_landmarks
-    pitch, yaw = vector_to_pitch_yaw(sample['face_gaze_vector'])
-    cv2.circle(img, (int(sample['face_origin_2d'][0]), int(sample['face_origin_2d'][1])), 5, (0, 0, 255), -1)
-    img = vis.draw_axis(img, pitch, yaw, 0, tdx=sample['face_origin_2d'][0], tdy=sample['face_origin_2d'][1], size=100)
+    # Load MAML dataset
+    # train_maml_dataset = get_maml_task_dataset(
+    #     h5_file,
+    #     train_ids,
+    #     config
+    # )
+    # valid_maml_dataset = get_maml_task_dataset(
+    #     h5_file,
+    #     val_ids,
+    #     config
+    # )
+    test_maml_dataset = get_maml_task_dataset(
+        h5_file,
+        test_ids,
+        config
+    )
 
-    pitch, yaw = vector_to_pitch_yaw(results.face_gaze)
-    cv2.circle(img, (int(results.face_origin_2d[0]), int(results.face_origin_2d[1])), 5, (255, 0, 0), -1)
-    img = vis.draw_axis(img, pitch, yaw, 0, tdx=results.face_origin_2d[0], tdy=results.face_origin_2d[1], size=100)
+    # Run the test dataset
+    maml_test(
+        model_config=model_config,
+        encoder_model=encoder,
+        gaze_model=gaze_model,
+        test_maml_dataset=test_maml_dataset,
+        ids=(train_ids, val_ids, test_ids),
+        inner_lr=config['optimizer']['inner_lr'],
+        steps_inner=config['training']['num_inner_steps'],
+        tb_writer=tb_writer
+    )
 
-    # Draw the centers 
-    for eye in ['left', 'right']:
-        eye_result = results.left if eye == 'left' else results.right
-        centroid = eye_result.origin_2d
-        cv2.circle(img, (int(centroid[0]), int(centroid[1])), 5, (255, 0, 0), -1)
-
-        # Convert 3D to pitch and yaw
-        pitch, yaw = vector_to_pitch_yaw(eye_result.direction)
-        img = vis.draw_axis(img, pitch, yaw, 0, tdx=centroid[0], tdy=centroid[1], size=100)
-
-    return img
-
-def eval(args):
- 
-    # Create a dataset object
-    if (args.dataset == 'MPIIFaceGaze'):
-        dataset = MPIIFaceGazeDataset(
-            GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
-            participants=[13, 14],
-            # dataset_size=TOTAL_DATASET,
-            # per_participant_size=PER_PARTICIPANT_SIZE
-        )
-    elif (args.dataset == 'GazeCapture'):
-        dataset = GazeCaptureDataset(
-            GIT_ROOT / pathlib.Path(config['datasets']['GazeCapture']['path']),
-            participants=GAZE_CAPTURE_IDS,
-            # dataset_size=TOTAL_DATASET,
-            # per_participant_size=PER_PARTICIPANT_SIZE
-        )
-    elif (args.dataset == 'EyeDiap'):
-        dataset = EyeDiapDataset(
-            GIT_ROOT / pathlib.Path(config['datasets']['EyeDiap']['path']),
-            participants=[14, 15]
-            # dataset_size=TOTAL_DATASET,
-            # per_participant_size=PER_PARTICIPANT_SIZE
-        )
-    else:
-        raise ValueError(f"Dataset {args.dataset} not supported")
-
-    RUN_TIMESTAMP = pd.Timestamp.now().strftime('%Y%m%d%H%M%S')
-    RUN_DIR = OUTPUTS_DIR / f"{RUN_TIMESTAMP}_{args.dataset}"
-    os.makedirs(str(RUN_DIR), exist_ok=True)
-    os.makedirs(str(RUN_DIR / 'imgs'), exist_ok=True)
-
-    # Load the eyediap dataset
-    print("FINISHED LOADING DATASET")
-
-    metrics = defaultdict(list)
-
-    # Obtain the sample dataframe
-    meta_df = dataset.get_samples_meta_df()
-
-    # Group data by participant
-    for group_name, group in tqdm(meta_df.groupby('participant_id')):
-
-        # Create the WebEyeTrack object
-        wet = WebEyeTrack()
-
-        # Select 9 random numbers from 0 to len(group) - 1
-        support_sample_indices = np.random.choice(len(group), size=min(9, len(group)), replace=False)
-        support_samples = [dataset.__getitem__(i) for i in support_sample_indices]
-
-        # Perform calibration
-        wet.adapt_from_samples(support_samples)
-
-        # for i in tqdm(range(len(group))):
-        for i, meta_data in tqdm(group.iterrows(), total=len(group)):
-
-            # Obtain the sample
-            sample = dataset.__getitem__(meta_data.name)
-
-            # Get sample and load the image
-            img = sample['image']
-            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-
-            if type(img) == type(None):
-                print(f"Image is None for {sample['image_fp']}")
-                continue
-
-            # Show the image
-            cv2.imshow('img', img)
-            # if cv2.waitKey(0) & 0xFF == ord('q'):
-            #     break
-
-            # Process the sample
-            status, gaze_results = wet.step(
-                img,
-                sample['facial_landmarks'], 
-                sample['facial_rt'], 
-            )
-
-            if status:
-
-                # Compute the PoG in centimeters
-                # import pdb; pdb.set_trace()
-                screen_info = np.array([sample['screen_width_cm'], sample['screen_height_cm']])
-                pog_norm_error = sample['pog_norm'] - gaze_results.norm_pog
-                pog_error = pog_norm_error * screen_info
-
-                # Compute the PoG as the norm of the vector
-                pog_error = np.linalg.norm(pog_error)
-                
-                # Compute the POG error in euclidean distance (cm)
-                # pog_error = euclidean_distance(sample['pog_cm'], pog_cm)
-                # pog_error = euclidean_distance(sample['pog_cm'], pog_norm)
-
-                # Store the metrics
-                metrics['pog_error'].append(pog_error)
-                # metrics['participant_id'].append(group_name)
-
-    # Generate box plots for the metrics
-    df = pd.DataFrame(metrics)
-    if df.empty:
-        return
-
-    # Remove outliers via IQR for all metrics 
-    for name in metrics.keys():
-        q1 = df[name].quantile(0.10)
-        q3 = df[name].quantile(0.90)
-        iqr = q3 - q1
-        lower_bound = q1 - 3 * iqr
-        upper_bound = q3 + 3 * iqr
-        df = df[(df[name] >= lower_bound) & (df[name] <= upper_bound)]
-
-    # Calculate mean and std for each metric
-    num_metrics = len(metrics.keys())
-    fig, axes = plt.subplots(1, num_metrics, figsize=(6*num_metrics, 6))
-    fig.suptitle('Metrics Evaluation', fontsize=16)
-
-    for i, name in enumerate(metrics.keys()):
-        mean = df[name].mean()
-        std = df[name].std()
-          
-        # Add mean and std as text in the figure
-        if num_metrics > 1:
-            # Plot the boxplot for each metric
-            sns.boxplot(data=df, y=name, ax=axes[i])
-            axes[i].text(0.05, 0.95, f'Mean: {mean:.2f}\nStd: {std:.2f}', 
-                        transform=axes[i].transAxes, 
-                        verticalalignment='top')
-            
-            # Set the title with mean and std
-            axes[i].set_title(f'{name.capitalize()}\nMean: {mean:.2f}, Std: {std:.2f}')
-        else:
-            # Plot the boxplot for each metric
-            sns.boxplot(data=df, y=name, ax=axes)
-            axes.text(0.05, 0.95, f'Mean: {mean:.2f}\nStd: {std:.2f}', 
-                        transform=axes.transAxes, 
-                        verticalalignment='top')
-            
-            # Set the title with mean and std
-            axes.set_title(f'{name.capitalize()}\nMean: {mean:.2f}, Std: {std:.2f}')
-        
-    # plt.tight_layout()
-    # plt.show()
-    plt.savefig(str(RUN_DIR / 'metrics.png'))
-
-    print(df.describe())
-    df.to_excel(str(RUN_DIR / 'metrics.xlsx'))
-
-if __name__ == '__main__':
-    # Parse arguments
+if __name__ == "__main__":
+    # Add arguments to specify the configuration file
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, required=True, choices=['MPIIFaceGaze', 'GazeCapture', 'EyeDiap'], help='Dataset to evaluate')
+    parser.add_argument("--config", required=True, type=str, help="Path to the configuration file")
     args = parser.parse_args()
 
-    eval(args)
+    # Load the configuration file (YAML)
+    with open(args.config, 'r') as f:
+        config = yaml.safe_load(f)
+
+    # Only config that is for 'gaze' type is allowed
+    if config['config']['type'] != 'gaze':
+        raise ValueError("Only 'gaze' type configuration is allowed.")
+
+    # Print the configuration
+    print("\n")
+    print("#" * 80)
+    print("Configuration:")
+    print(json.dumps(config, indent=4))
+    print("#" * 80)
+    print("\n")
+
+    # Ask confirmation for training with a 5 second loading bar
+    print("Starting training in 5 seconds...\n")
+    for i in tqdm(range(5)):    
+        time.sleep(1)
+
+    # Start training
+    print("Training...")
+    
+    eval(config)

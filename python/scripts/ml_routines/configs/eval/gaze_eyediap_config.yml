@@ -4,14 +4,14 @@ config:
 
 # Configuration file for the GazeCapture dataset.
 dataset:
-  name: 'MPIIFaceGaze'
+  name: 'EyeDiap'
   seed: 42
   query_size: 100
   support_size: 9
 
-  train_ids: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-  val_ids: [10, 11, 12]
-  test_ids: [13, 14]
+  train_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+  val_ids: [10, 11]
+  test_ids: [14, 15]
 
 # Configuration for the optimizer.
 optimizer:
@@ -28,11 +28,11 @@ training:
 # Configuration for the model.
 model:
   mode: 'gaze'
-  model_weights_fp: "blazegaze_mpiifacegaze.keras"
+  model_weights_fp: "blazegaze_eyediap.keras"
   
   # Encoder configuration.
   encoder:
-    weights_fp: ''
+    weights_fp: 'autoencoder_2025-03-29-12-30-25'
     input_shape: [128,512,3]
     input_name: 'pixels'
     type: 'cnn' # 'mlp' or 'cnn'

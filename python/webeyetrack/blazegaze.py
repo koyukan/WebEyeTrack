@@ -21,6 +21,8 @@ from tensorflow.keras.layers import (
 # Optional: Enable XLA for optimization
 tf.config.optimizer.set_jit(True)
 
+from .constants import MODEL_WEIGHTS
+
 @dataclass
 class FourierTransformParams:
     trainable: bool = False
@@ -308,12 +310,36 @@ class BlazeGaze():
     def __init__(self, config: BlazeGazeConfig):
         self.config = config
 
-        if self.config.mode == 'autoencoder':
+        if self.config.weights_fp:
+            self.load_entire_model()
+        elif self.config.mode == 'autoencoder':
             self.set_autoencoder()
         elif self.config.mode == 'gaze':
             self.set_gazemodel()
         else:
             raise ValueError("Invalid mode. Must be either 'autoencoder' or 'gaze'")
+        
+    def load_entire_model(self):
+        
+        if isinstance(self.config.weights_fp, str):
+            self.config.weights_fp = MODEL_WEIGHTS / self.config.weights_fp
+        full_model = tf.keras.models.load_model(self.config.weights_fp, compile=False)
+        self.model = full_model
+        
+        cnn_encoder = full_model.get_layer('cnn_encoder')  # or use exact last encoder layer name
+        self.encoder = Model(
+            inputs=cnn_encoder.inputs, 
+            outputs=cnn_encoder.output, 
+            name="cnn_encoder"
+        )
+
+        # Get encoder output tensor (which is input to the gaze model)
+        gaze_head = full_model.get_layer('gaze_head')
+        self.gaze_model = Model(
+            inputs=gaze_head.inputs,
+            outputs=gaze_head.output,
+            name="gaze_head"
+        )
 
     def set_autoencoder(self):
 
@@ -374,6 +400,14 @@ if __name__ == "__main__":
     config = BlazeGazeConfig(
         # Mode
         mode='gaze',
+        weights_fp='blazegaze_gazecapture.keras',
+        gaze=GazeConfig(
+            inputs=[
+                ModalityInput(name='head_vector', input_shape=(3,)),
+                ModalityInput(name='face_origin_3d', input_shape=(3,)),
+            ],
+            output='2d'
+        )
     )
     model = BlazeGaze(config)
     model.model.summary()

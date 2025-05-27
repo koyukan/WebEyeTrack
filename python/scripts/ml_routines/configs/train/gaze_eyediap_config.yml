@@ -6,7 +6,6 @@ config:
 dataset:
   name: 'EyeDiap'
   seed: 42
-  train_val_test_split: [0.8, 0.1]
   query_size: 100
   support_size: 9
 
