@@ -10,7 +10,7 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import mediapipe as mp
 
-from .constants import GIT_ROOT
+from .constants import FACE_LANDMARKER_PATH, BLAZEGAZE_PATH
 from .model_based import (
     obtain_eyepatch, 
     get_head_vector,
@@ -24,9 +24,9 @@ from .data_protocols import GazeResult, TrackingStatus
 
 @dataclass
 class WebEyeTrackConfig():
-    blazegaze_model_fp: Union[str, pathlib.Path] = GIT_ROOT / 'python' / 'weights' / 'blazegaze_model.h5'
+    blazegaze_model_fp: Union[str, pathlib.Path] = BLAZEGAZE_PATH
     ear_threshold: float = 0.2
-    mediapipe_flm_model_fp: Union[str, pathlib.Path] = GIT_ROOT / 'python' / 'weights' / 'face_landmarker_v2_with_blendshapes.task'
+    mediapipe_flm_model_fp: Union[str, pathlib.Path] = FACE_LANDMARKER_PATH
 
 class WebEyeTrack():
 
@@ -299,7 +299,7 @@ class WebEyeTrack():
             metric_face=None,
             metric_transform=None,
             gaze_state='open',
-            pog=pog_estimation[0],
+            norm_pog=pog_estimation[0],
             duration=toc-tic
         )
 

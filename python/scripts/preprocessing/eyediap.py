@@ -21,7 +21,7 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
-from webeyetrack.constants import GIT_ROOT
+from webeyetrack.constants import FACE_LANDMARKER_PATH, GIT_ROOT
 from webeyetrack.vis import draw_gaze_origin, draw_axis, draw_landmarks_on_image
 from webeyetrack.data_protocols import Annotations, CalibrationData, Sample
 from webeyetrack.model_based import vector_to_pitch_yaw
@@ -240,7 +240,7 @@ class EyeDiapDataset():
         #     raise RuntimeError("HD video is not supported yet. TODO: Gaze direction does not appear to be correct in HD video.")
 
         # Setup MediaPipe Face Facial Landmark model
-        base_options = python.BaseOptions(model_asset_path=str(GIT_ROOT / 'python' / 'weights' / 'face_landmarker_v2_with_blendshapes.task'))
+        base_options = python.BaseOptions(model_asset_path=str(FACE_LANDMARKER_PATH))
         options = vision.FaceLandmarkerOptions(base_options=base_options,
                                             output_face_blendshapes=True,
                                             output_facial_transformation_matrixes=True,
@@ -777,6 +777,9 @@ class EyeDiapDataset():
             return None, None
 
         return detection_results, face_landmarks_proto
+
+    def get_samples_meta_df(self):
+        return self.samples
 
     def __len__(self):
         return len(self.samples)

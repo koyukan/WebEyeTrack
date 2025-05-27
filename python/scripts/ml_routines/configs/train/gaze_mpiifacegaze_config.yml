@@ -1,0 +1,55 @@
+# Description: Configuration file for the GazeCapture dataset.
+config:
+  type: "gaze"
+
+# Configuration file for the GazeCapture dataset.
+dataset:
+  name: 'MPIIFaceGaze'
+  seed: 42
+  query_size: 100
+  support_size: 9
+
+  train_ids: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  val_ids: [10, 11, 12]
+  test_ids: [13, 14]
+
+# Configuration for the optimizer.
+optimizer:
+  outer_lr: 0.001 # 1e-3
+  inner_lr: 0.00001 # 1e-5
+  decay_rate: 0.95
+
+# Training configuration.
+training:
+  batch_size: 8
+  num_outer_steps: 1000
+  num_inner_steps: 5
+
+# Configuration for the model.
+model:
+  mode: 'gaze'
+  model_weights_fp: null
+  
+  # Encoder configuration.
+  encoder:
+    weights_fp: 'autoencoder_2025-03-29-12-30-25'
+    input_shape: [128,512,3]
+    input_name: 'pixels'
+    type: 'cnn' # 'mlp' or 'cnn'
+    embedding_size: 512
+    output_shape: [8, 32, 96]
+
+  # Gaze Estimation configuration.
+  gaze:
+    weights:fp: ''
+    inputs:
+      - name: 'head_vector'
+        input_shape: [3]
+      - name: 'face_origin_3d'
+        input_shape: [3]
+    output: '2d'
+
+# Configuration for the loss function.
+loss:
+  functions: 'mse'
+  metrics: 'mae'

@@ -29,7 +29,7 @@ from webeyetrack.model_based import (
     estimate_gaze_origins,
     create_transformation_matrix
 )
-from webeyetrack.constants import GIT_ROOT
+from webeyetrack.constants import GIT_ROOT, FACE_LANDMARKER_PATH
 from webeyetrack.data_protocols import Annotations, CalibrationData, Sample
 
 from utils import data_normalization_entry
@@ -113,7 +113,7 @@ class GazeCaptureDataset():
     def load_model(self):
 
         # Setup MediaPipe Face Facial Landmark model
-        base_options = python.BaseOptions(model_asset_path=str(GIT_ROOT / 'python' / 'weights' / 'face_landmarker_v2_with_blendshapes.task'))
+        base_options = python.BaseOptions(model_asset_path=str(FACE_LANDMARKER_PATH))
         options = vision.FaceLandmarkerOptions(base_options=base_options,
                                             output_face_blendshapes=True,
                                             output_facial_transformation_matrixes=True,

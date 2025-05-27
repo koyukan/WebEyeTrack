@@ -28,7 +28,7 @@ def get_dataset_metadata(config):
 
     elif config['dataset']['name'] == 'EyeDiap':
         h5_file = GENERATED_DATASET_DIR / 'EyeDiap_entire.h5'
-        train_ids = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        train_ids = [1, 2, 3, 4, 5, 6, 7, 8, 9]
         val_ids = [10, 11]
         test_ids = [14, 15]
 
@@ -55,6 +55,11 @@ def get_dataset_metadata(config):
         train_ids = GAZE_CAPTURE_IDS[:train_size]
         val_ids = GAZE_CAPTURE_IDS[train_size:train_size+val_size]
         test_ids = GAZE_CAPTURE_IDS[train_size+val_size:]
+
+        # Add the ids to the config to record them later
+        config['dataset']['gazecapture']['train_ids'] = train_ids
+        config['dataset']['gazecapture']['val_ids'] = val_ids
+        config['dataset']['gazecapture']['test_ids'] = test_ids
 
     return h5_file, train_ids, val_ids, test_ids
 

@@ -97,7 +97,7 @@ def eval(args):
     if (args.dataset == 'MPIIFaceGaze'):
         dataset = MPIIFaceGazeDataset(
             GIT_ROOT / pathlib.Path(config['datasets']['MPIIFaceGaze']['path']),
-            participants=[x for x in range(14)],
+            participants=[13, 14],
             # dataset_size=TOTAL_DATASET,
             # per_participant_size=PER_PARTICIPANT_SIZE
         )
@@ -111,9 +111,9 @@ def eval(args):
     elif (args.dataset == 'EyeDiap'):
         dataset = EyeDiapDataset(
             GIT_ROOT / pathlib.Path(config['datasets']['EyeDiap']['path']),
-            participants=[x for x in range(1, 10)],
-            dataset_size=TOTAL_DATASET,
-            per_participant_size=PER_PARTICIPANT_SIZE
+            participants=[14, 15]
+            # dataset_size=TOTAL_DATASET,
+            # per_participant_size=PER_PARTICIPANT_SIZE
         )
     else:
         raise ValueError(f"Dataset {args.dataset} not supported")
@@ -142,7 +142,7 @@ def eval(args):
         support_samples = [dataset.__getitem__(i) for i in support_sample_indices]
 
         # Perform calibration
-        wet.adapt(support_samples)
+        wet.adapt_from_samples(support_samples)
 
         # for i in tqdm(range(len(group))):
         for i, meta_data in tqdm(group.iterrows(), total=len(group)):
@@ -164,7 +164,7 @@ def eval(args):
             #     break
 
             # Process the sample
-            status, pog_norm = wet.step(
+            status, gaze_results = wet.step(
                 img,
                 sample['facial_landmarks'], 
                 sample['facial_rt'], 
@@ -175,7 +175,7 @@ def eval(args):
                 # Compute the PoG in centimeters
                 # import pdb; pdb.set_trace()
                 screen_info = np.array([sample['screen_width_cm'], sample['screen_height_cm']])
-                pog_norm_error = sample['pog_norm'] - pog_norm
+                pog_norm_error = sample['pog_norm'] - gaze_results.norm_pog
                 pog_error = pog_norm_error * screen_info
 
                 # Compute the PoG as the norm of the vector
