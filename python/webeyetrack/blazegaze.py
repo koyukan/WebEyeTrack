@@ -413,6 +413,7 @@ if __name__ == "__main__":
     model.model.summary()
 
     # Wrap in @tf.function
+    # Critical for performance optimization
     @tf.function
     def infer_fn(*inputs):
         return model.model(inputs)
@@ -449,7 +450,7 @@ if __name__ == "__main__":
     # Now run for N=100 and determine the time taken
     import time
     import tqdm
-    N = 100
+    N = 1000
     run_times = []
     for i in tqdm.tqdm(range(N), total=N):
         dummy_inputs = [

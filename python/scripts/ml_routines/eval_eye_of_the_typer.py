@@ -235,6 +235,7 @@ def main():
             WebEyeTrackConfig(
                 screen_px_dimensions=(screen_width_px, screen_height_px),
                 screen_cm_dimensions=(screen_width_cm, screen_height_cm),
+                # verbose=True
             )
         )
 
@@ -256,6 +257,7 @@ def main():
         # Extract the 9-point calibration data (which should be top-left, top-center, top-right, center-left, center-center, center-right, bottom-left, bottom-center, bottom-right)
         x_coords, y_coords = [0.025, 0.5, 0.975], [0.15, 0.5, 0.85]
         pts = [(x, y) for x in x_coords for y in y_coords]
+        pts = pts[:3]
 
         # Create the calibration points by finding the closest points in the mouse clicks
         calib_pts = []

@@ -100,6 +100,7 @@ class WebEyeTrackConfig():
     mediapipe_flm_model_fp: Union[str, pathlib.Path] = FACE_LANDMARKER_PATH
     screen_px_dimensions: Tuple[int, int] = (1920, 1080)
     screen_cm_dimensions: Tuple[float, float] = (53.1, 29.8)
+    verbose: bool = False
 
 class WebEyeTrack():
 
@@ -201,7 +202,12 @@ class WebEyeTrack():
             get_head_vector(facial_rt),
             face_origin_3d
         ]
-    
+
+    # Wrap in @tf.function
+    @tf.function
+    def infer_fn(self, **kwargs):
+        return self.blazegaze.model(kwargs)
+
     def adapt(self, 
             eye_patches: list, 
             head_vectors: list,
@@ -220,6 +226,7 @@ class WebEyeTrack():
             steps_inner (int): Number of inner-loop adaptation steps.
             inner_lr (float): Inner-loop learning rate.
         """
+        steps_inner = 100
 
         encoder_model = self.blazegaze.encoder
         gaze_model = self.blazegaze.gaze_model
@@ -361,12 +368,16 @@ class WebEyeTrack():
             cv2.destroyAllWindows()
 
         # Perform the gaze estimation via BlazeGaze Model
-        pog_estimation = self.blazegaze.model.predict({
-            "image": np.expand_dims(eye_patch/255.0, axis=0),
-            "head_vector": np.expand_dims(head_vector, axis=0),
-            "face_origin_3d": np.expand_dims(face_origin_3d, axis=0)
-        }, verbose=0)
+        pog_estimation = self.infer_fn(
+            image=tf.convert_to_tensor(np.expand_dims(eye_patch/255.0, axis=0), dtype=tf.float32),
+            head_vector=tf.convert_to_tensor(np.expand_dims(head_vector, axis=0), dtype=tf.float32),
+            face_origin_3d=tf.convert_to_tensor(np.expand_dims(face_origin_3d, axis=0), dtype=tf.float32)
+        )
         toc = time.perf_counter()
+
+        # Compute the FPS/delay
+        if self.config.verbose:
+            print(f"FPS: {1 / (toc - tic):.2f}, Delay: {(toc - tic)*1000:.4f} ms")
 
         # return True, pog_estimation[0]
         return TrackingStatus.SUCCESS, GazeResult(
