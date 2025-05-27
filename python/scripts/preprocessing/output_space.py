@@ -29,7 +29,8 @@ def dataset_generator(h5_file, participants=None, max_size=None):
                 total = group['pixels'].shape[0]
                 for i in range(total):
                     yield {
-                        'norm_pog': group['pog_norm'][i][:2].astype(np.float32)
+                        'pog_norm': group['pog_norm'][i][:2].astype(np.float32),
+                        'pog_px': group['pog_px'][i][:2].astype(np.float32)
                     }
                     counter += 1
 
@@ -49,7 +50,7 @@ def visualize_output_space(dataset):
 
     print("Collecting normalized PoG values...")
     for sample in tqdm(dataset, desc="Samples"):
-        pog = sample['norm_pog']
+        pog = sample['pog_px']
         if pog is not None:
             all_pogs.append(pog)
 
@@ -95,7 +96,7 @@ if __name__ == '__main__':
         with open(CWD.parent / 'GazeCapture_participant_ids.json', 'r') as f:
             GAZE_CAPTURE_IDS = json.load(f)
         h5_file = GENERATED_DATASET_DIR / 'GazeCapture_entire.h5'
-        dataset = dataset_generator(h5_file, participants=GAZE_CAPTURE_IDS)
+        dataset = dataset_generator(h5_file, participants=GAZE_CAPTURE_IDS[:100])
 
     elif args.dataset == 'MPIIFaceGaze':
         h5_file = GENERATED_DATASET_DIR / 'MPIIFaceGaze_entire.h5'

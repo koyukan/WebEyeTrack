@@ -225,7 +225,8 @@ def maml_test(
     inner_lr=0.01,
     steps_inner=1,
     tb_writer=None,
-    steps_test=None  # Optional cap on number of test tasks to evaluate
+    steps_test=None, # Optional cap on number of test tasks to evaluate
+    plots=False
 ):
 
     print("Starting MAML Test...")
@@ -235,6 +236,8 @@ def maml_test(
     max_steps = steps_test or len(test_ids)
 
     all_query_losses = []
+    gt_pog_norms = []
+    pred_pog_norms = []
 
     for step in tqdm(range(max_steps), desc="Meta Test Steps"):
         # Sample test task
@@ -267,6 +270,8 @@ def maml_test(
         # Evaluate on query set
         query_preds = task_model(input_list, training=False)
         query_loss = mae_cm_loss(query_y, query_preds, query_x['screen_info']).numpy()
+        pred_pog_norms.append(query_preds.numpy())
+        gt_pog_norms.append(query_y.numpy())
 
         all_query_losses.append(query_loss)
 
@@ -274,6 +279,48 @@ def maml_test(
             with tb_writer.as_default():
                 tf.summary.scalar("test_query_loss", query_loss, step=step)
                 tb_writer.flush()
+
+    # If generate plots, show the distribution of the pred PoG
+    if plots:
+        pred_pog_norms = np.concatenate(pred_pog_norms, axis=0)
+        gt_pog_norms = np.concatenate(gt_pog_norms, axis=0)
+        to_cm = False
+        # x_vals, y_vals = pred_pog_norms[:, 0], pred_pog_norms[:, 1]
+        # gt_x_vals, gt_y_vals = gt_pog_norms[:, 0], gt_pog_norms[:, 1]
+
+        for version in ['pred', 'gt']:
+
+            if version == 'pred':
+                x_vals, y_vals = pred_pog_norms[:, 0], pred_pog_norms[:, 1]
+            elif version == 'gt':
+                x_vals, y_vals = gt_pog_norms[:, 0], gt_pog_norms[:, 1]
+            else:
+                raise ValueError("Version must be 'pred' or 'gt'.")
+
+            # 2D histogram
+            heatmap, xedges, yedges = np.histogram2d(x_vals, y_vals, bins=30)
+            # extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
+            extent = [0, 1, 0, 1]
+
+            # Plot
+            plt.figure(figsize=(6, 6))
+            plt.imshow(
+                heatmap.T,
+                extent=extent,
+                origin='lower',
+                cmap='viridis',
+                aspect='equal'
+            )
+            # plt.xlim(0, 1)
+            # plt.ylim(0, 1)
+            plt.colorbar(label='Frequency')
+            xlabel = 'X [cm]' if to_cm else 'X (Normalized)'
+            ylabel = 'Y [cm]' if to_cm else 'Y (Normalized)'
+            plt.xlabel(xlabel)
+            plt.ylabel(ylabel)
+            plt.title(f"{version} - 2D Heatmap of Gaze Targets")
+            plt.tight_layout()
+        plt.show()
 
     print(f"MAML Test Finished — Avg Query Loss (MAE): {np.mean(all_query_losses):.4f}")
     return all_query_losses

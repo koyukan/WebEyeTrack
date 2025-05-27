@@ -108,7 +108,8 @@ def eval(config):
         ids=(train_ids, val_ids, test_ids),
         inner_lr=config['optimizer']['inner_lr'],
         steps_inner=config['training']['num_inner_steps'],
-        tb_writer=tb_writer
+        tb_writer=tb_writer,
+        plots=True
     )
 
 if __name__ == "__main__":
