@@ -252,15 +252,18 @@ def get_gaze_model(config):
         concat = flattened_output
 
     # MLP layers before computing the gaze vector
-    mlp1 = tf.keras.layers.Dense(128, activation='relu')(concat)
-    mlp2 = tf.keras.layers.Dense(64, activation='relu')(mlp1)
-    mlp3 = tf.keras.layers.Dense(32, activation='relu')(mlp2)
+    # mlp1 = tf.keras.layers.Dense(128, activation='relu')(concat)
+    # mlp2 = tf.keras.layers.Dense(64, activation='relu')(mlp1)
+    # mlp3 = tf.keras.layers.Dense(32, activation='relu')(mlp2)
+    mlp1 = tf.keras.layers.Dense(16, activation='relu')(concat)
+    # mlp2 = tf.keras.layers.Dense(16, activation='relu')(mlp1)
+    # mlp3 = tf.keras.layers.Dense(32, activation='relu')(mlp2)
 
     if config.gaze.output == '2d':
-        output = tf.keras.layers.Dense(2, activation='linear', name="gaze_output")(mlp3)
+        output = tf.keras.layers.Dense(2, activation='linear', name="gaze_output")(mlp1)
     
     elif config.gaze.output == '3d':
-        gaze_vector = tf.keras.layers.Dense(3, activation='linear', name="gaze_output")(mlp3)
+        gaze_vector = tf.keras.layers.Dense(3, activation='linear', name="gaze_output")(mlp1)
         output = tf.keras.layers.Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name="gaze_output_norm")(gaze_vector)
     
     # Build final model

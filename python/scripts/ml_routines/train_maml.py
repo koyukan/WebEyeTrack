@@ -49,9 +49,9 @@ os.makedirs(RUN_DIR, exist_ok=True)
 IMG_SIZE = 128
 
 # Loss parameters
-L1_COEF = 1.0
-CONT_COEF = 0.2
-CENTER_COEF = 0.05
+L1_COEF = 1
+CONT_COEF = 0
+CENTER_COEF = 0
 
 """
 # References
