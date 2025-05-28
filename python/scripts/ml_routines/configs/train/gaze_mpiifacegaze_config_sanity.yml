@@ -23,7 +23,7 @@ optimizer:
 training:
   batch_size: 8
   num_outer_steps: 5
-  num_inner_steps: 5
+  num_inner_steps: 100
 
 # Configuration for the model.
 model:

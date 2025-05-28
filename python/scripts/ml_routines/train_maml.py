@@ -14,19 +14,12 @@ import tensorflow as tf
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, LearningRateScheduler
 from tensorflow.keras.optimizers import Adam
 import matplotlib
-matplotlib.use('Agg')  # Use TkAgg backend for interactive plots
+matplotlib.use('TkAgg')  # Use TkAgg backend for interactive plots
 import matplotlib.pyplot as plt
 
 from webeyetrack.constants import GIT_ROOT
 from webeyetrack.blazegaze import BlazeGaze, BlazeGazeConfig, build_full_inference_model
-from webeyetrack.tf_utils import (
-    angular_loss, 
-    angular_distance, 
-    parse_tfrecord_fn, 
-    GazeVisualizationCallback,
-    ImageVisCallback, 
-    EncoderDecoderCheckpoint
-)
+from webeyetrack.vis import plot_pog_errors, plot_2d_dist
 from data import (
     load_total_dataset, 
     load_datasets, 
@@ -50,6 +43,7 @@ IMG_SIZE = 128
 
 # Loss parameters
 L1_COEF = 1
+SPREAD_COEF = 1
 CONT_COEF = 0
 CENTER_COEF = 0
 
@@ -107,7 +101,15 @@ def mae_cm_loss(y_true, y_pred, screen_info):
     true_cm = y_true * screen_info
     pred_cm = y_pred * screen_info
 
-    return tf.reduce_mean(tf.abs(true_cm - pred_cm))  # MAE in cm
+    # return tf.reduce_mean(tf.abs(true_cm - pred_cm))  # MAE in cm
+    return tf.reduce_mean(
+        tf.norm(true_cm - pred_cm, axis=-1)
+    )
+
+def match_spread_loss(preds, gts):
+    pred_cov = tf.math.reduce_std(preds, axis=0)
+    gt_cov = tf.math.reduce_std(gts, axis=0)
+    return tf.reduce_mean(tf.square(pred_cov - gt_cov))
 
 def contrastive_gaze_loss(preds, gts, margin=0.1):
     """
@@ -144,10 +146,22 @@ def inner_loop(gaze_head, support_x, support_y, inner_lr, model_config):
     input_list = [support_x[feature] for feature in features]
     with tf.GradientTape() as tape:
         preds = gaze_head(input_list, training=True)
-        l1_loss = mae_cm_loss(support_y, preds, support_x['screen_info'])
+        fig = plot_pog_errors(
+            support_y[:, 0], support_y[:, 1],
+            preds[:, 0], preds[:, 1],
+        )
+        # print(support_y - preds)
+        # print(tf.abs(support_y - preds).numpy())
+        # import pdb; pdb.set_trace()
+        plt.show()
+        # l1_loss = mae_cm_loss(support_y, preds, support_x['screen_info'])
+        # Compute the l1 loss directly in norm space
+        # l1_loss = tf.reduce_mean(tf.norm(support_y - preds, axis=-1))
+        l1_loss = tf.reduce_mean(tf.reduce_sum(tf.abs(support_y - preds), axis=-1))
+        spread_loss = match_spread_loss(preds, support_y)
         cont_loss = contrastive_gaze_loss(preds, support_y)
         center_loss = center_penalty_loss(preds)
-        loss = L1_COEF * l1_loss + CONT_COEF * cont_loss + CENTER_COEF * center_loss
+        loss = L1_COEF * l1_loss + CONT_COEF * cont_loss + CENTER_COEF * center_loss + SPREAD_COEF * spread_loss
     grads = tape.gradient(loss, gaze_head.trainable_weights)
     adapted_weights = [w - inner_lr * g for w, g in zip(gaze_head.trainable_weights, grads)]
     return adapted_weights, loss
@@ -368,58 +382,13 @@ def maml_test(
                 else:
                     raise ValueError("Version must be 'pred' or 'gt'.")
 
-                # 2D histogram
-                heatmap, xedges, yedges = np.histogram2d(x_vals, y_vals, range=[[-0.5, 0.5],[-0.5, 0.5]], bins=30)
-                extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
-
-                # Plot
-                fig = plt.figure(figsize=(6, 6))
-                plt.imshow(
-                    heatmap.T,
-                    extent=extent,
-                    origin='lower',
-                    cmap='viridis',
-                    aspect='equal'
-                )
-                plt.xlim(-0.5, 0.5)
-                plt.ylim(-0.5, 0.5)
-                plt.colorbar(label='Frequency')
-                xlabel = 'X (Normalized)'
-                ylabel = 'Y (Normalized)'
-                plt.xlabel(xlabel)
-                plt.ylabel(ylabel)
-                plt.title(f"{version} - 2D Heatmap of Gaze Targets")
-                plt.tight_layout()
-
                 # Save figure
+                fig = plot_2d_dist(x_vals, y_vals, title=f"{version} - 2D Heatmap of Gaze Targets")
                 fig.savefig(RUN_DIR / f"maml_test_{kind}_{version}_heatmap.png")
                 plt.close(fig)
 
-            # Also create a plot showing the errows between predicted and ground truth PoGs
-            # Scatter plot with error lines
-            fig = plt.figure(figsize=(6, 6))
-            ax = plt.gca()
-
-            # Plot ground truth points
-            ax.scatter(gt_x, gt_y, color='lime', label='Ground Truth', s=10, alpha=0.8)
-
-            # Plot predicted points
-            ax.scatter(pred_x, pred_y, color='red', label='Predicted', s=10, alpha=0.8)
-
-            # Plot error vectors (lines between GT and predicted)
-            for (gx, gy, px, py) in zip(gt_x, gt_y, pred_x, pred_y):
-                ax.plot([gx, px], [gy, py], color='gray', linewidth=0.5, alpha=0.5)
-
-            ax.set_xlim(-0.5, 0.5)
-            ax.set_ylim(-0.5, 0.5)
-            ax.set_aspect('equal')
-            ax.set_xlabel('X (Normalized)')
-            ax.set_ylabel('Y (Normalized)')
-            ax.set_title('Gaze Prediction Error Vectors')
-            ax.legend(loc='upper right')
-            plt.tight_layout()
-
             # Save figure
+            fig = plot_pog_errors(gt_x, gt_y, pred_x, pred_y)
             fig.savefig(RUN_DIR / f"maml_test_{kind}_error_vectors.png")
             plt.close(fig)
 

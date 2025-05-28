@@ -16,6 +16,64 @@ from .constants import *
 
 EYE_IMAGE_WIDTH = 400
 
+#####################################################################################################
+# POG
+######################################################################################################
+
+def plot_2d_dist(x_vals, y_vals, title):
+    # 2D histogram
+    heatmap, xedges, yedges = np.histogram2d(x_vals, y_vals, range=[[-0.5, 0.5],[-0.5, 0.5]], bins=30)
+    extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
+
+    # Plot
+    fig = plt.figure(figsize=(6, 6))
+    plt.imshow(
+        heatmap.T,
+        extent=extent,
+        origin='lower',
+        cmap='viridis',
+        aspect='equal'
+    )
+    plt.xlim(-0.5, 0.5)
+    plt.ylim(-0.5, 0.5)
+    plt.colorbar(label='Frequency')
+    xlabel = 'X (Normalized)'
+    ylabel = 'Y (Normalized)'
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.title(title)
+    plt.tight_layout()
+
+    return fig
+
+def plot_pog_errors(gt_x, gt_y, pred_x, pred_y):
+
+    # Also create a plot showing the errows between predicted and ground truth PoGs
+    # Scatter plot with error lines
+    fig = plt.figure(figsize=(6, 6))
+    ax = plt.gca()
+
+    # Plot ground truth points
+    ax.scatter(gt_x, gt_y, color='lime', label='Ground Truth', s=10, alpha=0.8)
+
+    # Plot predicted points
+    ax.scatter(pred_x, pred_y, color='red', label='Predicted', s=10, alpha=0.8)
+
+    # Plot error vectors (lines between GT and predicted)
+    for (gx, gy, px, py) in zip(gt_x, gt_y, pred_x, pred_y):
+        ax.plot([gx, px], [gy, py], color='gray', linewidth=0.5, alpha=0.5)
+
+    ax.set_xlim(-0.5, 0.5)
+    ax.set_ylim(-0.5, 0.5)
+    ax.set_aspect('equal')
+    ax.set_xlabel('X (Normalized)')
+    ax.set_ylabel('Y (Normalized)')
+    ax.set_title('Gaze Prediction Error Vectors')
+    ax.legend(loc='upper right')
+    plt.tight_layout()
+
+    return fig
+
 class TimeSeriesOscilloscope:
 
     def __init__(self, name: str, min_value: float, max_value: float, num_points: int, px_height: int = 400, pxs_per_point: int = 10):
