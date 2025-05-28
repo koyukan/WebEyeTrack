@@ -284,8 +284,11 @@ def maml_test(
 
     all_query_losses = []
     all_query_l1_losses = []
-    gt_pog_norms = []
-    pred_pog_norms = []
+
+    query_gt_pog_norms = []
+    query_pred_pog_norms = []
+    support_gt_pog_norms = []
+    support_pred_pog_norms = []
 
     for step in tqdm(range(max_steps), desc="Meta Test Steps"):
         # Sample test task
@@ -315,6 +318,10 @@ def maml_test(
             for w, g in zip(task_model.trainable_weights, grads):
                 w.assign_sub(inner_lr * g)
 
+        # Store support predictions and ground truth
+        support_pred_pog_norms.append(support_preds.numpy())
+        support_gt_pog_norms.append(support_y.numpy())
+
         features = ['encoder_features'] + [x.name for x in model_config.gaze.inputs]
         input_list = [query_x[feature] for feature in features]
 
@@ -324,8 +331,8 @@ def maml_test(
         query_cont_loss = contrastive_gaze_loss(query_preds, query_y).numpy()
         query_center_loss = center_penalty_loss(query_preds).numpy()
         query_loss = L1_COEF * query_l1_loss + CONT_COEF * query_cont_loss + CENTER_COEF * query_center_loss
-        pred_pog_norms.append(query_preds.numpy())
-        gt_pog_norms.append(query_y.numpy())
+        query_pred_pog_norms.append(query_preds.numpy())
+        query_gt_pog_norms.append(query_y.numpy())
 
         all_query_losses.append(query_loss)
         all_query_l1_losses.append(query_l1_loss)
@@ -337,84 +344,84 @@ def maml_test(
 
     # If generate plots, show the distribution of the pred PoG
     if plots:
-        pred_pog_norms = np.concatenate(pred_pog_norms, axis=0)
-        gt_pog_norms = np.concatenate(gt_pog_norms, axis=0)
-        to_cm = False
-        # x_vals, y_vals = pred_pog_norms[:, 0], pred_pog_norms[:, 1]
-        # gt_x_vals, gt_y_vals = gt_pog_norms[:, 0], gt_pog_norms[:, 1]
+        query_pred_pog_norms = np.concatenate(query_pred_pog_norms, axis=0)
+        query_gt_pog_norms = np.concatenate(query_gt_pog_norms, axis=0)
+        support_pred_pog_norms = np.concatenate(support_pred_pog_norms, axis=0)
+        support_gt_pog_norms = np.concatenate(support_gt_pog_norms, axis=0)
 
-        gt_x = gt_pog_norms[:, 0]
-        gt_y = gt_pog_norms[:, 1]
-        pred_x = pred_pog_norms[:, 0]
-        pred_y = pred_pog_norms[:, 1]
+        for (kind, gt_pog_norms, pred_pog_norms) in [
+            ('query', query_gt_pog_norms, query_pred_pog_norms),
+            ('support', support_gt_pog_norms, support_pred_pog_norms)
+        ]:
 
-        for version in ['pred', 'gt']:
+            gt_x = gt_pog_norms[:, 0]
+            gt_y = gt_pog_norms[:, 1]
+            pred_x = pred_pog_norms[:, 0]
+            pred_y = pred_pog_norms[:, 1]
 
-            if version == 'pred':
-                # x_vals, y_vals = pred_pog_norms[:, 0], pred_pog_norms[:, 1]
-                x_vals, y_vals = pred_x, pred_y
-            elif version == 'gt':
-                x_vals, y_vals = gt_x, gt_y
-                # x_vals, y_vals = gt_pog_norms[:, 0], gt_pog_norms[:, 1]
-            else:
-                raise ValueError("Version must be 'pred' or 'gt'.")
+            for version in ['pred', 'gt']:
 
-            # 2D histogram
-            heatmap, xedges, yedges = np.histogram2d(x_vals, y_vals, bins=30)
-            extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
-            # extent = [0, 1, 0, 1]
-            # extent = [-0.5, 0.5, -0.5, 0.5]
+                if version == 'pred':
+                    x_vals, y_vals = pred_x, pred_y
+                elif version == 'gt':
+                    x_vals, y_vals = gt_x, gt_y
+                else:
+                    raise ValueError("Version must be 'pred' or 'gt'.")
 
-            # Plot
+                # 2D histogram
+                heatmap, xedges, yedges = np.histogram2d(x_vals, y_vals, range=[[-0.5, 0.5],[-0.5, 0.5]], bins=30)
+                extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
+
+                # Plot
+                fig = plt.figure(figsize=(6, 6))
+                plt.imshow(
+                    heatmap.T,
+                    extent=extent,
+                    origin='lower',
+                    cmap='viridis',
+                    aspect='equal'
+                )
+                plt.xlim(-0.5, 0.5)
+                plt.ylim(-0.5, 0.5)
+                plt.colorbar(label='Frequency')
+                xlabel = 'X (Normalized)'
+                ylabel = 'Y (Normalized)'
+                plt.xlabel(xlabel)
+                plt.ylabel(ylabel)
+                plt.title(f"{version} - 2D Heatmap of Gaze Targets")
+                plt.tight_layout()
+
+                # Save figure
+                fig.savefig(RUN_DIR / f"maml_test_{kind}_{version}_heatmap.png")
+                plt.close(fig)
+
+            # Also create a plot showing the errows between predicted and ground truth PoGs
+            # Scatter plot with error lines
             fig = plt.figure(figsize=(6, 6))
-            plt.imshow(
-                heatmap.T,
-                extent=extent,
-                origin='lower',
-                cmap='viridis',
-                aspect='equal'
-            )
-            plt.xlim(-0.5, 0.5)
-            plt.ylim(-0.5, 0.5)
-            plt.colorbar(label='Frequency')
-            xlabel = 'X [cm]' if to_cm else 'X (Normalized)'
-            ylabel = 'Y [cm]' if to_cm else 'Y (Normalized)'
-            plt.xlabel(xlabel)
-            plt.ylabel(ylabel)
-            plt.title(f"{version} - 2D Heatmap of Gaze Targets")
+            ax = plt.gca()
+
+            # Plot ground truth points
+            ax.scatter(gt_x, gt_y, color='lime', label='Ground Truth', s=10, alpha=0.8)
+
+            # Plot predicted points
+            ax.scatter(pred_x, pred_y, color='red', label='Predicted', s=10, alpha=0.8)
+
+            # Plot error vectors (lines between GT and predicted)
+            for (gx, gy, px, py) in zip(gt_x, gt_y, pred_x, pred_y):
+                ax.plot([gx, px], [gy, py], color='gray', linewidth=0.5, alpha=0.5)
+
+            ax.set_xlim(-0.5, 0.5)
+            ax.set_ylim(-0.5, 0.5)
+            ax.set_aspect('equal')
+            ax.set_xlabel('X (Normalized)')
+            ax.set_ylabel('Y (Normalized)')
+            ax.set_title('Gaze Prediction Error Vectors')
+            ax.legend(loc='upper right')
             plt.tight_layout()
 
             # Save figure
-            fig.savefig(RUN_DIR / f"maml_test_{version}_heatmap.png")
+            fig.savefig(RUN_DIR / f"maml_test_{kind}_error_vectors.png")
             plt.close(fig)
-
-        # Also create a plot showing the errows between predicted and ground truth PoGs
-        # Scatter plot with error lines
-        fig = plt.figure(figsize=(6, 6))
-        ax = plt.gca()
-
-        # Plot ground truth points
-        ax.scatter(gt_x, gt_y, color='lime', label='Ground Truth', s=10, alpha=0.8)
-
-        # Plot predicted points
-        ax.scatter(pred_x, pred_y, color='red', label='Predicted', s=10, alpha=0.8)
-
-        # Plot error vectors (lines between GT and predicted)
-        for (gx, gy, px, py) in zip(gt_x, gt_y, pred_x, pred_y):
-            ax.plot([gx, px], [gy, py], color='gray', linewidth=0.5, alpha=0.5)
-
-        ax.set_xlim(-0.5, 0.5)
-        ax.set_ylim(-0.5, 0.5)
-        ax.set_aspect('equal')
-        ax.set_xlabel('X (Normalized)')
-        ax.set_ylabel('Y (Normalized)')
-        ax.set_title('Gaze Prediction Error Vectors')
-        ax.legend(loc='upper right')
-        plt.tight_layout()
-
-        # Save figure
-        fig.savefig(RUN_DIR / "maml_test_error_vectors.png")
-        plt.close(fig)
 
     print(f"MAML Test Finished — Avg Query Loss: {np.mean(all_query_losses):.4f}, Avg Query L1 Loss: {np.mean(all_query_l1_losses):.4f}")
     return all_query_losses
