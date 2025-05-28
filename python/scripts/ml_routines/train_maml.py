@@ -13,6 +13,8 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, LearningRateScheduler
 from tensorflow.keras.optimizers import Adam
+import matplotlib
+matplotlib.use('Agg')  # Use TkAgg backend for interactive plots
 import matplotlib.pyplot as plt
 
 from webeyetrack.constants import GIT_ROOT
@@ -45,6 +47,11 @@ os.makedirs(RUN_DIR, exist_ok=True)
 
 # Constants
 IMG_SIZE = 128
+
+# Loss parameters
+L1_COEF = 1.0
+CONT_COEF = 0.2
+CENTER_COEF = 0.05
 
 """
 # References
@@ -102,12 +109,45 @@ def mae_cm_loss(y_true, y_pred, screen_info):
 
     return tf.reduce_mean(tf.abs(true_cm - pred_cm))  # MAE in cm
 
+def contrastive_gaze_loss(preds, gts, margin=0.1):
+    """
+    preds: Tensor of shape (B, 2) — predicted PoGs
+    gts:   Tensor of shape (B, 2) — ground truth PoGs
+
+    margin: distance in GT space after which predictions are expected to be separated
+    """
+    # Compute pairwise distances for GT and predictions
+    pred_diff = tf.expand_dims(preds, 1) - tf.expand_dims(preds, 0)  # (B, B, 2)
+    pred_dists = tf.norm(pred_diff, axis=-1)  # (B, B)
+
+    gt_diff = tf.expand_dims(gts, 1) - tf.expand_dims(gts, 0)  # (B, B, 2)
+    gt_dists = tf.norm(gt_diff, axis=-1)  # (B, B)
+
+    # Positive (similar) pairs — encourage proximity
+    pos_mask = tf.cast(gt_dists < margin, tf.float32)
+    pos_loss = tf.reduce_sum(pos_mask * tf.square(pred_dists))
+
+    # Negative (dissimilar) pairs — push apart
+    neg_mask = tf.cast(gt_dists >= margin, tf.float32)
+    neg_loss = tf.reduce_sum(neg_mask * tf.square(tf.maximum(0.0, margin - pred_dists)))
+
+    total_pairs = tf.cast(tf.size(gt_dists), tf.float32)
+    return (pos_loss + neg_loss) / total_pairs
+
+def center_penalty_loss(preds, center=tf.constant([0.5, 0.5]), strength=0.05):
+    dists_to_center = tf.norm(preds - center, axis=-1)  # (B,)
+    penalty = tf.maximum(0.0, strength - dists_to_center)  # Penalize predictions inside a small radius
+    return tf.reduce_mean(penalty)
+
 def inner_loop(gaze_head, support_x, support_y, inner_lr, model_config):
     features = ['encoder_features'] + [x.name for x in model_config.gaze.inputs]
     input_list = [support_x[feature] for feature in features]
     with tf.GradientTape() as tape:
         preds = gaze_head(input_list, training=True)
-        loss = mae_cm_loss(support_y, preds, support_x['screen_info'])
+        l1_loss = mae_cm_loss(support_y, preds, support_x['screen_info'])
+        cont_loss = contrastive_gaze_loss(preds, support_y)
+        center_loss = center_penalty_loss(preds)
+        loss = L1_COEF * l1_loss + CONT_COEF * cont_loss + CENTER_COEF * center_loss
     grads = tape.gradient(loss, gaze_head.trainable_weights)
     adapted_weights = [w - inner_lr * g for w, g in zip(gaze_head.trainable_weights, grads)]
     return adapted_weights, loss
@@ -159,13 +199,17 @@ def maml_train(
             features = ['encoder_features'] + [x.name for x in model_config.gaze.inputs]
             input_list = [query_x[feature] for feature in features]
             query_preds = task_model(input_list, training=True)
-            query_loss = mae_cm_loss(query_y, query_preds, query_x['screen_info'])
+            query_l1_loss = mae_cm_loss(query_y, query_preds, query_x['screen_info'])
+            query_cont_loss = contrastive_gaze_loss(query_preds, query_y)
+            query_center_loss = center_penalty_loss(query_preds)
+            query_loss = L1_COEF * query_l1_loss + CONT_COEF * query_cont_loss + CENTER_COEF * query_center_loss
 
         grads = outer_tape.gradient(query_loss, task_model.trainable_weights)
         meta_optimizer.apply_gradients(zip(grads, gaze_model.trainable_weights))
 
         # --- Logging ---
-        if (step + 1) % (steps_outer // 15) == 0:
+        # if (step + 1) % (steps_outer // 15) == 0:
+        if (step + 1) % 5 == 0:
             if tb_writer:
                 tf.summary.scalar('support_loss', support_loss, step=step)
                 tf.summary.scalar('query_loss', query_loss, step=step)
@@ -185,7 +229,10 @@ def maml_train(
                 query_x['encoder_features'] = encoder_model(query_x['image'], training=False)
                 features = ['encoder_features'] + [x.name for x in model_config.gaze.inputs]
                 input_list = [query_x[feature] for feature in features]
-                query_loss = mae_cm_loss(query_y, valid_model(input_list, training=False), query_x['screen_info'])
+                query_l1_loss = mae_cm_loss(query_y, valid_model(input_list, training=False), query_x['screen_info'])
+                query_cont_loss = contrastive_gaze_loss(valid_model(input_list, training=False), query_y)
+                query_center_loss = center_penalty_loss(valid_model(input_list, training=False))
+                query_loss = L1_COEF * query_l1_loss + CONT_COEF * query_cont_loss + CENTER_COEF * query_center_loss
                 val_losses.append(query_loss.numpy())
 
             avg_val_query_loss = np.mean(val_losses)
@@ -236,6 +283,7 @@ def maml_test(
     max_steps = steps_test or len(test_ids)
 
     all_query_losses = []
+    all_query_l1_losses = []
     gt_pog_norms = []
     pred_pog_norms = []
 
@@ -259,7 +307,10 @@ def maml_test(
         for _ in range(steps_inner):
             with tf.GradientTape() as tape:
                 support_preds = task_model(input_list, training=True)
-                support_loss = mae_cm_loss(support_y, support_preds, support_x['screen_info'])
+                support_l1_loss = mae_cm_loss(support_y, support_preds, support_x['screen_info'])
+                support_cont_loss = contrastive_gaze_loss(support_preds, support_y)
+                support_center_loss = center_penalty_loss(support_preds)
+                support_loss = L1_COEF * support_l1_loss + CONT_COEF * support_cont_loss + CENTER_COEF * support_center_loss
             grads = tape.gradient(support_loss, task_model.trainable_weights)
             for w, g in zip(task_model.trainable_weights, grads):
                 w.assign_sub(inner_lr * g)
@@ -269,11 +320,15 @@ def maml_test(
 
         # Evaluate on query set
         query_preds = task_model(input_list, training=False)
-        query_loss = mae_cm_loss(query_y, query_preds, query_x['screen_info']).numpy()
+        query_l1_loss = mae_cm_loss(query_y, query_preds, query_x['screen_info']).numpy()
+        query_cont_loss = contrastive_gaze_loss(query_preds, query_y).numpy()
+        query_center_loss = center_penalty_loss(query_preds).numpy()
+        query_loss = L1_COEF * query_l1_loss + CONT_COEF * query_cont_loss + CENTER_COEF * query_center_loss
         pred_pog_norms.append(query_preds.numpy())
         gt_pog_norms.append(query_y.numpy())
 
         all_query_losses.append(query_loss)
+        all_query_l1_losses.append(query_l1_loss)
 
         if tb_writer:
             with tb_writer.as_default():
@@ -288,22 +343,30 @@ def maml_test(
         # x_vals, y_vals = pred_pog_norms[:, 0], pred_pog_norms[:, 1]
         # gt_x_vals, gt_y_vals = gt_pog_norms[:, 0], gt_pog_norms[:, 1]
 
+        gt_x = gt_pog_norms[:, 0]
+        gt_y = gt_pog_norms[:, 1]
+        pred_x = pred_pog_norms[:, 0]
+        pred_y = pred_pog_norms[:, 1]
+
         for version in ['pred', 'gt']:
 
             if version == 'pred':
-                x_vals, y_vals = pred_pog_norms[:, 0], pred_pog_norms[:, 1]
+                # x_vals, y_vals = pred_pog_norms[:, 0], pred_pog_norms[:, 1]
+                x_vals, y_vals = pred_x, pred_y
             elif version == 'gt':
-                x_vals, y_vals = gt_pog_norms[:, 0], gt_pog_norms[:, 1]
+                x_vals, y_vals = gt_x, gt_y
+                # x_vals, y_vals = gt_pog_norms[:, 0], gt_pog_norms[:, 1]
             else:
                 raise ValueError("Version must be 'pred' or 'gt'.")
 
             # 2D histogram
             heatmap, xedges, yedges = np.histogram2d(x_vals, y_vals, bins=30)
-            # extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
-            extent = [0, 1, 0, 1]
+            extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
+            # extent = [0, 1, 0, 1]
+            # extent = [-0.5, 0.5, -0.5, 0.5]
 
             # Plot
-            plt.figure(figsize=(6, 6))
+            fig = plt.figure(figsize=(6, 6))
             plt.imshow(
                 heatmap.T,
                 extent=extent,
@@ -311,8 +374,8 @@ def maml_test(
                 cmap='viridis',
                 aspect='equal'
             )
-            # plt.xlim(0, 1)
-            # plt.ylim(0, 1)
+            plt.xlim(-0.5, 0.5)
+            plt.ylim(-0.5, 0.5)
             plt.colorbar(label='Frequency')
             xlabel = 'X [cm]' if to_cm else 'X (Normalized)'
             ylabel = 'Y [cm]' if to_cm else 'Y (Normalized)'
@@ -320,9 +383,40 @@ def maml_test(
             plt.ylabel(ylabel)
             plt.title(f"{version} - 2D Heatmap of Gaze Targets")
             plt.tight_layout()
-        plt.show()
 
-    print(f"MAML Test Finished — Avg Query Loss (MAE): {np.mean(all_query_losses):.4f}")
+            # Save figure
+            fig.savefig(RUN_DIR / f"maml_test_{version}_heatmap.png")
+            plt.close(fig)
+
+        # Also create a plot showing the errows between predicted and ground truth PoGs
+        # Scatter plot with error lines
+        fig = plt.figure(figsize=(6, 6))
+        ax = plt.gca()
+
+        # Plot ground truth points
+        ax.scatter(gt_x, gt_y, color='lime', label='Ground Truth', s=10, alpha=0.8)
+
+        # Plot predicted points
+        ax.scatter(pred_x, pred_y, color='red', label='Predicted', s=10, alpha=0.8)
+
+        # Plot error vectors (lines between GT and predicted)
+        for (gx, gy, px, py) in zip(gt_x, gt_y, pred_x, pred_y):
+            ax.plot([gx, px], [gy, py], color='gray', linewidth=0.5, alpha=0.5)
+
+        ax.set_xlim(-0.5, 0.5)
+        ax.set_ylim(-0.5, 0.5)
+        ax.set_aspect('equal')
+        ax.set_xlabel('X (Normalized)')
+        ax.set_ylabel('Y (Normalized)')
+        ax.set_title('Gaze Prediction Error Vectors')
+        ax.legend(loc='upper right')
+        plt.tight_layout()
+
+        # Save figure
+        fig.savefig(RUN_DIR / "maml_test_error_vectors.png")
+        plt.close(fig)
+
+    print(f"MAML Test Finished — Avg Query Loss: {np.mean(all_query_losses):.4f}, Avg Query L1 Loss: {np.mean(all_query_l1_losses):.4f}")
     return all_query_losses
 
 def train(config):
@@ -402,7 +496,8 @@ def train(config):
         ids=(train_ids, val_ids, test_ids),
         inner_lr=config['optimizer']['inner_lr'],
         steps_inner=config['training']['num_inner_steps'],
-        tb_writer=tb_writer
+        tb_writer=tb_writer,
+        plots=True
     )
 
 if __name__ == "__main__":

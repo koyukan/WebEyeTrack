@@ -197,7 +197,7 @@ def main():
     os.makedirs(RUN_DIR, exist_ok=True)
 
     # Iterate over the folders within the dataset
-    p_dirs = [EYE_OF_THE_TYPER_DATASET / 'P_01']
+    p_dirs = [EYE_OF_THE_TYPER_DATASET / 'P_02']
     # p_dirs = [p for p in EYE_OF_THE_TYPER_DATASET.iterdir() if p.is_dir()]
     gaze_csvs = [p for p in EYE_OF_THE_TYPER_DATASET.iterdir() if p.is_file() and p.suffix == '.csv']
     options = set(['study' + p.stem.split('-study')[1] for p in gaze_csvs])

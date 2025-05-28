@@ -40,6 +40,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 TIMESTAMP = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
 RUN_DIR = OUTPUT_DIR / TIMESTAMP
 os.makedirs(RUN_DIR, exist_ok=True)
+print(f"Run directory: {RUN_DIR}")
 
 SKIP_COUNT = 100
 # SKIP_COUNT = 2

@@ -28,6 +28,13 @@ def dataset_generator(h5_file, participants=None, max_size=None):
                 group = f[str(pid)]
                 total = group['pixels'].shape[0]
                 for i in range(total):
+                    
+                    pog_norm = group['pog_norm'][i]
+
+                    # If any value is > 1.0 or < 0.0, skip this sample
+                    if np.any(pog_norm > 1.0) or np.any(pog_norm < 0.0):
+                        continue
+
                     yield {
                         'pog_norm': group['pog_norm'][i][:2].astype(np.float32),
                         'pog_px': group['pog_px'][i][:2].astype(np.float32)
@@ -50,13 +57,13 @@ def visualize_output_space(dataset):
 
     print("Collecting normalized PoG values...")
     for sample in tqdm(dataset, desc="Samples"):
-        pog = sample['pog_px']
+        pog = sample['pog_norm']
         if pog is not None:
             all_pogs.append(pog)
 
     # Concatenate into a single array
     all_pogs = np.stack(all_pogs, axis=0)
-    x_vals, y_vals = all_pogs[:, 0], all_pogs[:, 1]
+    x_vals, y_vals = all_pogs[:, 0]-0.5, all_pogs[:, 1]-0.5
 
     # 2D histogram
     heatmap, xedges, yedges = np.histogram2d(x_vals, y_vals, bins=30)

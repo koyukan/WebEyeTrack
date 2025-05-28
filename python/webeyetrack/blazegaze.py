@@ -226,12 +226,13 @@ def get_gaze_model(config):
     cnn_input = Input(shape=config.encoder.output_shape, name="encoder_input")
 
     # Additional 2D Convolutional Layer before pooling
-    regularizer = tf.keras.regularizers.l2(1e-4)
-    conv_layer = Conv2D(64, (3,3), activation='relu', padding='same', kernel_regularizer=regularizer)(cnn_input)
-    conv_layer = Conv2D(32, (3,3), activation='relu', padding='same', kernel_regularizer=regularizer)(conv_layer)
+    # regularizer = tf.keras.regularizers.l2(1e-4)
+    # conv_layer = Conv2D(64, (3,3), activation='relu', padding='same', kernel_regularizer=regularizer)(cnn_input)
+    # conv_layer = Conv2D(32, (3,3), activation='relu', padding='same', kernel_regularizer=regularizer)(conv_layer)
 
     # Flatten instead of pooling to retain spatial information
-    flattened_output = Flatten()(conv_layer)
+    # flattened_output = Flatten()(conv_layer)
+    flattened_output = Flatten(name="flattened_output")(cnn_input)
 
     # Handle optional inputs from config
     additional_inputs = []
@@ -251,14 +252,15 @@ def get_gaze_model(config):
         concat = flattened_output
 
     # MLP layers before computing the gaze vector
-    mlp = tf.keras.layers.Dense(128, activation='relu')(concat)
-    mlp = tf.keras.layers.Dense(64, activation='relu')(mlp)
+    mlp1 = tf.keras.layers.Dense(128, activation='relu')(concat)
+    mlp2 = tf.keras.layers.Dense(64, activation='relu')(mlp1)
+    mlp3 = tf.keras.layers.Dense(32, activation='relu')(mlp2)
 
     if config.gaze.output == '2d':
-        output = tf.keras.layers.Dense(2, activation='linear', name="gaze_output")(mlp)
+        output = tf.keras.layers.Dense(2, activation='linear', name="gaze_output")(mlp3)
     
     elif config.gaze.output == '3d':
-        gaze_vector = tf.keras.layers.Dense(3, activation='linear', name="gaze_output")(mlp)
+        gaze_vector = tf.keras.layers.Dense(3, activation='linear', name="gaze_output")(mlp3)
         output = tf.keras.layers.Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name="gaze_output_norm")(gaze_vector)
     
     # Build final model
@@ -400,17 +402,19 @@ if __name__ == "__main__":
     config = BlazeGazeConfig(
         # Mode
         mode='gaze',
-        weights_fp='blazegaze_gazecapture.keras',
-        gaze=GazeConfig(
-            inputs=[
-                ModalityInput(name='head_vector', input_shape=(3,)),
-                ModalityInput(name='face_origin_3d', input_shape=(3,)),
-            ],
-            output='2d'
-        )
+        # weights_fp='blazegaze_gazecapture.keras',
+        # gaze=GazeConfig(
+        #     inputs=[
+        #         ModalityInput(name='head_vector', input_shape=(3,)),
+        #         ModalityInput(name='face_origin_3d', input_shape=(3,)),
+        #     ],
+        #     output='2d'
+        # )
     )
     model = BlazeGaze(config)
     model.model.summary()
+    model.encoder.summary()
+    model.gaze_model.summary()
 
     # Wrap in @tf.function
     # Critical for performance optimization

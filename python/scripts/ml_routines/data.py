@@ -19,18 +19,15 @@ def get_dataset_metadata(config):
 
     if config['dataset']['name'] == 'MPIIFaceGaze':
         h5_file = GENERATED_DATASET_DIR / 'MPIIFaceGaze_entire.h5'
-        # train_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-        # val_ids = [13, 14]
-        # test_ids = []
-        train_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-        val_ids = [10, 11, 12]
-        test_ids = [13, 14]
+        train_ids = config['dataset']['train_ids']
+        val_ids = config['dataset']['val_ids']
+        test_ids = config['dataset']['test_ids']
 
     elif config['dataset']['name'] == 'EyeDiap':
         h5_file = GENERATED_DATASET_DIR / 'EyeDiap_entire.h5'
-        train_ids = [1, 2, 3, 4, 5, 6, 7, 8, 9]
-        val_ids = [10, 11]
-        test_ids = [14, 15]
+        train_ids = config['dataset']['train_ids']
+        val_ids = config['dataset']['val_ids']
+        test_ids = config['dataset']['test_ids']
 
     elif config['dataset']['name'] == 'GazeCapture':
         h5_file = GENERATED_DATASET_DIR / 'GazeCapture_entire.h5'
@@ -247,7 +244,7 @@ def prepare_task_generators(h5_file, participants, config):
                             "face_origin_3d": group["face_origin_3d"][i][:3].astype(np.float32),
                             'screen_info': np.stack([group['screen_height_cm'][i],
                                                      group['screen_width_cm'][i]]).astype(np.float32),
-                        }, group["pog_norm"][i][:2].astype(np.float32)
+                        }, group["pog_norm"][i][:2].astype(np.float32) - np.array([0.5, 0.5])
 
                 support = list(get_samples(support_indices))
                 query = list(get_samples(query_indices))

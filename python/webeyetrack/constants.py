@@ -6,7 +6,7 @@ PACKAGE_DIR = GIT_ROOT / 'python' / 'webeyetrack'
 DEFAULT_CONFIG = PACKAGE_DIR / 'default_config.yaml'
 MODEL_WEIGHTS = PACKAGE_DIR / 'model_weights'
 FACE_LANDMARKER_PATH = MODEL_WEIGHTS / 'face_landmarker_v2_with_blendshapes.task'
-BLAZEGAZE_PATH = MODEL_WEIGHTS / 'blazegaze_gazecapture.keras'
+BLAZEGAZE_PATH = MODEL_WEIGHTS / 'blazegaze_mpiifacegaze.keras'
 
 LEFT_EYE_LANDMARKS = [263, 362, 386, 374, 380]
 RIGHT_EYE_LANDMARKS = [33, 133, 159, 145, 153]
