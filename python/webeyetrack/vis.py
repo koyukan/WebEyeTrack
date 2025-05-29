@@ -17,6 +17,22 @@ from .constants import *
 EYE_IMAGE_WIDTH = 400
 
 #####################################################################################################
+# Utils
+######################################################################################################
+
+def matplotlib_to_image(fig):
+    """
+    Convert a matplotlib figure to a numpy array image.
+    """
+    fig.canvas.draw()
+    image = np.frombuffer(fig.canvas.tostring_argb(), dtype=np.uint8)
+    image = image.reshape(fig.canvas.get_width_height()[::-1] + (4,))
+    # Convert ARGB to RGB
+    image = image[..., [1, 2, 3]]
+    plt.close(fig)
+    return image
+
+#####################################################################################################
 # POG
 ######################################################################################################
 
@@ -54,7 +70,7 @@ def plot_pog_errors(gt_x, gt_y, pred_x, pred_y):
     ax = plt.gca()
 
     # Plot ground truth points
-    ax.scatter(gt_x, gt_y, color='lime', label='Ground Truth', s=10, alpha=0.8)
+    ax.scatter(gt_x, gt_y, color='lime', label='Ground Truth', s=13, alpha=0.8)
 
     # Plot predicted points
     ax.scatter(pred_x, pred_y, color='red', label='Predicted', s=10, alpha=0.8)
@@ -73,6 +89,20 @@ def plot_pog_errors(gt_x, gt_y, pred_x, pred_y):
     plt.tight_layout()
 
     return fig
+
+#####################################################################################################
+# Image Reconstruction
+######################################################################################################
+
+def draw_reconstruction(gt_imgs: np.ndarray, pred_imgs: np.ndarray) -> np.ndarray:
+    
+    # Combine the images along axis=1 (horizontal)
+    combined_imgs = np.concatenate((gt_imgs, pred_imgs), axis=1)
+    return combined_imgs
+
+#####################################################################################################
+# Miscellaneous
+######################################################################################################
 
 class TimeSeriesOscilloscope:
 

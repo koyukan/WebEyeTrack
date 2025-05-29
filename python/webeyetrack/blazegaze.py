@@ -34,8 +34,6 @@ class ModalityInput:
 
 @dataclass
 class EncoderConfig:
-    weights_fp: Optional[str] = None
-    type: Literal['mlp', 'cnn'] = 'cnn'
     input_shape: tuple = (128, 512, 3)
     embedding_size: int = 64
 
@@ -47,13 +45,12 @@ class DecoderConfig:
 @dataclass
 class GazeConfig:
     inputs: List[ModalityInput] = field(default_factory=lambda: [])
-    output: Literal['2d', '3d'] = '3d'
 
 @dataclass
 class BlazeGazeConfig:
 
     # Mode
-    mode: Literal['autoencoder', 'gaze'] = 'gaze'
+    mode: Literal['autoencoder', 'maml'] = 'maml'
     weights_fp: Optional[str] = None
 
     encoder: EncoderConfig = field(default_factory=lambda: EncoderConfig())
@@ -102,26 +99,19 @@ def get_cnn_encoder(config: BlazeGazeConfig):
     double_5 = double_blaze_block(double_4, [24, 96])
     double_6 = double_blaze_block(double_5, [24, 96])
 
+    # 🔽 Add gradual squeezing via Conv2D
+    z = Conv2D(64, (3, 3), strides=2, padding="same", activation='relu')(double_6)   # → (4, 16, 64)
+    z = BatchNormalization()(z)
+    z = Conv2D(32, (3, 3), strides=2, padding="same", activation='relu')(z)         # → (2, 8, 32)
+    z = BatchNormalization()(z)
+    z = Conv2D(16, (3, 3), strides=2, padding="same", activation='relu')(z)         # → (1, 4, 16)
+    z = BatchNormalization()(z)
+
     # Add bottleneck head
     pooled = GlobalAveragePooling2D()(double_6)  # Shape: (None, 96)
     latent = Dense(config.encoder.embedding_size, activation='relu', name='embedding')(pooled)  # e.g., 64
 
     return Model(inputs=x, outputs=latent, name="cnn_encoder")
-
-
-def get_mlp_encoder(config: BlazeGazeConfig):
-    input_layer = Input(shape=config.encoder.input_shape)
-
-    x = input_layer
-    x = Flatten()(x)  # [B, H*W*C]
-
-    # MLP layers
-    x = Dense(1024, activation='relu')(x)
-    x = Dense(512, activation='relu')(x)
-    x = Dense(np.prod(config.encoder.output_shape), activation='relu')(x)
-    x = Reshape(config.encoder.output_shape)(x)
-
-    return Model(inputs=input_layer, outputs=x, name="mlp_encoder")
 
 # ------------------------------------------------------------------------
 # Decoder Block
@@ -135,40 +125,38 @@ def decoder_block(y, filters, stride=1):
 
 def get_decoder(config: BlazeGazeConfig):
     """
-    CNN-based decoder that reconstructs image from encoded features.
-    Mirrors the encoder structure and upscales back to (H, W, 3).
+    Gradual decoder: expands latent vector → spatial tensor, then upscales to (128, 512, 3).
     """
 
-    encoded_input = Input(shape=[config.encoder.embedding_size])  # Adjust based on encoder output shape
+    encoded_input = Input(shape=(config.encoder.embedding_size,), name='latent_vector')
 
-    # Expand and reshape back to the original encoder feature shape (8x32x96)
-    x = Dense(np.prod(config.decoder.input_shape), activation='relu', name="decoder_dense_expand")(encoded_input)
-    x = Reshape(config.decoder.input_shape, name="decoder_reshape")(x)
+    # Start from (1, 4, 64)
+    x = Dense(1 * 4 * 64, activation='relu', name='decoder_dense_expand')(encoded_input)
+    x = Reshape((1, 4, 64), name='decoder_reshape_initial')(x)
 
-    x = decoder_block(x, 96)         # 8x32 → 8x32
-    x = decoder_block(x, 96)                     # 8x32 → 8x32
-    x = decoder_block(x, 96, stride=2)           # 8x32 → 16x64
-    x = decoder_block(x, 96)                     # 16x64 → 16x64
-    x = decoder_block(x, 96)                     # 16x64 → 16x64
-    x = decoder_block(x, 48, stride=2)           # 16x64 → 32x128
-    x = decoder_block(x, 48)                     # 32x128 → 32x128
-    x = decoder_block(x, 24, stride=2)           # 32x128 → 64x256
-    x = decoder_block(x, 24)                     # 64x256 → 64x256
-    x = decoder_block(x, 24, stride=2)           # 64x256 → 128x512
+    # Gradual upsampling: 7 steps to reach 128 x 512
+    x = decoder_block(x, 64, stride=2)  # → (2, 8)
+    x = decoder_block(x, 64, stride=2)  # → (4, 16)
+    x = decoder_block(x, 96, stride=2)  # → (8, 32)
+    x = decoder_block(x, 96, stride=2)  # → (16, 64)
+    x = decoder_block(x, 96, stride=2)  # → (32, 128)
+    x = decoder_block(x, 48, stride=2)  # → (64, 256)
+    x = decoder_block(x, 24, stride=2)  # → (128, 512)
 
-    # Final RGB reconstruction
-    x = Conv2D(3, (3, 3), padding="same", activation="sigmoid")(x)  # Output in [0, 1]
+    # Final RGB output
+    output = Conv2D(3, (3, 3), padding="same", activation="sigmoid", name='decoder_output')(x)
 
-    return Model(inputs=encoded_input, outputs=x, name="cnn_decoder")
+    return tf.keras.Model(inputs=encoded_input, outputs=output, name="cnn_decoder")
 
 # ------------------------------------------------------------------------
 # Gaze Model
 # ------------------------------------------------------------------------
 
-def get_gaze_model(config):
+def get_gaze_mlp(config):
 
     # handle the inputs
-    cnn_input = Input(shape=config.encoder.output_shape, name="encoder_input")
+    print(config.encoder.embedding_size)
+    cnn_input = Input(shape=[config.encoder.embedding_size], name="encoder_input")
 
     # Flatten instead of pooling to retain spatial information
     flattened_output = Flatten(name="flattened_output")(cnn_input)
@@ -198,21 +186,16 @@ def get_gaze_model(config):
     mlp2 = Dense(16, activation='relu')(mlp1)
     # mlp3 = Dense(32, activation='relu')(mlp2)
 
-    if config.gaze.output == '2d':
-        output = Dense(2, activation='linear', name="gaze_output")(mlp2)
-    
-    elif config.gaze.output == '3d':
-        gaze_vector = Dense(3, activation='linear', name="gaze_output")(mlp2)
-        output = Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name="gaze_output_norm")(gaze_vector)
+    output = Dense(2, activation='linear', name="gaze_output")(mlp2)
     
     # Build final model
-    return Model(inputs=[cnn_input] + additional_inputs, outputs=output, name="gaze_head")
+    return Model(inputs=[cnn_input] + additional_inputs, outputs=output, name="gaze_mlp")
 
 # ------------------------------------------------------------------------
 # Production - Inference
 # ------------------------------------------------------------------------
 
-def build_full_inference_model(encoder, gaze_head, config):
+def build_full_inference_model(encoder, gaze_mlp, config):
 
     # Inputs
     image_input = Input(shape=config.encoder.input_shape, name='image')
@@ -230,7 +213,7 @@ def build_full_inference_model(encoder, gaze_head, config):
 
     # Pass encoder features + additional inputs to gaze head
     gaze_inputs = [encoder_features] + additional_tensors
-    gaze_output = gaze_head(gaze_inputs, training=False)
+    gaze_output = gaze_mlp(gaze_inputs, training=False)
 
     # Final model with all inputs
     full_model = Model(
@@ -248,22 +231,22 @@ class BlazeGaze():
 
     model: Model
     encoder: Model
+    gaze_mlp: Model
     decoder: Optional[Model]
-    gaze_model: Optional[Model]
 
     def __init__(self, config: BlazeGazeConfig):
         self.config = config
 
         if self.config.weights_fp:
-            self.load_entire_model()
-        elif self.config.mode == 'autoencoder':
-            self.set_autoencoder()
-        elif self.config.mode == 'gaze':
-            self.set_gazemodel()
+            self.load_assembled_model()
         else:
-            raise ValueError("Invalid mode. Must be either 'autoencoder' or 'gaze'")
+            self.load_specific_model()
+
+        # Perform checks
+        if self.decoder:
+            assert self.encoder.input_shape == self.decoder.output_shape, "Encoder input shape must match decoder output shape."
         
-    def load_entire_model(self):
+    def load_assembled_model(self):
         
         if isinstance(self.config.weights_fp, str):
             self.config.weights_fp = MODEL_WEIGHTS / self.config.weights_fp
@@ -278,38 +261,33 @@ class BlazeGaze():
         )
 
         # Get encoder output tensor (which is input to the gaze model)
-        gaze_head = full_model.get_layer('gaze_head')
-        self.gaze_model = Model(
-            inputs=gaze_head.inputs,
-            outputs=gaze_head.output,
-            name="gaze_head"
+        gaze_mlp = full_model.get_layer('gaze_mlp')
+        self.gaze_mlp = Model(
+            inputs=gaze_mlp.inputs,
+            outputs=gaze_mlp.output,
+            name="gaze_mlp"
         )
 
-    def set_autoencoder(self):
-
-        if self.config.encoder.type == 'cnn':
-            self.encoder = get_cnn_encoder(self.config)
-        elif self.config.encoder.type == 'mlp':
-            self.encoder = get_mlp_encoder(self.config)
+        # If decoder exists, extract it
+        if self.config.mode == 'autoencoder' and 'cnn_decoder' in full_model.layers:
+            cnn_decoder = full_model.get_layer('cnn_decoder')
+            self.decoder = Model(
+                inputs=cnn_decoder.inputs,
+                outputs=cnn_decoder.output,
+                name="cnn_decoder"
+            )
         else:
-            raise ValueError("Invalid encoder type. Must be either 'cnn' or 'mlp'")
-        self.decoder = get_decoder(self.config)
-        self.model = Model(inputs=self.encoder.input, outputs=self.decoder(self.encoder.output), name="blazegaze_autoencoder")
+            self.decoder = None
 
-        if self.config.weights_fp:
-            self.model.load_weights(self.config.weights_fp)
+    def load_specific_model(self):
+        assert self.config.mode in ['autoencoder', 'maml'], "Unsupported mode. Use 'autoencoder' or 'maml'."
+        
+        self.encoder = get_cnn_encoder(self.config)
+        self.gaze_mlp = get_gaze_mlp(self.config)
+        if self.config.mode == 'autoencoder':
+            self.decoder = get_decoder(self.config)
         else:
-            self.model([tf.random.uniform((1, *self.config.encoder.input_shape))])
-
-    def set_gazemodel(self):
-        if self.config.encoder.type == 'cnn':
-            self.encoder = get_cnn_encoder(self.config)
-        elif self.config.encoder.type == 'mlp':
-            self.encoder = get_mlp_encoder(self.config)
-        else:
-            raise ValueError("Invalid encoder type. Must be either 'cnn' or 'mlp'")
-
-        self.gaze_model = get_gaze_model(self.config)
+            self.decoder = None
 
         # Create Keras Input layers for extra gaze inputs
         additional_inputs = []
@@ -319,18 +297,16 @@ class BlazeGaze():
 
         # The gaze model takes [encoder_output] + additional_inputs
         model_inputs = [self.encoder.input] + additional_inputs
-        gaze_outputs = self.gaze_model([self.encoder.output] + additional_inputs)
+        gaze_outputs = self.gaze_mlp([self.encoder.output] + additional_inputs)
 
-        self.model = Model(inputs=model_inputs, outputs=gaze_outputs, name="blazegaze_gaze")
+        # Construct the full model outputs (encoder, gaze, and optionally decoder)
+        model_outputs = [self.encoder.output, gaze_outputs] + ([self.decoder(self.encoder.output)] if self.decoder else [])
+        self.model = Model(inputs=model_inputs, outputs=model_outputs, name="blazegaze_gaze")
 
-        # Load weights if provided
-        if self.config.weights_fp:
-            self.model.load_weights(self.config.weights_fp)
-        else:
-            dummy_inputs = [tf.random.uniform((1, *self.config.encoder.input_shape))] + [
-                tf.random.uniform((1, *inp.input_shape)) for inp in self.config.gaze.inputs
-            ]
-            self.model(dummy_inputs)
+        dummy_inputs = [tf.random.uniform((1, *self.config.encoder.input_shape))] + [
+            tf.random.uniform((1, *inp.input_shape)) for inp in self.config.gaze.inputs
+        ]
+        self.model(dummy_inputs)
 
     def freeze_encoder(self):
         self.encoder.trainable = False
@@ -343,11 +319,11 @@ if __name__ == "__main__":
     TESTING = 'autoencoder'
     print("Testing mode:", TESTING)
 
-    if TESTING == 'full_model':
+    if TESTING == 'maml':
         # Test both models
         config = BlazeGazeConfig(
             # Mode
-            mode='gaze',
+            mode='maml',
             # weights_fp='blazegaze_gazecapture.keras',
             # gaze=GazeConfig(
             #     inputs=[
@@ -360,7 +336,7 @@ if __name__ == "__main__":
         model = BlazeGaze(config)
         model.model.summary()
         model.encoder.summary()
-        model.gaze_model.summary()
+        model.gaze_mlp.summary()
 
         # Wrap in @tf.function
         # Critical for performance optimization
@@ -370,7 +346,7 @@ if __name__ == "__main__":
 
         inference_model = build_full_inference_model(
             encoder=model.encoder,
-            gaze_head=model.gaze_model,
+            gaze_mlp=model.gaze_mlp,
             config=config
         )
         inference_model.summary()
@@ -420,3 +396,4 @@ if __name__ == "__main__":
         model.model.summary()
         model.encoder.summary()
         model.decoder.summary()
+        model.gaze_mlp.summary()

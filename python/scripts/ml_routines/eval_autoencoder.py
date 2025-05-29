@@ -89,9 +89,9 @@ if __name__ == "__main__":
     with open(args.config, 'r') as f:
         config = yaml.safe_load(f)
 
-    # Only config that is for 'gaze' type is allowed
-    if config['config']['type'] != 'gaze':
-        raise ValueError("Only 'gaze' type configuration is allowed.")
+    # Only config that is for 'autoencoder' type is allowed
+    if config['config']['type'] != 'autoencoder':
+        raise ValueError("Only 'autoencoder' type configuration is allowed.")
 
     # Print the configuration
     print("\n")

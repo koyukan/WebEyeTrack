@@ -1,6 +1,6 @@
 # Description: Configuration file for the GazeCapture dataset.
 config:
-  type: "gaze"
+  type: "maml"
 
 # Configuration file for the GazeCapture dataset.
 dataset:
@@ -9,7 +9,7 @@ dataset:
   query_size: 100
   support_size: 9
 
-  train_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+  train_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9]
   val_ids: [10, 11]
   test_ids: [14, 15]
 
@@ -27,15 +27,14 @@ training:
 
 # Configuration for the model.
 model:
-  mode: 'gaze'
-  model_weights_fp: null
+  mode: 'maml'
+  weights_fp: "blazegaze_eyediap.keras"
   
   # Encoder configuration.
   encoder:
     weights_fp: 'autoencoder_2025-03-29-12-30-25'
     input_shape: [128,512,3]
     input_name: 'pixels'
-    type: 'cnn' # 'mlp' or 'cnn'
     embedding_size: 512
     output_shape: [8, 32, 96]
 

@@ -25,21 +25,25 @@ training:
 # Configuration for the model.
 model:
   mode: 'autoencoder'
-  weights_fp: null
-  encoder_weights_fp: null
-  input_shape: [128,512,3]
-  embedding_size: 512
-  encoder_type: 'cnn' # 'mlp' or 'cnn'
-  encoder_output: [8, 32, 96]
-  decoder_output: [128, 512, 3]
-  gaze_output: '3d'
+  weights_fp: ""
+  
+  # Encoder configuration.
+  encoder:
+    input_shape: [128,512,3]
+    embedding_size: 64
 
-  # Preprocessing configuration.
-  fourier_transform: false
-  fourier_transform_params:
-    trainable: true
-    mapping_size: 256
-    scale: 1
+  decoder:
+    input_shape: [8, 32, 96]
+
+  # Gaze Estimation configuration.
+  gaze:
+    inputs:
+      - name: 'cnn_output'
+        input_shape: [64]
+      - name: 'head_vector'
+        input_shape: [3]
+      - name: 'face_origin_3d'
+        input_shape: [3]
 
 # Configuration for the loss function.
 loss:

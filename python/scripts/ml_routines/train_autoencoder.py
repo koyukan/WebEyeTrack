@@ -5,8 +5,9 @@ import json
 import argparse
 import time
 import json
-from tqdm import tqdm
+from collections import defaultdict
 
+from tqdm import tqdm
 import cattrs
 import yaml
 import numpy as np
@@ -14,9 +15,12 @@ import tensorflow as tf
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, LearningRateScheduler
 from tensorflow.keras.optimizers import Adam
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('TkAgg')
 
 from webeyetrack.constants import GIT_ROOT
 from webeyetrack.blazegaze import BlazeGaze, BlazeGazeConfig
+import webeyetrack.vis as vis
 from webeyetrack.tf_utils import (
     angular_loss, 
     angular_distance, 
@@ -26,6 +30,10 @@ from webeyetrack.tf_utils import (
     EncoderDecoderCheckpoint
 )
 from data import load_total_dataset, load_datasets, get_dataset_metadata
+from utils import (
+    mae_cm_loss,
+    l2_loss
+)
 
 CWD = pathlib.Path(__file__).parent
 FILE_DIR = pathlib.Path(__file__).parent
@@ -44,6 +52,10 @@ def train(config):
 
     with open(RUN_DIR / 'config.yaml', 'w') as f:
         yaml.dump(config, f)
+
+    # Create tensorboard writer
+    tb_writer = tf.summary.create_file_writer(str(RUN_DIR))
+    tb_writer.set_as_default()
 
     # Get dataset metadata
     h5_file, train_ids, val_ids, test_ids = get_dataset_metadata(config)
@@ -67,11 +79,11 @@ def train(config):
     # Load model
     model_config = cattrs.structure(config['model'], BlazeGazeConfig)
     model = BlazeGaze(model_config)
-    model.model.compile(
-        optimizer=Adam(learning_rate=lr_schedule),
-        loss=config['loss']['functions'],
-        metrics=config['loss']['metrics']
-    )
+    # model.model.compile(
+    #     optimizer=Adam(learning_rate=lr_schedule),
+    #     loss=config['loss']['functions'],
+    #     metrics=config['loss']['metrics']
+    # )
 
     # Callbacks
     callbacks = []
@@ -138,20 +150,75 @@ def train(config):
     steps_per_epoch = train_dataset_size // config['training']['batch_size']
     validation_steps = val_dataset_size // config['training']['batch_size']
 
-    # Train model
-    model.model.fit(
-        train_dataset,
-        validation_data=val_dataset,
-        epochs=config['training']['epochs'],
-        steps_per_epoch=steps_per_epoch,
-        validation_steps=validation_steps,
-        callbacks=callbacks
-    )
+    # Train dataset iterator
+    optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
+    train_dataset_iter = iter(train_dataset)
 
-    # Evaluate model
-    # results = model.tf_model.evaluate(test_dataset)
-    # print(results)
-    # print(f"Test Loss: {results[0]}, Test Angular Error (Degrees): {results[1]}")
+    # DEBUG: Get a single sample to check the data pipeline
+    # sample = next(train_dataset_iter)
+
+    for epoch in tqdm(range(config['training']['epochs']), desc="Training Epochs"):
+        losses = defaultdict(list)
+
+        progress_bar = tqdm(total=steps_per_epoch, desc=f"Epoch {epoch + 1}/{config['training']['epochs']}", leave=False)
+        progress_bar.set_postfix({"loss": "N/A"})
+        
+        for step in range(steps_per_epoch):
+            sample = next(train_dataset_iter)
+            progress_bar.update(1)
+
+            # Prepare input features
+            features = ['image'] + [x.name for x in model_config.gaze.inputs]
+            input_list = [sample[feature] for feature in features]
+
+            # Calculate loss
+            with tf.GradientTape() as tape:
+                preds = model.model(input_list, training=True) # encoder embedding, gaze preds, and decoder output
+                gaze_loss = l2_loss(preds[1], sample['pog_norm'])
+                decoder_loss = tf.reduce_mean(tf.square(preds[2] - sample['image']))
+                total_loss = gaze_loss + decoder_loss
+                
+                losses['gaze_loss'].append(gaze_loss.numpy())
+                losses['decoder_loss'].append(decoder_loss.numpy())
+                losses['loss'].append(total_loss.numpy())
+
+            # Compute gradients and update model weights
+            gradients = tape.gradient(total_loss, model.model.trainable_variables)
+            optimizer.apply_gradients(zip(gradients, model.model.trainable_variables))
+            for key, value in losses.items():
+                progress_bar.set_postfix({key: np.mean(value)})
+
+            # if step >= 5:
+            #     break
+
+        # Log average loss for the epoch to tensorboard
+        if tb_writer:
+            # Scalars
+            for key, value in losses.items():
+                tf.summary.scalar(f'train/{key}', np.mean(value), step=epoch)
+
+            # Images (reconstruction and gaze predictions)
+            image_reconstruction = vis.draw_reconstruction(
+                sample['image'].numpy(),
+                preds[2].numpy(),
+            )
+            tf.summary.image('train/image_reconstruction', image_reconstruction, step=epoch)
+
+            gaze_predictions_fig = vis.plot_pog_errors(
+                sample['pog_norm'].numpy()[:, 0],
+                sample['pog_norm'].numpy()[:, 1],
+                preds[1].numpy()[:, 0],
+                preds[1].numpy()[:, 1],
+            )
+
+            # Convert Matplotlib figure to image tensor
+            gaze_predictions_image = vis.matplotlib_to_image(gaze_predictions_fig)
+            tf.summary.image('train/gaze_predictions', np.expand_dims(gaze_predictions_image, axis=0), step=epoch)
+
+            # Flush the writer
+            tb_writer.flush()
+
+        print(f"Epoch {epoch + 1}/{config['training']['epochs']}, Loss: {np.mean(losses['loss'])}")
 
 if __name__ == "__main__":
     # Add arguments to specify the configuration file
@@ -163,6 +230,7 @@ if __name__ == "__main__":
     with open(args.config, 'r') as f:
         config = yaml.safe_load(f)
 
+    # Validate the configuration
     if config['config']['type'] != 'autoencoder':
         raise ValueError("Only 'autoencoder' type configuration is allowed.")
 

@@ -26,6 +26,9 @@ from data import (
     get_dataset_metadata,
     get_maml_task_dataset
 )
+from utils import (
+    mae_cm_loss,
+)
 
 CWD = pathlib.Path(__file__).parent
 FILE_DIR = pathlib.Path(__file__).parent
@@ -83,28 +86,6 @@ For each meta-epoch:
     Average meta_grads over tasks
     Update meta-model: θ ← θ - β * meta_grads     # β = outer learning rate
 """
-
-def mae_cm_loss(y_true, y_pred, screen_info):
-    """
-    Convert normalized predictions and labels to cm using screen_info
-    and compute MAE in cm.
-
-    Args:
-        y_true: Tensor of shape (batch_size, 2), normalized labels [0,1]
-        y_pred: Tensor of shape (batch_size, 2), normalized predictions [0,1]
-        screen_info: Tensor of shape (batch_size, 2), in cm: [height, width]
-
-    Returns:
-        Scalar MAE loss in cm
-    """
-    # Convert from normalized [0,1] to cm by multiplying by screen dimensions
-    true_cm = y_true * screen_info
-    pred_cm = y_pred * screen_info
-
-    # return tf.reduce_mean(tf.abs(true_cm - pred_cm))  # MAE in cm
-    return tf.reduce_mean(
-        tf.norm(true_cm - pred_cm, axis=-1)
-    )
 
 def match_spread_loss(preds, gts):
     pred_cov = tf.math.reduce_std(preds, axis=0)

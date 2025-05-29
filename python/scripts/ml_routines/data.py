@@ -15,6 +15,8 @@ GENERATED_DATASET_DIR = GIT_ROOT / 'data' / 'generated'
 
 CWD = pathlib.Path(__file__).parent
 
+def tensor_spec(shape): return tf.TensorSpec(shape=shape, dtype=tf.float32)
+
 def get_dataset_metadata(config):
 
     if config['dataset']['name'] == 'MPIIFaceGaze':
@@ -74,11 +76,12 @@ def load_datasets(h5_file, train_ids, val_ids, test_ids, config):
     print(f"Train dataset size: {train_dataset_size}, Validation dataset size: {val_dataset_size}, Test dataset size: {test_dataset_size}")
 
     # Sanity check
-    for img, label in train_dataset.take(1):
-        print("Image batch shape:", img.shape)
-        print("Label batch shape:", label.shape)
-        print("Image min/max:", tf.reduce_min(img).numpy(), tf.reduce_max(img).numpy())
-        # print("Label values:", label.numpy())
+    # import pdb; pdb.set_trace()
+    # for img, label in train_dataset.take(1):
+    #     print("Image batch shape:", img.shape)
+    #     print("Label batch shape:", label.shape)
+    #     print("Image min/max:", tf.reduce_min(img).numpy(), tf.reduce_max(img).numpy())
+    #     # print("Label values:", label.numpy())
 
     return train_dataset, val_dataset, train_dataset_size, val_dataset_size, test_dataset, test_dataset_size
 
@@ -95,15 +98,14 @@ def participant_generator(file, pid, config):
             
             limit = min(max_samples, total) if max_samples else total
             for i in range(limit):
-                image = group["pixels"][i].astype(np.float32) / 255.0
-                label = group["pog_norm"][i][:2].astype(np.float32)
-                # label = group['pog_cm'][i][:2].astype(np.float32)
-                if config['model']['mode'] == 'autoencoder':
-                    yield image, image
-                elif config['model']['mode'] == 'gaze':
-                    yield image, label
-                else:
-                    raise ValueError("Invalid mode. Must be either 'autoencoder' or 'gaze'")
+                yield {
+                    "image": group["pixels"][i].astype(np.float32) / 255.0,
+                    "head_vector": group["head_vector"][i][:3].astype(np.float32),
+                    "face_origin_3d": group["face_origin_3d"][i][:3].astype(np.float32),
+                    'screen_info': np.stack([group['screen_height_cm'][i],
+                                                group['screen_width_cm'][i]]).astype(np.float32),
+                    "pog_norm": group["pog_norm"][i][:2].astype(np.float32) - np.array([0.5, 0.5]),
+                }
     return _gen
 
 def load_total_dataset(
@@ -112,18 +114,15 @@ def load_total_dataset(
         config
     ):
 
-    if config['model']['mode'] == 'autoencoder':
-        output_signature = (
-            tf.TensorSpec(shape=config['model']['encoder']['input_shape'], dtype=tf.float32),
-            tf.TensorSpec(shape=config['model']['encoder']['input_shape'], dtype=tf.float32),
-        )
-    elif config['model']['mode'] == 'gaze':
-        output_signature = (
-            tf.TensorSpec(shape=config['model']['encoder']['input_shape'], dtype=tf.float32),
-            tf.TensorSpec(shape=(2,), dtype=tf.float32),
-        )
-    else:
-        raise ValueError("Invalid mode. Must be either 'autoencoder' or 'gaze'")
+    assert config['config']['type'] == 'autoencoder', "Only 'autoencoder' type configuration is allowed."
+
+    output_signature = {
+        "image": tensor_spec((config['model']['encoder']['input_shape'])),  # Image
+        "head_vector": tensor_spec((3,)),  # head_vector
+        "face_origin_3d": tensor_spec((3,)),  # face_origin_3d
+        "screen_info": tensor_spec((2,)),  # screen_info
+        "pog_norm": tensor_spec((2,)),  # Normalized point of gaze
+    }
     
     datasets = [
         tf.data.Dataset.from_generator(
@@ -136,7 +135,7 @@ def load_total_dataset(
     ds = tf.data.Dataset.sample_from_datasets(datasets, weights=None, seed=config['dataset']['seed'])  # Uniform sampling
 
     # ds = ds.shuffle(100).batch(batch_size).prefetch(tf.data.AUTOTUNE)
-    ds = ds.shuffle(1000) \
+    ds = ds.shuffle(config['dataset']['shuffle_buffer']) \
         .batch(config['training']['batch_size']) \
         .cache() \
         .prefetch(tf.data.AUTOTUNE).repeat()
@@ -162,63 +161,6 @@ def load_total_dataset(
 # ------------------------------------------------------------------------------------------------
 # MAML dataset loading
 # ------------------------------------------------------------------------------------------------
-
-# def participant_task_generator(h5_file, pid, config):
-#     support_size = config['dataset']['support_size']
-#     query_size = config['dataset']['query_size']
-    
-#     def _gen():
-#         with h5py.File(h5_file, 'r') as hf:
-#             group = hf[str(pid)]
-#             total = group["pixels"].shape[0]
-#             indices = np.arange(total)
-#             np.random.shuffle(indices)
-
-#             # Clip support and query sizes to the total number of samples
-#             safe_support_size = min(support_size, total)
-#             safe_query_size = min(query_size, total - support_size)
-
-#             support_indices = indices[:safe_support_size]
-#             query_indices = indices[safe_support_size:safe_support_size + safe_query_size]
-
-#             def get_samples(idxs):
-#                 for i in idxs:
-#                     image = group["pixels"][i].astype(np.float32) / 255.0
-#                     # label = group["pog_norm"][i][:2].astype(np.float32)
-#                     label = group['pog_cms'][i][:2].astype(np.float32)
-#                     yield image, label
-
-#             support = list(get_samples(support_indices))
-#             query = list(get_samples(query_indices))
-
-#         return support, query
-#     return _gen
-
-# def task_sampler(h5_file, participants, config):
-#     while True:
-#         pid = np.random.choice(participants)
-#         task_gen = participant_task_generator(h5_file, pid, config)
-#         support, query = task_gen()
-#         support_x, support_y = zip(*support)
-#         query_x, query_y = zip(*query)
-
-#         yield (
-#             tf.stack(support_x), tf.stack(support_y),
-#             tf.stack(query_x), tf.stack(query_y)
-#         )
-
-# def task_sampler_sequential(h5_file, participants, config):
-#     while True:  # Infinite loop for dataset
-#         for pid in participants:
-#             task_gen = participant_task_generator(h5_file, pid, config)
-#             support, query = task_gen()
-#             support_x, support_y = zip(*support)
-#             query_x, query_y = zip(*query)
-
-#             yield (
-#                 tf.stack(support_x), tf.stack(support_y),
-#                 tf.stack(query_x), tf.stack(query_y)
-#             )
 
 def prepare_task_generators(h5_file, participants, config):
     task_generators = {}
@@ -294,8 +236,6 @@ def get_maml_task_dataset(h5_file, participants, config):
     input_shape = config['model']['encoder']['input_shape']
     support_size = config['dataset']['support_size']
     query_size = config['dataset']['query_size']
-
-    def tensor_spec(shape): return tf.TensorSpec(shape=shape, dtype=tf.float32)
 
     input_signature = {
         "image": tensor_spec((None, *input_shape)),
