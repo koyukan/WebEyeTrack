@@ -31,9 +31,87 @@ GENERATED_DATASET_DIR = GIT_ROOT / 'data' / 'generated'
 # Constants
 IMG_SIZE = 128
 
-RECONT_COEF = 1
+RECONT_COEF = 2
 CONSISTENCY_COEF = 0.1
 GAZE_COEF = 1
+
+def run_epoch(name, dataset_iter, steps_per_epoch, model, model_config, optimizer=None, training=False):
+    losses = defaultdict(list)
+    metrics = defaultdict(list)
+    embeddings_to_pog = defaultdict(list)
+    progress_bar = tqdm(total=steps_per_epoch, desc=f"Running {name} dataset.", leave=False)
+
+    for step in range(steps_per_epoch):
+        sample = next(dataset_iter)
+
+        # Prepare input features
+        features = ['image'] + [x.name for x in model_config.gaze.inputs]
+        input_list = [sample[feature] for feature in features]
+
+        with tf.GradientTape(persistent=training) as tape:
+            preds = model.model(input_list, training=training)
+            gaze_loss = l2_loss(preds[1], sample['pog_norm'])
+            decoder_loss = tf.reduce_mean(tf.square(preds[2] - sample['image']))
+            consistency_loss = embedding_consistency_loss(preds[0], sample['pog_norm'])
+            total_loss = GAZE_COEF * gaze_loss + RECONT_COEF * decoder_loss + CONSISTENCY_COEF * consistency_loss
+
+            losses['gaze_l2_loss'].append(gaze_loss.numpy())
+            losses['decoder_l1_loss'].append(decoder_loss.numpy())
+            losses['embedding_consistency_loss'].append(consistency_loss.numpy())
+            losses['loss'].append(total_loss.numpy())
+
+            metrics['ssim'].append(compute_batch_ssim(sample['image'], preds[2]))
+            metrics['gaze_cm_mae'].append(mae_cm_loss(sample['pog_norm'], preds[1], sample['screen_info']))
+
+            embeddings_to_pog['embeddings'].append(preds[0].numpy())
+            embeddings_to_pog['pog_labels'].append(sample['pog_norm'].numpy())
+
+        if training:
+            gradients = tape.gradient(total_loss, model.model.trainable_variables)
+            optimizer.apply_gradients(zip(gradients, model.model.trainable_variables))
+
+        progress_bar.update(1)
+
+    return losses, metrics, embeddings_to_pog, sample, preds
+
+def tensorboard_log(name, losses, metrics, embeddings_to_pog, sample, preds, step):
+
+    # Scalars
+    for key, value in losses.items():
+        tf.summary.scalar(f'{name}/loss/{key}', np.mean(value), step=step)
+    for key, value in metrics.items():
+        tf.summary.scalar(f'{name}/metrics/{key}', np.mean(value), step=step)
+
+    # Images (reconstruction and gaze predictions)
+    image_reconstruction = vis.draw_reconstruction(
+        sample['image'].numpy(),
+        preds[2].numpy(),
+    )
+    tf.summary.image(f'{name}/image_reconstruction', image_reconstruction, step=step)
+
+    gaze_predictions_fig = vis.plot_pog_errors(
+        sample['pog_norm'].numpy()[:, 0],
+        sample['pog_norm'].numpy()[:, 1],
+        preds[1].numpy()[:, 0],
+        preds[1].numpy()[:, 1],
+    )
+
+    # Convert Matplotlib figure to image tensor
+    gaze_predictions_image = vis.matplotlib_to_image(gaze_predictions_fig)
+    tf.summary.image(f'{name}/gaze_predictions', np.expand_dims(gaze_predictions_image, axis=0), step=step)
+
+    # Convert the embeddings and PoG labels to numpy arrays
+    embeddings_np = np.concatenate(embeddings_to_pog['embeddings'], axis=0)
+    pog_labels_np = np.concatenate(embeddings_to_pog['pog_labels'], axis=0)
+    print(f"Embeddings shape: {embeddings_np.shape}, PoG labels shape: {pog_labels_np.shape}")
+
+    # Check the quality of the embeddings
+    tsne_embeddings_fig = vis.plot_tsne_colored_by_pog(
+        embeddings_np,
+        pog_labels_np
+    )
+    tsne_embeddings_image = vis.matplotlib_to_image(tsne_embeddings_fig)
+    tf.summary.image(f'{name}/tsne_embeddings', np.expand_dims(tsne_embeddings_image, axis=0), step=step)
 
 def train(config):
 
@@ -79,110 +157,61 @@ def train(config):
     # Train dataset iterator
     optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
     train_dataset_iter = iter(train_dataset)
+    val_dataset_iter = iter(val_dataset)
 
     # DEBUG: Get a single sample to check the data pipeline
     # sample = next(train_dataset_iter)
 
     for epoch in tqdm(range(config['training']['epochs']), desc="Training Epochs"):
-        losses = defaultdict(list)
-        metrics = defaultdict(list)
-        embeddings_to_pog = defaultdict(list)
-
-        progress_bar = tqdm(total=steps_per_epoch, desc=f"Epoch {epoch + 1}/{config['training']['epochs']}", leave=False)
-        progress_bar.set_postfix({"loss": "N/A"})
         
-        for step in range(steps_per_epoch):
-            sample = next(train_dataset_iter)
-            progress_bar.update(1)
+        train_losses, train_metrics, train_embs, train_sample, train_preds = run_epoch(
+            name='train',
+            dataset_iter=train_dataset_iter,
+            steps_per_epoch=steps_per_epoch,
+            model=model,
+            model_config=model_config,
+            optimizer=optimizer,
+            training=True
+        )
 
-            # Prepare input features
-            features = ['image'] + [x.name for x in model_config.gaze.inputs]
-            input_list = [sample[feature] for feature in features]
-
-            # Calculate loss
-            with tf.GradientTape() as tape:
-                preds = model.model(input_list, training=True) # encoder embedding, gaze preds, and decoder output
-                gaze_loss = l2_loss(preds[1], sample['pog_norm'])
-                decoder_loss = tf.reduce_mean(tf.square(preds[2] - sample['image']))
-                consistency_loss = embedding_consistency_loss(
-                    preds[0],
-                    sample['pog_norm'],
-                )
-                total_loss = GAZE_COEF * gaze_loss + RECONT_COEF * decoder_loss + CONSISTENCY_COEF * consistency_loss
-                
-                losses['gaze_l2_loss'].append(gaze_loss.numpy())
-                losses['decoder_l1_loss'].append(decoder_loss.numpy())
-                losses['embedding_consistency_loss'].append(consistency_loss.numpy())
-                losses['loss'].append(total_loss.numpy())
-
-                # Compute metrics
-                metrics['ssim'].append(
-                    compute_batch_ssim(sample['image'], preds[2])
-                )
-                metrics['gaze_cm_mae'].append(
-                    mae_cm_loss(
-                        sample['pog_norm'],
-                        preds[1],
-                        sample['screen_info']
-                    )
-                )
-
-                # Store the embeddings and their corresponding PoG labels for visualization
-                embeddings_to_pog['embeddings'].append(preds[0].numpy())
-                embeddings_to_pog['pog_labels'].append(sample['pog_norm'].numpy())
-
-            # Compute gradients and update model weights
-            gradients = tape.gradient(total_loss, model.model.trainable_variables)
-            optimizer.apply_gradients(zip(gradients, model.model.trainable_variables))
-            for key, value in losses.items():
-                progress_bar.set_postfix({key: np.mean(value)})
-
-            # if step >= 5:
-            #     break
+        val_losses, val_metrics, val_embs, val_sample, val_preds = run_epoch(
+            name='val',
+            dataset_iter=val_dataset_iter,
+            steps_per_epoch=validation_steps,
+            model=model,
+            model_config=model_config,
+            optimizer=optimizer,
+            training=False
+        )
 
         # Log average loss for the epoch to tensorboard
         if tb_writer:
-            # Scalars
-            for key, value in losses.items():
-                tf.summary.scalar(f'train/{key}', np.mean(value), step=epoch)
-            for key, value in metrics.items():
-                tf.summary.scalar(f'train/{key}', np.mean(value), step=epoch)
 
-            # Images (reconstruction and gaze predictions)
-            image_reconstruction = vis.draw_reconstruction(
-                sample['image'].numpy(),
-                preds[2].numpy(),
+            # Log training losses and metrics
+            tensorboard_log(
+                name='train',
+                losses=train_losses,
+                metrics=train_metrics,
+                embeddings_to_pog=train_embs,
+                sample=train_sample,
+                preds=train_preds,
+                step=epoch
             )
-            tf.summary.image('train/image_reconstruction', image_reconstruction, step=epoch)
-
-            gaze_predictions_fig = vis.plot_pog_errors(
-                sample['pog_norm'].numpy()[:, 0],
-                sample['pog_norm'].numpy()[:, 1],
-                preds[1].numpy()[:, 0],
-                preds[1].numpy()[:, 1],
+            # Log validation losses and metrics
+            tensorboard_log(
+                name='val',
+                losses=val_losses,
+                metrics=val_metrics,
+                embeddings_to_pog=val_embs,
+                sample=val_sample,
+                preds=val_preds,
+                step=epoch
             )
-
-            # Convert Matplotlib figure to image tensor
-            gaze_predictions_image = vis.matplotlib_to_image(gaze_predictions_fig)
-            tf.summary.image('train/gaze_predictions', np.expand_dims(gaze_predictions_image, axis=0), step=epoch)
-
-            # Convert the embeddings and PoG labels to numpy arrays
-            embeddings_np = np.concatenate(embeddings_to_pog['embeddings'], axis=0)
-            pog_labels_np = np.concatenate(embeddings_to_pog['pog_labels'], axis=0)
-            print(f"Embeddings shape: {embeddings_np.shape}, PoG labels shape: {pog_labels_np.shape}")
-
-            # Check the quality of the embeddings
-            tsne_embeddings_fig = vis.plot_tsne_colored_by_pog(
-                embeddings_np,
-                pog_labels_np
-            )
-            tsne_embeddings_image = vis.matplotlib_to_image(tsne_embeddings_fig)
-            tf.summary.image('train/tsne_embeddings', np.expand_dims(tsne_embeddings_image, axis=0), step=epoch)
 
             # Flush the writer
             tb_writer.flush()
 
-        print(f"Epoch {epoch + 1}/{config['training']['epochs']}, Loss: {np.mean(losses['loss'])}")
+        print(f"Epoch {epoch + 1}/{config['training']['epochs']}, Val Loss: {np.mean(val_losses['loss'])}, Train Loss: {np.mean(train_losses['loss'])}")
 
 if __name__ == "__main__":
     # Add arguments to specify the configuration file
