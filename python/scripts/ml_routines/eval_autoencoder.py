@@ -27,7 +27,7 @@ CWD = pathlib.Path(__file__).parent
 from train_maml import maml_test
 from data import (
     get_dataset_metadata,
-    get_maml_task_dataset
+    load_datasets
 )
 
 CWD = pathlib.Path(__file__).parent
@@ -41,27 +41,6 @@ TIMESTAMP = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
 RUN_DIR = OUTPUT_DIR / TIMESTAMP
 os.makedirs(RUN_DIR, exist_ok=True)
 print(f"Run directory: {RUN_DIR}")
-
-SKIP_COUNT = 100
-# SKIP_COUNT = 2
-CALIBRATION_POINTS = np.array([ # 9 points
-    [0.5, 0.5],
-    [0.1, 0.1],
-    [0.1, 0.9],
-    [0.9, 0.1],
-    [0.9, 0.9],
-    [0.5, 0.1],
-    [0.5, 0.9],
-    [0.1, 0.5],
-    [0.9, 0.5]
-])
-
-# Load the GazeCapture participant IDs
-with open(CWD.parent / 'GazeCapture_participant_ids.json', 'r') as f:
-    GAZE_CAPTURE_IDS = json.load(f)
-
-TOTAL_DATASET = 100
-PER_PARTICIPANT_SIZE = 30
 
 def eval(config):
 
@@ -78,40 +57,27 @@ def eval(config):
     model.freeze_encoder()
 
     encoder = model.encoder
-    gaze_model = model.gaze_model
 
     # Get dataset metadata
     h5_file, train_ids, val_ids, test_ids = get_dataset_metadata(config)
 
-    # Load MAML dataset
-    # train_maml_dataset = get_maml_task_dataset(
-    #     h5_file,
-    #     train_ids,
-    #     config
-    # )
-    # valid_maml_dataset = get_maml_task_dataset(
-    #     h5_file,
-    #     val_ids,
-    #     config
-    # )
-    test_maml_dataset = get_maml_task_dataset(
-        h5_file,
-        test_ids,
+    # Load the per-person dataset
+    train_dataset, val_dataset, train_dataset_size, val_dataset_size, test_dataset, test_dataset_size = load_datasets(
+        h5_file, 
+        train_ids, 
+        val_ids, 
+        test_ids, 
         config
     )
 
-    # Run the test dataset
-    maml_test(
-        model_config=model_config,
-        encoder_model=encoder,
-        gaze_model=gaze_model,
-        test_maml_dataset=test_maml_dataset,
-        ids=(train_ids, val_ids, test_ids),
-        inner_lr=config['optimizer']['inner_lr'],
-        steps_inner=config['training']['num_inner_steps'],
-        tb_writer=tb_writer,
-        plots=True
-    )
+    # Run the test dataset through the autoencoder (only the test dataset)
+    for step, (image, image) in tqdm(enumerate(test_dataset), total=test_dataset_size // config['training']['batch_size']):
+        # Get the encoder output
+        encoder_output = encoder(image, training=False)
+        print(encoder_output.numpy())
+        import pdb; pdb.set_trace()
+        break
+
 
 if __name__ == "__main__":
     # Add arguments to specify the configuration file
@@ -135,12 +101,12 @@ if __name__ == "__main__":
     print("#" * 80)
     print("\n")
 
-    # Ask confirmation for training with a 5 second loading bar
-    print("Starting training in 5 seconds...\n")
+    # Ask confirmation for evaluation with a 5 second loading bar
+    print("Starting evaluation in 5 seconds...\n")
     for i in tqdm(range(5)):    
         time.sleep(1)
 
-    # Start training
-    print("Training...")
+    # Start evaluation
+    print("Evaluating...")
     
     eval(config)

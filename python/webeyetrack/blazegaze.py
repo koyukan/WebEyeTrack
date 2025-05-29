@@ -15,19 +15,17 @@ from tensorflow.keras.layers import (
     Flatten,
     Concatenate, 
     Conv2DTranspose,
-    BatchNormalization
+    BatchNormalization,
+    Dense,
+    GlobalAveragePooling2D,
+    Reshape,
+    Lambda
 )
 
 # Optional: Enable XLA for optimization
 tf.config.optimizer.set_jit(True)
 
 from .constants import MODEL_WEIGHTS
-
-@dataclass
-class FourierTransformParams:
-    trainable: bool = False
-    mapping_size: int = 256
-    scale: float = 10.0
 
 @dataclass
 class ModalityInput:
@@ -39,11 +37,11 @@ class EncoderConfig:
     weights_fp: Optional[str] = None
     type: Literal['mlp', 'cnn'] = 'cnn'
     input_shape: tuple = (128, 512, 3)
-    embedding_size: int = 512
-    output_shape: tuple = (8, 32, 96)
+    embedding_size: int = 64
 
 @dataclass
 class DecoderConfig:
+    input_shape: tuple = (8, 32, 96)
     output_shape: tuple = (128, 512, 3)
 
 @dataclass
@@ -61,6 +59,7 @@ class BlazeGazeConfig:
     encoder: EncoderConfig = field(default_factory=lambda: EncoderConfig())
     decoder: DecoderConfig = field(default_factory=lambda: DecoderConfig())
     gaze: GazeConfig = field(default_factory=lambda: GazeConfig())
+
 # ------------------------------------------------------------------------
 # Encoder
 # ------------------------------------------------------------------------
@@ -86,63 +85,8 @@ def double_blaze_block(y, filters, stride=1):
     output = Add()([x, y])
     return Activation("relu")(output)
 
-# class FourierFeatureMapping(tf.keras.layers.Layer):
-#     def __init__(self, mapping_size=256, scale=10.0, trainable=False, **kwargs):
-#         super().__init__(**kwargs)
-#         self.mapping_size = mapping_size
-#         self.scale = scale
-#         self.trainable_B = trainable
-
-#     def build(self, input_shape):
-#         channels = input_shape[-1]
-#         # Trainable or fixed projection matrix (B)
-#         self.B = self.add_weight(
-#             shape=(channels, self.mapping_size),
-#             initializer=tf.keras.initializers.RandomNormal(stddev=self.scale),
-#             trainable=self.trainable_B,  # Set to True if you want to learn B
-#             name="fourier_B"
-#         )
-
-#     def call(self, inputs):
-#         # inputs: [B, H, W, C]
-#         pi = tf.constant(np.pi, dtype=tf.float32)
-#         flat = tf.reshape(inputs, [-1, inputs.shape[-1]])  # [B*H*W, C]
-#         x_proj = tf.matmul(flat, self.B) * (2. * pi)
-#         x_proj = tf.reshape(x_proj, tf.concat([tf.shape(inputs)[:-1], [self.mapping_size]], axis=0))
-#         return tf.concat([tf.sin(x_proj), tf.cos(x_proj)], axis=-1)
-
-# class FourierFeatureVectorMapping(tf.keras.layers.Layer):
-#     def __init__(self, mapping_size=256, scale=10.0, trainable=False, **kwargs):
-#         super().__init__(**kwargs)
-#         self.mapping_size = mapping_size
-#         self.scale = scale
-#         self.trainable_B = trainable
-
-#     def build(self, input_shape):
-#         self.input_dim = input_shape[-1]
-#         self.B = self.add_weight(
-#             shape=(self.input_dim, self.mapping_size),
-#             initializer=tf.keras.initializers.RandomNormal(stddev=self.scale),
-#             trainable=self.trainable_B,
-#             name="fourier_B_vector"
-#         )
-
-#     def call(self, inputs):
-#         # inputs: [batch_size, features]
-#         pi = tf.constant(np.pi, dtype=tf.float32)
-#         x_proj = tf.matmul(inputs, self.B) * (2. * pi)
-#         return tf.concat([tf.sin(x_proj), tf.cos(x_proj)], axis=-1)
-
 def get_cnn_encoder(config: BlazeGazeConfig):
     x = Input(shape=config.encoder.input_shape)
-
-    # if config.fourier_transform:
-    #     x_mapped = FourierFeatureMapping(
-    #         mapping_size=config.fourier_transform_params.mapping_size,
-    #         scale=config.fourier_transform_params.scale
-    #     )(x)
-    # else:
-    #     x_mapped = x
 
     # Feature extraction layers
     first_conv = Conv2D(24, (5,5), strides=2, padding="same", activation="relu")(x)
@@ -158,7 +102,11 @@ def get_cnn_encoder(config: BlazeGazeConfig):
     double_5 = double_blaze_block(double_4, [24, 96])
     double_6 = double_blaze_block(double_5, [24, 96])
 
-    return Model(inputs=x, outputs=double_6, name="cnn_encoder")
+    # Add bottleneck head
+    pooled = GlobalAveragePooling2D()(double_6)  # Shape: (None, 96)
+    latent = Dense(config.encoder.embedding_size, activation='relu', name='embedding')(pooled)  # e.g., 64
+
+    return Model(inputs=x, outputs=latent, name="cnn_encoder")
 
 
 def get_mlp_encoder(config: BlazeGazeConfig):
@@ -167,18 +115,11 @@ def get_mlp_encoder(config: BlazeGazeConfig):
     x = input_layer
     x = Flatten()(x)  # [B, H*W*C]
 
-    # if config.fourier_transform:
-    #     x = FourierFeatureVectorMapping(
-    #         mapping_size=config.fourier_transform_params.mapping_size,
-    #         scale=config.fourier_transform_params.scale,
-    #         trainable=config.fourier_transform_params.trainable
-    #     )(x)
-
     # MLP layers
-    x = tf.keras.layers.Dense(1024, activation='relu')(x)
-    x = tf.keras.layers.Dense(512, activation='relu')(x)
-    x = tf.keras.layers.Dense(np.prod(config.encoder.output_shape), activation='relu')(x)
-    x = tf.keras.layers.Reshape(config.encoder.output_shape)(x)
+    x = Dense(1024, activation='relu')(x)
+    x = Dense(512, activation='relu')(x)
+    x = Dense(np.prod(config.encoder.output_shape), activation='relu')(x)
+    x = Reshape(config.encoder.output_shape)(x)
 
     return Model(inputs=input_layer, outputs=x, name="mlp_encoder")
 
@@ -198,9 +139,13 @@ def get_decoder(config: BlazeGazeConfig):
     Mirrors the encoder structure and upscales back to (H, W, 3).
     """
 
-    encoded_input = Input(shape=config.encoder.output_shape)  # Adjust based on encoder output shape
+    encoded_input = Input(shape=[config.encoder.embedding_size])  # Adjust based on encoder output shape
 
-    x = decoder_block(encoded_input, 96)         # 8x32 → 8x32
+    # Expand and reshape back to the original encoder feature shape (8x32x96)
+    x = Dense(np.prod(config.decoder.input_shape), activation='relu', name="decoder_dense_expand")(encoded_input)
+    x = Reshape(config.decoder.input_shape, name="decoder_reshape")(x)
+
+    x = decoder_block(x, 96)         # 8x32 → 8x32
     x = decoder_block(x, 96)                     # 8x32 → 8x32
     x = decoder_block(x, 96, stride=2)           # 8x32 → 16x64
     x = decoder_block(x, 96)                     # 16x64 → 16x64
@@ -225,13 +170,7 @@ def get_gaze_model(config):
     # handle the inputs
     cnn_input = Input(shape=config.encoder.output_shape, name="encoder_input")
 
-    # Additional 2D Convolutional Layer before pooling
-    # regularizer = tf.keras.regularizers.l2(1e-4)
-    # conv_layer = Conv2D(64, (3,3), activation='relu', padding='same', kernel_regularizer=regularizer)(cnn_input)
-    # conv_layer = Conv2D(32, (3,3), activation='relu', padding='same', kernel_regularizer=regularizer)(conv_layer)
-
     # Flatten instead of pooling to retain spatial information
-    # flattened_output = Flatten()(conv_layer)
     flattened_output = Flatten(name="flattened_output")(cnn_input)
 
     # Handle optional inputs from config
@@ -252,19 +191,19 @@ def get_gaze_model(config):
         concat = flattened_output
 
     # MLP layers before computing the gaze vector
-    # mlp1 = tf.keras.layers.Dense(128, activation='relu')(concat)
-    # mlp2 = tf.keras.layers.Dense(64, activation='relu')(mlp1)
-    # mlp3 = tf.keras.layers.Dense(32, activation='relu')(mlp2)
-    mlp1 = tf.keras.layers.Dense(16, activation='relu')(concat)
-    mlp2 = tf.keras.layers.Dense(16, activation='relu')(mlp1)
-    # mlp3 = tf.keras.layers.Dense(32, activation='relu')(mlp2)
+    # mlp1 = Dense(128, activation='relu')(concat)
+    # mlp2 = Dense(64, activation='relu')(mlp1)
+    # mlp3 = Dense(32, activation='relu')(mlp2)
+    mlp1 = Dense(16, activation='relu')(concat)
+    mlp2 = Dense(16, activation='relu')(mlp1)
+    # mlp3 = Dense(32, activation='relu')(mlp2)
 
     if config.gaze.output == '2d':
-        output = tf.keras.layers.Dense(2, activation='linear', name="gaze_output")(mlp2)
+        output = Dense(2, activation='linear', name="gaze_output")(mlp2)
     
     elif config.gaze.output == '3d':
-        gaze_vector = tf.keras.layers.Dense(3, activation='linear', name="gaze_output")(mlp2)
-        output = tf.keras.layers.Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name="gaze_output_norm")(gaze_vector)
+        gaze_vector = Dense(3, activation='linear', name="gaze_output")(mlp2)
+        output = Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name="gaze_output_norm")(gaze_vector)
     
     # Build final model
     return Model(inputs=[cnn_input] + additional_inputs, outputs=output, name="gaze_head")
@@ -401,75 +340,83 @@ class BlazeGaze():
 
 if __name__ == "__main__":
 
-    # Test both models
-    config = BlazeGazeConfig(
-        # Mode
-        mode='gaze',
-        # weights_fp='blazegaze_gazecapture.keras',
-        # gaze=GazeConfig(
-        #     inputs=[
-        #         ModalityInput(name='head_vector', input_shape=(3,)),
-        #         ModalityInput(name='face_origin_3d', input_shape=(3,)),
-        #     ],
-        #     output='2d'
-        # )
-    )
-    model = BlazeGaze(config)
-    model.model.summary()
-    model.encoder.summary()
-    model.gaze_model.summary()
+    TESTING = 'autoencoder'
+    print("Testing mode:", TESTING)
 
-    # Wrap in @tf.function
-    # Critical for performance optimization
-    @tf.function
-    def infer_fn(*inputs):
-        return model.model(inputs)
+    if TESTING == 'full_model':
+        # Test both models
+        config = BlazeGazeConfig(
+            # Mode
+            mode='gaze',
+            # weights_fp='blazegaze_gazecapture.keras',
+            # gaze=GazeConfig(
+            #     inputs=[
+            #         ModalityInput(name='head_vector', input_shape=(3,)),
+            #         ModalityInput(name='face_origin_3d', input_shape=(3,)),
+            #     ],
+            #     output='2d'
+            # )
+        )
+        model = BlazeGaze(config)
+        model.model.summary()
+        model.encoder.summary()
+        model.gaze_model.summary()
 
-    inference_model = build_full_inference_model(
-        encoder=model.encoder,
-        gaze_head=model.gaze_model,
-        config=config
-    )
-    inference_model.summary()
+        # Wrap in @tf.function
+        # Critical for performance optimization
+        @tf.function
+        def infer_fn(*inputs):
+            return model.model(inputs)
 
-    for layer in inference_model.layers:
-        print(layer.name, layer.trainable)
+        inference_model = build_full_inference_model(
+            encoder=model.encoder,
+            gaze_head=model.gaze_model,
+            config=config
+        )
+        inference_model.summary()
 
-    # config = BlazeGazeConfig(
-    #     # Mode
-    #     mode='gaze'
-    # )
-    # model = BlazeGaze(config)
-    # model.model.summary()
+        for layer in inference_model.layers:
+            print(layer.name, layer.trainable)
 
-    # Test passing data through the model
-    dummy_inputs = [
-        tf.random.uniform((1, *config.encoder.input_shape))
-    ] + [
-        tf.random.uniform((1, *inp.input_shape)) for inp in config.gaze.inputs
-    ]
-    dummy_outputs = model.model(dummy_inputs)
-    print("Dummy outputs shape:", [out.shape for out in dummy_outputs])
-
-    # Warm-up
-    infer_fn(*dummy_inputs)
-
-    # Now run for N=100 and determine the time taken
-    import time
-    import tqdm
-    N = 1000
-    run_times = []
-    for i in tqdm.tqdm(range(N), total=N):
+        # Test passing data through the model
         dummy_inputs = [
             tf.random.uniform((1, *config.encoder.input_shape))
         ] + [
             tf.random.uniform((1, *inp.input_shape)) for inp in config.gaze.inputs
         ]
-        start_time = time.time()
-        # dummy_outputs = model.model(dummy_inputs)
-        _ = infer_fn(*dummy_inputs)
-        end_time = time.time()
-        run_times.append(end_time - start_time)
+        dummy_outputs = model.model(dummy_inputs)
+        print("Dummy outputs shape:", [out.shape for out in dummy_outputs])
 
-    print("Average time taken for inference:", np.mean(run_times))
-    print("FPS:", 1 / np.mean(run_times))
+        # Warm-up
+        infer_fn(*dummy_inputs)
+
+        # Now run for N=100 and determine the time taken
+        import time
+        import tqdm
+        N = 1000
+        run_times = []
+        for i in tqdm.tqdm(range(N), total=N):
+            dummy_inputs = [
+                tf.random.uniform((1, *config.encoder.input_shape))
+            ] + [
+                tf.random.uniform((1, *inp.input_shape)) for inp in config.gaze.inputs
+            ]
+            start_time = time.time()
+            # dummy_outputs = model.model(dummy_inputs)
+            _ = infer_fn(*dummy_inputs)
+            end_time = time.time()
+            run_times.append(end_time - start_time)
+
+        print("Average time taken for inference:", np.mean(run_times))
+        print("FPS:", 1 / np.mean(run_times))
+
+    elif TESTING == 'autoencoder':
+        # Test both models
+        config = BlazeGazeConfig(
+            # Mode
+            mode='autoencoder',
+        )
+        model = BlazeGaze(config)
+        model.model.summary()
+        model.encoder.summary()
+        model.decoder.summary()

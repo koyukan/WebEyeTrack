@@ -87,7 +87,12 @@ def participant_generator(file, pid, config):
         with h5py.File(file, 'r') as hf:
             group = hf[str(pid)]
             total = group["pixels"].shape[0]
-            max_samples = config['dataset']['gazecapture']['max_per_participant']
+
+            try:
+                max_samples = config['dataset']['gazecapture']['max_per_participant']
+            except KeyError:
+                max_samples = None
+            
             limit = min(max_samples, total) if max_samples else total
             for i in range(limit):
                 image = group["pixels"][i].astype(np.float32) / 255.0
@@ -109,12 +114,12 @@ def load_total_dataset(
 
     if config['model']['mode'] == 'autoencoder':
         output_signature = (
-            tf.TensorSpec(shape=config['model']['input_shape'], dtype=tf.float32),
-            tf.TensorSpec(shape=config['model']['input_shape'], dtype=tf.float32),
+            tf.TensorSpec(shape=config['model']['encoder']['input_shape'], dtype=tf.float32),
+            tf.TensorSpec(shape=config['model']['encoder']['input_shape'], dtype=tf.float32),
         )
     elif config['model']['mode'] == 'gaze':
         output_signature = (
-            tf.TensorSpec(shape=config['model']['input_shape'], dtype=tf.float32),
+            tf.TensorSpec(shape=config['model']['encoder']['input_shape'], dtype=tf.float32),
             tf.TensorSpec(shape=(2,), dtype=tf.float32),
         )
     else:
@@ -142,7 +147,11 @@ def load_total_dataset(
 
     # with h5py.File(hdf5_path, 'r') as hf:
     #     total = sum(hf[str(p)]["pixels"].shape[0] for p in participants)
-    mpp = config['dataset']['gazecapture']['max_per_participant']
+    try:
+        mpp = config['dataset']['gazecapture']['max_per_participant']
+    except KeyError:
+        mpp = None
+
     with h5py.File(hdf5_path, 'r') as hf:
         total = sum(min(mpp, hf[str(p)]["pixels"].shape[0])
                     if mpp else hf[str(p)]["pixels"].shape[0]
