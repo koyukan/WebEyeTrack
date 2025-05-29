@@ -12,27 +12,16 @@ import cattrs
 import yaml
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, LearningRateScheduler
-from tensorflow.keras.optimizers import Adam
-import matplotlib.pyplot as plt
-import matplotlib
-matplotlib.use('TkAgg')
 
 from webeyetrack.constants import GIT_ROOT
 from webeyetrack.blazegaze import BlazeGaze, BlazeGazeConfig
 import webeyetrack.vis as vis
-from webeyetrack.tf_utils import (
-    angular_loss, 
-    angular_distance, 
-    parse_tfrecord_fn, 
-    GazeVisualizationCallback,
-    ImageVisCallback, 
-    EncoderDecoderCheckpoint
-)
 from data import load_total_dataset, load_datasets, get_dataset_metadata
 from utils import (
     mae_cm_loss,
-    l2_loss
+    l2_loss,
+    compute_batch_ssim,
+    embedding_consistency_loss
 )
 
 CWD = pathlib.Path(__file__).parent
@@ -41,6 +30,10 @@ GENERATED_DATASET_DIR = GIT_ROOT / 'data' / 'generated'
 
 # Constants
 IMG_SIZE = 128
+
+RECONT_COEF = 1
+CONSISTENCY_COEF = 0.1
+GAZE_COEF = 1
 
 def train(config):
 
@@ -79,73 +72,6 @@ def train(config):
     # Load model
     model_config = cattrs.structure(config['model'], BlazeGazeConfig)
     model = BlazeGaze(model_config)
-    # model.model.compile(
-    #     optimizer=Adam(learning_rate=lr_schedule),
-    #     loss=config['loss']['functions'],
-    #     metrics=config['loss']['metrics']
-    # )
-
-    # Callbacks
-    callbacks = []
-    for callback_name in config['callbacks']:
-        if callback_name == 'TensorBoard':
-            callback = TensorBoard(
-                log_dir=RUN_DIR,
-                update_freq='epoch', 
-                # histogram_freq=1, 
-                # profile_batch='5,10'
-            )
-            callbacks.append(callback)
-
-        elif callback_name == 'EncoderDecoderCheckpoint':
-            callback = EncoderDecoderCheckpoint(
-                encoder=model.encoder,
-                decoder=model.decoder,
-                checkpoint_dir=RUN_DIR,
-                monitor='val_loss',  # or 'val_epoch_angular_distance'
-                mode='min'
-            )
-            callbacks.append(callback)
-            
-        elif callback_name == 'GazeVisualizationCallback':
-            train_vis_dataset = train_dataset.take(1)
-            valid_vis_dataset = val_dataset.take(1)
-            train_callback = GazeVisualizationCallback(
-                dataset=train_vis_dataset,
-                log_dir=RUN_DIR,
-                img_size=IMG_SIZE,
-                name='Gaze (Training)'
-            )
-            callbacks.append(train_callback)
-            valid_callback = GazeVisualizationCallback(
-                dataset=valid_vis_dataset,
-                log_dir=RUN_DIR,
-                img_size=IMG_SIZE,
-                name='Gaze (Validation)'
-            )
-            callbacks.append(valid_callback)
-
-        elif callback_name == 'ImageVisCallback':
-            train_vis_dataset = train_dataset.take(1)
-            valid_vis_dataset = val_dataset.take(1)
-            train_callback = ImageVisCallback(
-                dataset=train_vis_dataset,
-                log_dir=RUN_DIR,
-                img_size=IMG_SIZE,
-                name='Image (Training)'
-            )
-            callbacks.append(train_callback)
-            valid_callback = ImageVisCallback(
-                dataset=valid_vis_dataset,
-                log_dir=RUN_DIR,
-                img_size=IMG_SIZE,
-                name='Image (Validation)'
-            )
-            callbacks.append(valid_callback)
-        else:
-            raise ValueError(f"Invalid callback name: {callback_name}")
-
-    print(f"Callbacks: {callbacks}")
 
     steps_per_epoch = train_dataset_size // config['training']['batch_size']
     validation_steps = val_dataset_size // config['training']['batch_size']
@@ -159,6 +85,8 @@ def train(config):
 
     for epoch in tqdm(range(config['training']['epochs']), desc="Training Epochs"):
         losses = defaultdict(list)
+        metrics = defaultdict(list)
+        embeddings_to_pog = defaultdict(list)
 
         progress_bar = tqdm(total=steps_per_epoch, desc=f"Epoch {epoch + 1}/{config['training']['epochs']}", leave=False)
         progress_bar.set_postfix({"loss": "N/A"})
@@ -176,11 +104,32 @@ def train(config):
                 preds = model.model(input_list, training=True) # encoder embedding, gaze preds, and decoder output
                 gaze_loss = l2_loss(preds[1], sample['pog_norm'])
                 decoder_loss = tf.reduce_mean(tf.square(preds[2] - sample['image']))
-                total_loss = gaze_loss + decoder_loss
+                consistency_loss = embedding_consistency_loss(
+                    preds[0],
+                    sample['pog_norm'],
+                )
+                total_loss = GAZE_COEF * gaze_loss + RECONT_COEF * decoder_loss + CONSISTENCY_COEF * consistency_loss
                 
-                losses['gaze_loss'].append(gaze_loss.numpy())
-                losses['decoder_loss'].append(decoder_loss.numpy())
+                losses['gaze_l2_loss'].append(gaze_loss.numpy())
+                losses['decoder_l1_loss'].append(decoder_loss.numpy())
+                losses['embedding_consistency_loss'].append(consistency_loss.numpy())
                 losses['loss'].append(total_loss.numpy())
+
+                # Compute metrics
+                metrics['ssim'].append(
+                    compute_batch_ssim(sample['image'], preds[2])
+                )
+                metrics['gaze_cm_mae'].append(
+                    mae_cm_loss(
+                        sample['pog_norm'],
+                        preds[1],
+                        sample['screen_info']
+                    )
+                )
+
+                # Store the embeddings and their corresponding PoG labels for visualization
+                embeddings_to_pog['embeddings'].append(preds[0].numpy())
+                embeddings_to_pog['pog_labels'].append(sample['pog_norm'].numpy())
 
             # Compute gradients and update model weights
             gradients = tape.gradient(total_loss, model.model.trainable_variables)
@@ -195,6 +144,8 @@ def train(config):
         if tb_writer:
             # Scalars
             for key, value in losses.items():
+                tf.summary.scalar(f'train/{key}', np.mean(value), step=epoch)
+            for key, value in metrics.items():
                 tf.summary.scalar(f'train/{key}', np.mean(value), step=epoch)
 
             # Images (reconstruction and gaze predictions)
@@ -214,6 +165,19 @@ def train(config):
             # Convert Matplotlib figure to image tensor
             gaze_predictions_image = vis.matplotlib_to_image(gaze_predictions_fig)
             tf.summary.image('train/gaze_predictions', np.expand_dims(gaze_predictions_image, axis=0), step=epoch)
+
+            # Convert the embeddings and PoG labels to numpy arrays
+            embeddings_np = np.concatenate(embeddings_to_pog['embeddings'], axis=0)
+            pog_labels_np = np.concatenate(embeddings_to_pog['pog_labels'], axis=0)
+            print(f"Embeddings shape: {embeddings_np.shape}, PoG labels shape: {pog_labels_np.shape}")
+
+            # Check the quality of the embeddings
+            tsne_embeddings_fig = vis.plot_tsne_colored_by_pog(
+                embeddings_np,
+                pog_labels_np
+            )
+            tsne_embeddings_image = vis.matplotlib_to_image(tsne_embeddings_fig)
+            tf.summary.image('train/tsne_embeddings', np.expand_dims(tsne_embeddings_image, axis=0), step=epoch)
 
             # Flush the writer
             tb_writer.flush()

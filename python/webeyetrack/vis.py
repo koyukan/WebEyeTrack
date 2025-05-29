@@ -2,6 +2,8 @@ from typing import Optional
 
 import cv2
 import numpy as np
+import matplotlib
+matplotlib.use('TkAgg') 
 from matplotlib import pyplot as plt
 from matplotlib.colors import Normalize
 import math
@@ -9,6 +11,7 @@ import imutils
 import mediapipe as mp
 from mediapipe import solutions
 from mediapipe.framework.formats import landmark_pb2
+from sklearn.manifold import TSNE
 
 from .data_protocols import GazeResult, EyeResult
 from .model_based import vector_to_pitch_yaw, rotation_matrix_to_euler_angles
@@ -35,6 +38,42 @@ def matplotlib_to_image(fig):
 #####################################################################################################
 # POG
 ######################################################################################################
+
+def plot_tsne_colored_by_pog(embeddings: np.ndarray, pogs: np.ndarray, perplexity=30):
+    """
+    Plots t-SNE of `embeddings` (B x D), coloring points by `pogs` (B x 2).
+    Red encodes X, Blue encodes Y — both normalized to [0, 1].
+
+    Args:
+        embeddings (np.ndarray): shape (B, D)
+        pogs (np.ndarray): shape (B, 2), values in [-0.5, 0.5]
+    """
+    assert embeddings.shape[0] == pogs.shape[0], "Mismatch in batch size."
+
+    # Normalize PoG to [0, 1]
+    norm_pogs = (pogs + 0.5).clip(0, 1)
+
+    # Apply t-SNE
+    print("Running t-SNE...")
+    tsne = TSNE(n_components=2, perplexity=perplexity, learning_rate='auto', init='pca', random_state=42)
+    reduced = tsne.fit_transform(embeddings)
+
+    # Define RGB colors from normalized PoG
+    colors = np.zeros((len(norm_pogs), 3))
+    colors[:, 0] = norm_pogs[:, 0]  # Red from X
+    colors[:, 2] = norm_pogs[:, 1]  # Blue from Y
+
+    # Plot
+    fig = plt.figure(figsize=(8, 6))
+    plt.scatter(reduced[:, 0], reduced[:, 1], c=colors, s=10)
+    plt.title("t-SNE of Embeddings Colored by Normalized PoG")
+    plt.xlabel("t-SNE Dim 1")
+    plt.ylabel("t-SNE Dim 2")
+    plt.grid(True)
+    plt.tight_layout()
+    # plt.show()
+
+    return fig
 
 def plot_2d_dist(x_vals, y_vals, title):
     # 2D histogram
@@ -603,3 +642,17 @@ def render_pog_with_screen(
     # Concatenate the images
     total_img = np.hstack((render_img, screen_img))
     return total_img
+
+if __name__ == "__main__":
+    
+    # For testing purposes
+    # Simulate random data
+    np.random.seed(42)
+    num_points = 300
+    embedding_dim = 64
+    embeddings = np.random.randn(num_points, embedding_dim)
+    norm_pog = np.random.rand(num_points, 2) - 0.5  # [-0.5, 0.5]
+
+    # Plot t-SNE colored by PoG
+    fig = plot_tsne_colored_by_pog(embeddings, norm_pog)
+    plt.show()

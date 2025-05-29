@@ -47,8 +47,3 @@ model:
       - name: 'face_origin_3d'
         input_shape: [3]
     output: '2d'
-
-# Configuration for the loss function.
-loss:
-  functions: 'mse'
-  metrics: 'mae'

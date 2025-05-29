@@ -108,8 +108,11 @@ def get_cnn_encoder(config: BlazeGazeConfig):
     z = BatchNormalization()(z)
 
     # Add bottleneck head
-    pooled = GlobalAveragePooling2D()(double_6)  # Shape: (None, 96)
-    latent = Dense(config.encoder.embedding_size, activation='relu', name='embedding')(pooled)  # e.g., 64
+    # pooled = GlobalAveragePooling2D()(double_6)  # Shape: (None, 96)
+    # latent = Dense(config.encoder.embedding_size, activation='relu', name='embedding')(pooled)  # e.g., 64
+
+    # Instead of CNN, flattent the spatial tensor
+    latent = Flatten(name="embedding")(z)
 
     return Model(inputs=x, outputs=latent, name="cnn_encoder")
 
@@ -127,12 +130,13 @@ def get_decoder(config: BlazeGazeConfig):
     """
     Gradual decoder: expands latent vector → spatial tensor, then upscales to (128, 512, 3).
     """
-
+    flat_dim = 1 * 4 * 16  # Must match encoder final tensor shape
     encoded_input = Input(shape=(config.encoder.embedding_size,), name='latent_vector')
 
     # Start from (1, 4, 64)
-    x = Dense(1 * 4 * 64, activation='relu', name='decoder_dense_expand')(encoded_input)
-    x = Reshape((1, 4, 64), name='decoder_reshape_initial')(x)
+    # x = Dense(1 * 4 * 64, activation='relu', name='decoder_dense_expand')(encoded_input)
+    # x = Reshape((1, 4, 64), name='decoder_reshape_initial')(x)
+    x = Reshape((1, 4, 16), name="decoder_reshape_initial")(encoded_input)
 
     # Gradual upsampling: 7 steps to reach 128 x 512
     x = decoder_block(x, 64, stride=2)  # → (2, 8)
