@@ -31,7 +31,7 @@ GENERATED_DATASET_DIR = GIT_ROOT / 'data' / 'generated'
 # Constants
 IMG_SIZE = 128
 
-RECONT_COEF = 2
+RECONT_COEF = 5
 CONSISTENCY_COEF = 0.1
 GAZE_COEF = 1
 
@@ -162,6 +162,10 @@ def train(config):
     # DEBUG: Get a single sample to check the data pipeline
     # sample = next(train_dataset_iter)
 
+    # Keep track of the best validation loss and save the model
+    best_val_loss = float('inf')
+    best_model_path = RUN_DIR / 'best_model.h5'
+
     for epoch in tqdm(range(config['training']['epochs']), desc="Training Epochs"):
         
         train_losses, train_metrics, train_embs, train_sample, train_preds = run_epoch(
@@ -210,6 +214,12 @@ def train(config):
 
             # Flush the writer
             tb_writer.flush()
+
+        # Check if the validation loss improved
+        if np.mean(val_losses['loss']) < best_val_loss:
+            best_val_loss = np.mean(val_losses['loss'])
+            model.model.save_weights(best_model_path)
+            print(f"New best model saved at epoch {epoch + 1} with validation loss: {best_val_loss:.4f}")
 
         print(f"Epoch {epoch + 1}/{config['training']['epochs']}, Val Loss: {np.mean(val_losses['loss'])}, Train Loss: {np.mean(train_losses['loss'])}")
 
