@@ -31,15 +31,16 @@ GENERATED_DATASET_DIR = GIT_ROOT / 'data' / 'generated'
 # Constants
 IMG_SIZE = 128
 
-RECONT_COEF = 5
-CONSISTENCY_COEF = 0.1
-GAZE_COEF = 1
-
-def run_epoch(name, dataset_iter, steps_per_epoch, model, model_config, optimizer=None, training=False):
+def run_epoch(name, dataset_iter, steps_per_epoch, model, model_config, config, optimizer=None, training=False):
     losses = defaultdict(list)
     metrics = defaultdict(list)
     embeddings_to_pog = defaultdict(list)
     progress_bar = tqdm(total=steps_per_epoch, desc=f"Running {name} dataset.", leave=False)
+
+    # Extract the coefficients from the model config
+    GAZE_COEF = config['training']['losses']['GAZE_COEF']
+    RECONT_COEF = config['training']['losses']['RECONT_COEF']
+    CONSISTENCY_COEF = config['training']['losses']['CONSISTENCY_COEF']
 
     for step in range(steps_per_epoch):
         sample = next(dataset_iter)
@@ -164,7 +165,7 @@ def train(config):
 
     # Keep track of the best validation loss and save the model
     best_val_loss = float('inf')
-    best_model_path = RUN_DIR / 'best_model.h5'
+    best_model_path = RUN_DIR / 'best_model.keras'
 
     for epoch in tqdm(range(config['training']['epochs']), desc="Training Epochs"):
         
@@ -175,7 +176,8 @@ def train(config):
             model=model,
             model_config=model_config,
             optimizer=optimizer,
-            training=True
+            training=True,
+            config=config
         )
 
         val_losses, val_metrics, val_embs, val_sample, val_preds = run_epoch(
@@ -185,7 +187,8 @@ def train(config):
             model=model,
             model_config=model_config,
             optimizer=optimizer,
-            training=False
+            training=False,
+            config=config
         )
 
         # Log average loss for the epoch to tensorboard
@@ -218,7 +221,7 @@ def train(config):
         # Check if the validation loss improved
         if np.mean(val_losses['loss']) < best_val_loss:
             best_val_loss = np.mean(val_losses['loss'])
-            model.model.save_weights(best_model_path)
+            model.model.save(best_model_path)
             print(f"New best model saved at epoch {epoch + 1} with validation loss: {best_val_loss:.4f}")
 
         print(f"Epoch {epoch + 1}/{config['training']['epochs']}, Val Loss: {np.mean(val_losses['loss'])}, Train Loss: {np.mean(train_losses['loss'])}")

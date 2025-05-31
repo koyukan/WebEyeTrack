@@ -27,6 +27,11 @@ training:
   num_outer_steps: 1000
   num_inner_steps: 5
 
+  losses:
+    RECONT_COEF: 5.0
+    CONSISTENCY_COEF: 0
+    GAZE_COEF: 1
+
 # Configuration for the model.
 model:
   mode: 'autoencoder'

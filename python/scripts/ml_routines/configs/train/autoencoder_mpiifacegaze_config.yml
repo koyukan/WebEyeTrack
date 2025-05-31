@@ -4,12 +4,16 @@ config:
 
 # Configuration file for the GazeCapture dataset.
 dataset:
-  name: 'GazeCapture'
+  name: 'MPIIFaceGaze'
+  shuffle_buffer: 500
   seed: 42
-  train_val_test_split: [0.8, 0.1]
-  gazecapture:
-    num_of_ids: 1000 # -1 means all ids
-    max_per_participant: 25 # 32
+
+  train_ids: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  val_ids: [10, 11, 12]
+  test_ids: [13, 14]
+  # train_ids: [0]
+  # val_ids: [0]
+  # test_ids: [0]
 
 # Configuration for the optimizer.
 optimizer:
@@ -18,14 +22,15 @@ optimizer:
 
 # Training configuration.
 training:
-  batch_size: 8
   epochs: 20
-  num_of_workers: 4
+  batch_size: 8
+  num_outer_steps: 1000
+  num_inner_steps: 5
 
   losses:
-    RECONT_COEF: 5.0
+    RECONT_COEF: 1.0
     CONSISTENCY_COEF: 0
-    GAZE_COEF: 1
+    GAZE_COEF: 0
 
 # Configuration for the model.
 model:
@@ -43,8 +48,6 @@ model:
   # Gaze Estimation configuration.
   gaze:
     inputs:
-      - name: 'cnn_output'
-        input_shape: [64]
       - name: 'head_vector'
         input_shape: [3]
       - name: 'face_origin_3d'
