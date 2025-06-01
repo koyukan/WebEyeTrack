@@ -35,7 +35,7 @@ class ModalityInput:
 @dataclass
 class EncoderConfig:
     input_shape: tuple = (128, 512, 3)
-    embedding_size: int = 64
+    embedding_size: int = 512
 
 @dataclass
 class DecoderConfig:
@@ -104,8 +104,8 @@ def get_cnn_encoder(config: BlazeGazeConfig):
     z = BatchNormalization()(z)
     z = Conv2D(32, (3, 3), strides=2, padding="same", activation='relu')(z)         # → (2, 8, 32)
     z = BatchNormalization()(z)
-    z = Conv2D(16, (3, 3), strides=2, padding="same", activation='relu')(z)         # → (1, 4, 16)
-    z = BatchNormalization()(z)
+    # z = Conv2D(64, (3, 3), strides=2, padding="same", activation='relu')(z)         # → (1, 4, 64)
+    # z = BatchNormalization()(z)
 
     # Add bottleneck head
     # pooled = GlobalAveragePooling2D()(double_6)  # Shape: (None, 96)
@@ -136,16 +136,32 @@ def get_decoder(config: BlazeGazeConfig):
     # Start from (1, 4, 64)
     # x = Dense(1 * 4 * 64, activation='relu', name='decoder_dense_expand')(encoded_input)
     # x = Reshape((1, 4, 64), name='decoder_reshape_initial')(x)
-    x = Reshape((1, 4, 16), name="decoder_reshape_initial")(encoded_input)
+    # x = Reshape((1, 4, 64), name="decoder_reshape_initial")(encoded_input)
+    x = Reshape((2, 8, 32), name="decoder_reshape_initial")(encoded_input)
 
     # Gradual upsampling: 7 steps to reach 128 x 512
-    x = decoder_block(x, 64, stride=2)  # → (2, 8)
-    x = decoder_block(x, 64, stride=2)  # → (4, 16)
-    x = decoder_block(x, 96, stride=2)  # → (8, 32)
-    x = decoder_block(x, 96, stride=2)  # → (16, 64)
-    x = decoder_block(x, 96, stride=2)  # → (32, 128)
-    x = decoder_block(x, 48, stride=2)  # → (64, 256)
-    x = decoder_block(x, 24, stride=2)  # → (128, 512)
+    # Input (1x4x64)
+    # x = decoder_block(x, 64, stride=2)  # → (2, 8)
+    # x = decoder_block(x, 64, stride=2)  # → (4, 16)
+    # x = decoder_block(x, 96, stride=2)  # → (8, 32)
+    # x = decoder_block(x, 96, stride=2)  # → (16, 64)
+    # x = decoder_block(x, 96, stride=2)  # → (32, 128)
+    # x = decoder_block(x, 48, stride=2)  # → (64, 256)
+    # x = decoder_block(x, 24, stride=2)  # → (128, 512)
+
+    # Input (2x8x32)
+    x = decoder_block(x, 96)            # 2x8 -> 2x8
+    x = decoder_block(x, 96, stride=2)  # 2x8 -> 4x16
+    x = decoder_block(x, 96)            # 4x16 -> 4x16
+    x = decoder_block(x, 96, stride=2)  # 4x16 -> 8x32
+    x = decoder_block(x, 48)            # 8x32 -> 8x32
+    x = decoder_block(x, 48, stride=2)  # 8x32 -> 16x64
+    x = decoder_block(x, 48)            # 16x64 -> 16x64
+    x = decoder_block(x, 48, stride=2)  # 16x64 -> 32x128
+    x = decoder_block(x, 24)            # 32x128 -> 32x128
+    x = decoder_block(x, 24, stride=2)  # 32x128 -> 64x256
+    x = decoder_block(x, 24)            # 64x256 -> 64x256
+    x = decoder_block(x, 24, stride=2)  # 64x256 -> 128x512
 
     # Final RGB output
     output = Conv2D(3, (3, 3), padding="same", activation="sigmoid", name='decoder_output')(x)
@@ -248,7 +264,7 @@ class BlazeGaze():
 
         # Perform checks
         if self.decoder:
-            assert self.encoder.input_shape == self.decoder.output_shape, "Encoder input shape must match decoder output shape."
+            assert self.encoder.input_shape == self.decoder.output_shape, f"Encoder input shape {self.encoder.input_shape} must match decoder output shape {self.decoder.output_shape}."
         
     def load_assembled_model(self):
         
@@ -320,7 +336,7 @@ class BlazeGaze():
 
 if __name__ == "__main__":
 
-    TESTING = 'autoencoder'
+    TESTING = 'maml'
     print("Testing mode:", TESTING)
 
     if TESTING == 'maml':
@@ -339,8 +355,8 @@ if __name__ == "__main__":
         )
         model = BlazeGaze(config)
         model.model.summary()
-        model.encoder.summary()
-        model.gaze_mlp.summary()
+        # model.encoder.summary()
+        # model.gaze_mlp.summary()
 
         # Wrap in @tf.function
         # Critical for performance optimization
