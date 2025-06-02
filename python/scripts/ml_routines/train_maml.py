@@ -381,22 +381,13 @@ def train(config):
     with open(RUN_DIR / 'config.yaml', 'w') as f:
         yaml.dump(config, f)
 
-    # Modify the encoder_weights_fp
-    if config['model']['encoder']['weights_fp'] is not None:
-        dir = SAVED_MODELS_DIR / config['model']['encoder']['weights_fp']
-
-        # Find the .h5 file that starts with 'encoder'
-        encoder_weights_fp = None
-        for file in dir.glob('*.h5'):
-            if file.name.startswith('encoder'):
-                encoder_weights_fp = file
-                break
-        if encoder_weights_fp is None:
-            raise ValueError(f"No encoder weights file found in {dir}")
-        config['model']['encoder']['weights_fp'] = encoder_weights_fp
-        print(f"Encoder weights path: {config['model']['encoder']['weights_fp']}")
+    # Modify the weights_fp
+    if config['model']['weights_fp'] is not None:
+        dir = SAVED_MODELS_DIR / config['model']['weights_fp']
+        model_path = dir / 'best_model.keras'
+        config['model']['weights_fp'] = model_path
     else:
-        print("No encoder weights path provided, using default.")
+        print("WARNING: No model weights path provided, using default.")
 
     # Create tensorboard writer
     tb_writer = tf.summary.create_file_writer(str(RUN_DIR))
@@ -467,9 +458,9 @@ if __name__ == "__main__":
     with open(args.config, 'r') as f:
         config = yaml.safe_load(f)
 
-    # Only config that is for 'gaze' type is allowed
-    if config['config']['type'] != 'gaze':
-        raise ValueError("Only 'gaze' type configuration is allowed.")
+    # Only config that is for 'maml' type is allowed
+    if config['config']['type'] != 'maml':
+        raise ValueError("Only 'maml' type configuration is allowed.")
 
     # Print the configuration
     print("\n")

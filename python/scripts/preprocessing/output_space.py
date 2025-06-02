@@ -98,7 +98,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.dataset == 'GazeCapture':
-        with open(CWD.parent / 'ml_routines' / 'configs' / 'train' / 'gaze_gazecapture_config.yml', 'r') as f:
+        with open(CWD.parent / 'ml_routines' / 'configs' / 'train' / 'maml_gazecapture_config.yml', 'r') as f:
             config = yaml.safe_load(f)
         with open(CWD.parent / 'GazeCapture_participant_ids.json', 'r') as f:
             GAZE_CAPTURE_IDS = json.load(f)

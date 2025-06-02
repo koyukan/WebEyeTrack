@@ -24,6 +24,11 @@ from utils import (
     embedding_consistency_loss
 )
 
+# Set the GPU memory growth to allow multiple processes to use the GPU without running out of memory
+gpus = tf.config.experimental.list_physical_devices('GPU')
+for gpu in gpus:
+  tf.config.experimental.set_memory_growth(gpu, True)
+
 CWD = pathlib.Path(__file__).parent
 FILE_DIR = pathlib.Path(__file__).parent
 GENERATED_DATASET_DIR = GIT_ROOT / 'data' / 'generated'
@@ -114,12 +119,12 @@ def tensorboard_log(name, losses, metrics, embeddings_to_pog, sample, preds, ste
     tsne_embeddings_image = vis.matplotlib_to_image(tsne_embeddings_fig)
     tf.summary.image(f'{name}/tsne_embeddings', np.expand_dims(tsne_embeddings_image, axis=0), step=step)
 
-def train(config):
+def train(args, config):
 
     LOG_PATH = FILE_DIR / 'logs'
     os.makedirs(LOG_PATH, exist_ok=True)
     TIMESTAMP = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    RUN_DIR = LOG_PATH / TIMESTAMP
+    RUN_DIR = LOG_PATH / f"{TIMESTAMP}_{args.exp}"
     os.makedirs(RUN_DIR, exist_ok=True)
 
     with open(RUN_DIR / 'config.yaml', 'w') as f:
@@ -230,6 +235,7 @@ if __name__ == "__main__":
     # Add arguments to specify the configuration file
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True, type=str, help="Path to the configuration file")
+    parser.add_argument("--exp", type=str, required=True, help="Experiment name for logging purposes")
     args = parser.parse_args()
 
     # Load the configuration file (YAML)
@@ -256,4 +262,4 @@ if __name__ == "__main__":
     # Start training
     print("Training...")
     
-    train(config)
+    train(args, config)

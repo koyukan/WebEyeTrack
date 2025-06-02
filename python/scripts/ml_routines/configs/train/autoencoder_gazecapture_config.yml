@@ -5,7 +5,9 @@ config:
 # Configuration file for the GazeCapture dataset.
 dataset:
   name: 'GazeCapture'
+  shuffle_buffer: 500
   seed: 42
+
   train_val_test_split: [0.8, 0.1]
   gazecapture:
     num_of_ids: 1000 # -1 means all ids
@@ -18,14 +20,13 @@ optimizer:
 
 # Training configuration.
 training:
+  epochs: 30
   batch_size: 8
-  epochs: 20
-  num_of_workers: 4
 
   losses:
-    RECONT_COEF: 5.0
-    CONSISTENCY_COEF: 0
-    GAZE_COEF: 1
+    RECONT_COEF: 1.0
+    CONSISTENCY_COEF: 0.2
+    GAZE_COEF: 1.0
 
 # Configuration for the model.
 model:
@@ -35,7 +36,7 @@ model:
   # Encoder configuration.
   encoder:
     input_shape: [128,512,3]
-    embedding_size: 64
+    embedding_size: 512
 
   decoder:
     input_shape: [8, 32, 96]
@@ -43,8 +44,6 @@ model:
   # Gaze Estimation configuration.
   gaze:
     inputs:
-      - name: 'cnn_output'
-        input_shape: [64]
       - name: 'head_vector'
         input_shape: [3]
       - name: 'face_origin_3d'

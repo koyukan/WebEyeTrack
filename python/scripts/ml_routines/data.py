@@ -62,6 +62,23 @@ def get_dataset_metadata(config):
 
     return h5_file, train_ids, val_ids, test_ids
 
+def augment_sample(sample):
+    image = sample["image"]
+
+    # Random brightness
+    image = tf.image.random_brightness(image, max_delta=0.1)
+
+    # Random contrast
+    image = tf.image.random_contrast(image, lower=0.9, upper=1.1)
+
+    # Add Gaussian noise
+    noise = tf.random.normal(shape=tf.shape(image), mean=0.0, stddev=0.05)
+    image = image + noise
+    image = tf.clip_by_value(image, 0.0, 1.0)
+
+    sample["image"] = image
+    return sample
+
 # ------------------------------------------------------------------------------------------------
 # Train/Validation/Test dataset loading
 # ------------------------------------------------------------------------------------------------
@@ -70,7 +87,7 @@ def load_datasets(h5_file, train_ids, val_ids, test_ids, config):
     
     # Prepare datasets
     print(f"Loading datasets from {h5_file}")
-    train_dataset, train_dataset_size = load_total_dataset(h5_file, participants=train_ids, config=config)
+    train_dataset, train_dataset_size = load_total_dataset(h5_file, participants=train_ids, config=config, augment=True)
     val_dataset, val_dataset_size = load_total_dataset(h5_file, participants=val_ids, config=config)
     test_dataset, test_dataset_size = load_total_dataset(h5_file, participants=test_ids, config=config)
     print(f"Train dataset size: {train_dataset_size}, Validation dataset size: {val_dataset_size}, Test dataset size: {test_dataset_size}")
@@ -111,7 +128,8 @@ def participant_generator(file, pid, config):
 def load_total_dataset(
         hdf5_path, 
         participants, 
-        config
+        config,
+        augment=False,
     ):
 
     assert config['config']['type'] == 'autoencoder', "Only 'autoencoder' type configuration is allowed."
@@ -133,6 +151,9 @@ def load_total_dataset(
     ]
 
     ds = tf.data.Dataset.sample_from_datasets(datasets, weights=None, seed=config['dataset']['seed'])  # Uniform sampling
+
+    if augment:
+        ds = ds.map(augment_sample, num_parallel_calls=tf.data.AUTOTUNE)
 
     # ds = ds.shuffle(100).batch(batch_size).prefetch(tf.data.AUTOTUNE)
     ds = ds.shuffle(config['dataset']['shuffle_buffer']) \

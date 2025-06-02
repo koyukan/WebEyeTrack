@@ -309,18 +309,26 @@ class BlazeGaze():
         else:
             self.decoder = None
 
+        # Create input for the image
+        image_input = Input(shape=self.config.encoder.input_shape, name='image')
+
         # Create Keras Input layers for extra gaze inputs
         additional_inputs = []
         for input_cfg in self.config.gaze.inputs:
             input_tensor = Input(shape=input_cfg.input_shape, name=input_cfg.name)
             additional_inputs.append(input_tensor)
 
+        # Combine all inputs into a list
+        model_inputs = [image_input] + additional_inputs
+
+        # Propagate the image input through the encoder
+        encoder_output = self.encoder(image_input)
+
         # The gaze model takes [encoder_output] + additional_inputs
-        model_inputs = [self.encoder.input] + additional_inputs
-        gaze_outputs = self.gaze_mlp([self.encoder.output] + additional_inputs)
+        gaze_outputs = self.gaze_mlp([encoder_output] + additional_inputs)
 
         # Construct the full model outputs (encoder, gaze, and optionally decoder)
-        model_outputs = [self.encoder.output, gaze_outputs] + ([self.decoder(self.encoder.output)] if self.decoder else [])
+        model_outputs = [encoder_output, gaze_outputs] + ([self.decoder(encoder_output)] if self.decoder else [])
         self.model = Model(inputs=model_inputs, outputs=model_outputs, name="blazegaze_gaze")
 
         dummy_inputs = [tf.random.uniform((1, *self.config.encoder.input_shape))] + [
@@ -414,6 +422,6 @@ if __name__ == "__main__":
         )
         model = BlazeGaze(config)
         model.model.summary()
-        model.encoder.summary()
-        model.decoder.summary()
-        model.gaze_mlp.summary()
+        # model.encoder.summary()
+        # model.decoder.summary()
+        # model.gaze_mlp.summary()

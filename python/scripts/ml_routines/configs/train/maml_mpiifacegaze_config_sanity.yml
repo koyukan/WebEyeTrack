@@ -28,22 +28,20 @@ training:
 # Configuration for the model.
 model:
   mode: 'maml'
-  weights_fp: null
+  weights_fp: "2025-06-01-21-26-25_mpiifacegaze_full_run_autoencoder"
   
   # Encoder configuration.
   encoder:
-    weights_fp: 'autoencoder_2025-03-29-12-30-25'
     input_shape: [128,512,3]
-    input_name: 'pixels'
     embedding_size: 512
-    output_shape: [8, 32, 96]
+
+  decoder:
+    input_shape: [8, 32, 96]
 
   # Gaze Estimation configuration.
   gaze:
-    weights_fp: ''
     inputs:
       - name: 'head_vector'
         input_shape: [3]
       - name: 'face_origin_3d'
         input_shape: [3]
-    output: '2d'
