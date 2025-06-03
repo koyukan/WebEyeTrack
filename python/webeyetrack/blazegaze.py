@@ -344,7 +344,7 @@ class BlazeGaze():
 
 if __name__ == "__main__":
 
-    TESTING = 'maml'
+    TESTING = 'autoencoder'
     print("Testing mode:", TESTING)
 
     if TESTING == 'maml':
@@ -419,6 +419,12 @@ if __name__ == "__main__":
         config = BlazeGazeConfig(
             # Mode
             mode='autoencoder',
+            gaze=GazeConfig(
+                inputs=[
+                    ModalityInput(name='head_vector', input_shape=(3,)),
+                    ModalityInput(name='face_origin_3d', input_shape=(3,)),
+                ]
+            )
         )
         model = BlazeGaze(config)
         model.model.summary()

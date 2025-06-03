@@ -1,5 +1,6 @@
 import pathlib
 import json
+import pickle
 
 from tqdm import tqdm
 import h5py
@@ -102,11 +103,17 @@ def load_datasets(h5_file, train_ids, val_ids, test_ids, config):
 
     return train_dataset, val_dataset, train_dataset_size, val_dataset_size, test_dataset, test_dataset_size
 
-def participant_generator(file, pid, config):
+def participant_generator(file, pid, config, weights_data):
     def _gen():
         with h5py.File(file, 'r') as hf:
             group = hf[str(pid)]
             total = group["pixels"].shape[0]
+
+            # Unpack bin data
+            if weights_data is not None:
+                bin_weights = weights_data["weights"]
+                xedges = weights_data["xedges"]
+                yedges = weights_data["yedges"]
 
             try:
                 max_samples = config['dataset']['gazecapture']['max_per_participant']
@@ -115,13 +122,31 @@ def participant_generator(file, pid, config):
             
             limit = min(max_samples, total) if max_samples else total
             for i in range(limit):
+
+                pog_norm = group["pog_norm"][i][:2].astype(np.float32) - np.array([0.5, 0.5])
+
+                if weights_data is not None:
+                    # Compute bin indices
+                    x_idx = np.digitize([pog_norm[0]], xedges)[0] - 1
+                    y_idx = np.digitize([pog_norm[1]], yedges)[0] - 1
+
+                    # Clip to bounds
+                    x_idx = np.clip(x_idx, 0, bin_weights.shape[0] - 1)
+                    y_idx = np.clip(y_idx, 0, bin_weights.shape[1] - 1)
+
+                    # Fetch weight
+                    sample_weight = float(bin_weights[x_idx, y_idx])
+                else:
+                    sample_weight = 1.0
+
                 yield {
                     "image": group["pixels"][i].astype(np.float32) / 255.0,
                     "head_vector": group["head_vector"][i][:3].astype(np.float32),
                     "face_origin_3d": group["face_origin_3d"][i][:3].astype(np.float32),
                     'screen_info': np.stack([group['screen_height_cm'][i],
                                                 group['screen_width_cm'][i]]).astype(np.float32),
-                    "pog_norm": group["pog_norm"][i][:2].astype(np.float32) - np.array([0.5, 0.5]),
+                    "pog_norm": pog_norm,
+                    "sample_weight": sample_weight
                 }
     return _gen
 
@@ -134,17 +159,34 @@ def load_total_dataset(
 
     assert config['config']['type'] == 'autoencoder', "Only 'autoencoder' type configuration is allowed."
 
+    # Load weights for sampling if available
+    weights_data = None
+    try:
+        if config['dataset']['weighted']:
+            if config['dataset']['name'] == 'GazeCapture':
+                bin_pickle = GENERATED_DATASET_DIR / 'GazeCapture_bin_weights.pkl'
+            elif config['dataset']['name'] == 'EyeDiap':
+                bin_pickle = GENERATED_DATASET_DIR / 'EyeDiap_bin_weights.pkl'
+            else:
+                raise ValueError("Weighted sampling is only supported for GazeCapture dataset.")
+            
+            with open(bin_pickle, 'rb') as f:
+                weights_data = pickle.load(f)
+    except Exception as e:
+        print(f"Error loading weights data: {e}")        
+
     output_signature = {
         "image": tensor_spec((config['model']['encoder']['input_shape'])),  # Image
         "head_vector": tensor_spec((3,)),  # head_vector
         "face_origin_3d": tensor_spec((3,)),  # face_origin_3d
         "screen_info": tensor_spec((2,)),  # screen_info
         "pog_norm": tensor_spec((2,)),  # Normalized point of gaze
+        "sample_weight": tensor_spec(())  # Sample weight for weighted sampling
     }
     
     datasets = [
         tf.data.Dataset.from_generator(
-            participant_generator(hdf5_path, pid, config),
+            participant_generator(hdf5_path, pid, config, weights_data),
             output_signature=output_signature
         )
         for pid in participants
@@ -189,7 +231,8 @@ def prepare_task_generators(h5_file, participants, config):
     query_size = config['dataset']['query_size']
     total_required = support_size + query_size
     h5_ref = h5py.File(h5_file, 'r')
-    pixels_label = config['model']['encoder']['input_name']
+    # pixels_label = config['model']['encoder']['input_name']
+    pixels_label = 'pixels'
 
     for pid in participants:
         group = h5_ref[str(pid)]

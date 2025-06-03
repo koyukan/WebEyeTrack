@@ -7,6 +7,7 @@ dataset:
   name: 'GazeCapture'
   shuffle_buffer: 500
   seed: 42
+  weighted: true
 
   train_val_test_split: [0.8, 0.1]
   gazecapture:

@@ -1,6 +1,7 @@
 import pathlib
 import argparse
 import json
+import pickle
 
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -66,7 +67,7 @@ def visualize_output_space(dataset):
     x_vals, y_vals = all_pogs[:, 0]-0.5, all_pogs[:, 1]-0.5
 
     # 2D histogram
-    heatmap, xedges, yedges = np.histogram2d(x_vals, y_vals, bins=30)
+    heatmap, xedges, yedges = np.histogram2d(x_vals, y_vals, bins=30, range=[[-0.5, 0.5], [-0.5, 0.5]])
     extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
     # extent = [0, 1, 0, 1]
 
@@ -88,8 +89,23 @@ def visualize_output_space(dataset):
     plt.ylabel(ylabel)
     plt.title("2D Heatmap of Gaze Targets")
     plt.tight_layout()
-    plt.show()
+    # plt.show()
 
+    # Use the histogram to compute the inverse frequency as a weight to resample the dataset and handle the imbalance
+    weights = 1.0 / (heatmap + 1e-6)
+
+    # Normalize weights
+    weights /= np.sum(weights)
+
+    save_path = GENERATED_DATASET_DIR / f'{args.dataset}_bin_weights.pkl'
+    data = {
+        'weights': weights,
+        'xedges': xedges,
+        'yedges': yedges,
+    }
+    print({k:type(v) for k, v in data.items()})
+    with open(save_path, 'wb') as f:
+        pickle.dump(data, f)
 
 if __name__ == '__main__':
 

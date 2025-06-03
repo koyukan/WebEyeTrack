@@ -1,28 +1,33 @@
 import tensorflow as tf
 
-def embedding_consistency_loss(embeddings, pog_labels):
+def embedding_consistency_loss(embeddings, pog_labels, sample_weight=None):
     """
-    Contrastive-style embedding loss without margin.
-    Encourages embeddings to reflect spatial relationships in gaze (PoG).
+    Weighted contrastive-style loss on embedding distances to reflect gaze (PoG) similarity.
     
-    embeddings: (B, D) — latent vectors
-    pog_labels: (B, 2) — normalized PoG in [-0.5, 0.5]
+    embeddings: (B, D) latent vectors
+    pog_labels: (B, 2) normalized PoG
+    sample_weight: Optional (B,) vector of per-sample weights
     """
 
     # Pairwise distances
     emb_diffs = tf.expand_dims(embeddings, 1) - tf.expand_dims(embeddings, 0)  # (B, B, D)
     emb_distances = tf.norm(emb_diffs, axis=-1)  # (B, B)
 
-    pog_diffs = tf.expand_dims(pog_labels, 1) - tf.expand_dims(pog_labels, 0)
+    pog_diffs = tf.expand_dims(pog_labels, 1) - tf.expand_dims(pog_labels, 0)  # (B, B, 2)
     pog_distances = tf.norm(pog_diffs, axis=-1)  # (B, B)
 
-    # Normalize PoG distances to range [0, 1] (optional but helpful)
-    pog_distances /= tf.reduce_max(pog_distances) + 1e-6  # avoid div-by-zero
+    # Normalize distances to [0, 1]
+    pog_distances /= tf.reduce_max(pog_distances) + 1e-6
 
-    # We want embedding distances to match PoG distances
-    loss = tf.reduce_mean(tf.square(emb_distances - pog_distances))
+    loss_matrix = tf.square(emb_distances - pog_distances)  # (B, B)
 
-    return loss
+    if sample_weight is not None:
+        sample_weight = tf.cast(sample_weight, tf.float32)
+        # Broadcast to (B, B) for pairwise use
+        weight_matrix = tf.expand_dims(sample_weight, 1) * tf.expand_dims(sample_weight, 0)
+        loss_matrix *= weight_matrix
+
+    return tf.reduce_mean(loss_matrix)
 
 def compute_batch_ssim(gt_images: tf.Tensor, recon_images: tf.Tensor, max_val=1.0):
     """
@@ -61,13 +66,22 @@ def mae_cm_loss(y_true, y_pred, screen_info):
         tf.norm(true_cm - pred_cm, axis=-1)
     )
 
-def l2_loss(y_true, y_pred):
+def l2_loss(y_true, y_pred, sample_weight=None):
     """
-    Compute L2 loss between true and predicted values.
+    Compute L2 loss between true and predicted values, optionally weighted.
+    
     Args:
-        y_true: Tensor of true values.
-        y_pred: Tensor of predicted values.
+        y_true: Tensor of shape (B, 2)
+        y_pred: Tensor of shape (B, 2)
+        sample_weight: Optional tensor of shape (B,)
     Returns:
-        Scalar L2 loss.
+        Scalar loss.
     """
-    return tf.reduce_mean(tf.square(y_true - y_pred))
+    loss = tf.reduce_sum(tf.square(y_pred - y_true), axis=-1)  # (B,)
+
+    if sample_weight is not None:
+        sample_weight = tf.cast(sample_weight, tf.float32)
+        loss = loss * sample_weight
+        return tf.reduce_mean(loss)
+    else:
+        return tf.reduce_mean(loss)

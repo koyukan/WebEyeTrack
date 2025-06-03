@@ -56,9 +56,9 @@ def run_epoch(name, dataset_iter, steps_per_epoch, model, model_config, config, 
 
         with tf.GradientTape(persistent=training) as tape:
             preds = model.model(input_list, training=training)
-            gaze_loss = l2_loss(preds[1], sample['pog_norm'])
+            gaze_loss = l2_loss(preds[1], sample['pog_norm'], sample_weight=sample['sample_weight'])
             decoder_loss = tf.reduce_mean(tf.square(preds[2] - sample['image']))
-            consistency_loss = embedding_consistency_loss(preds[0], sample['pog_norm'])
+            consistency_loss = embedding_consistency_loss(preds[0], sample['pog_norm'], sample_weight=sample['sample_weight'])
             total_loss = GAZE_COEF * gaze_loss + RECONT_COEF * decoder_loss + CONSISTENCY_COEF * consistency_loss
 
             losses['gaze_l2_loss'].append(gaze_loss.numpy())

@@ -5,8 +5,9 @@ import json
 import argparse
 import time
 import json
-from tqdm import tqdm
+from collections import defaultdict
 
+from tqdm import tqdm
 import cattrs
 import yaml
 import numpy as np
@@ -19,7 +20,7 @@ import matplotlib.pyplot as plt
 
 from webeyetrack.constants import GIT_ROOT
 from webeyetrack.blazegaze import BlazeGaze, BlazeGazeConfig, build_full_inference_model
-from webeyetrack.vis import plot_pog_errors, plot_2d_dist
+from webeyetrack.vis import plot_pog_errors, plot_2d_dist, matplotlib_to_image
 from data import (
     load_total_dataset, 
     load_datasets, 
@@ -28,6 +29,7 @@ from data import (
 )
 from utils import (
     mae_cm_loss,
+    l2_loss
 )
 
 CWD = pathlib.Path(__file__).parent
@@ -37,15 +39,12 @@ SAVED_MODELS_DIR = CWD / 'saved_models'
 
 LOG_PATH = FILE_DIR / 'logs'
 os.makedirs(LOG_PATH, exist_ok=True)
-TIMESTAMP = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-RUN_DIR = LOG_PATH / TIMESTAMP
-os.makedirs(RUN_DIR, exist_ok=True)
 
 # Constants
 IMG_SIZE = 128
 
 # Loss parameters
-L1_COEF = 1
+L2_COEF = 1
 SPREAD_COEF = 1
 CONT_COEF = 0
 CENTER_COEF = 0
@@ -127,30 +126,44 @@ def inner_loop(gaze_head, support_x, support_y, inner_lr, model_config):
     input_list = [support_x[feature] for feature in features]
     with tf.GradientTape() as tape:
         preds = gaze_head(input_list, training=True)
-        fig = plot_pog_errors(
-            support_y[:, 0], support_y[:, 1],
-            preds[:, 0], preds[:, 1],
-        )
+
+        # DEBUGGING: Plotting the errors
+        # fig = plot_pog_errors(
+        #     support_y[:, 0], support_y[:, 1],
+        #     preds[:, 0], preds[:, 1],
+        # )
         # print(support_y - preds)
         # print(tf.abs(support_y - preds).numpy())
         # import pdb; pdb.set_trace()
-        plt.show()
+        # plt.show()
         # l1_loss = mae_cm_loss(support_y, preds, support_x['screen_info'])
         # Compute the l1 loss directly in norm space
         # l1_loss = tf.reduce_mean(tf.norm(support_y - preds, axis=-1))
-        l1_loss = tf.reduce_mean(tf.reduce_sum(tf.abs(support_y - preds), axis=-1))
+
+        gaze_l2_loss = l2_loss(support_y, preds)
         spread_loss = match_spread_loss(preds, support_y)
         cont_loss = contrastive_gaze_loss(preds, support_y)
         center_loss = center_penalty_loss(preds)
-        loss = L1_COEF * l1_loss + CONT_COEF * cont_loss + CENTER_COEF * center_loss + SPREAD_COEF * spread_loss
+        loss = L2_COEF * gaze_l2_loss + CONT_COEF * cont_loss + CENTER_COEF * center_loss + SPREAD_COEF * spread_loss
+
     grads = tape.gradient(loss, gaze_head.trainable_weights)
     adapted_weights = [w - inner_lr * g for w, g in zip(gaze_head.trainable_weights, grads)]
-    return adapted_weights, loss
+
+    losses = {
+        'gaze_l1_loss': gaze_l2_loss,
+        'spread_loss': spread_loss,
+        'cont_loss': cont_loss,
+        'center_loss': center_loss,
+        'loss': loss
+    }
+
+    return adapted_weights, losses
 
 def maml_train(
+    RUN_DIR,
     model_config,
     encoder_model,
-    gaze_model,
+    gaze_mlp,
     train_maml_dataset,
     valid_maml_dataset,
     ids,
@@ -166,11 +179,11 @@ def maml_train(
 
     # Validation model & iterator
     valid_task_iter = iter(valid_maml_dataset)
-    valid_model = tf.keras.models.clone_model(gaze_model)
+    valid_model = tf.keras.models.clone_model(gaze_mlp)
 
     # Track best validation loss
     best_val_query_loss = float("inf")
-    best_model_path = RUN_DIR / 'maml_gaze_model_best.keras'
+    best_model_path = RUN_DIR / 'maml_gaze_mlp_best.keras'
     best_full_model_path = RUN_DIR / 'full_model_best.keras'
 
     for step in tqdm(range(steps_outer), desc="Meta Training Steps"):
@@ -180,12 +193,12 @@ def maml_train(
         support_x['encoder_features'] = encoder_model(support_x['image'], training=False)
         query_x['encoder_features'] = encoder_model(query_x['image'], training=False)
 
-        task_model = tf.keras.models.clone_model(gaze_model)
+        task_model = tf.keras.models.clone_model(gaze_mlp)
         task_model.build(support_x['encoder_features'].shape)
-        task_model.set_weights(gaze_model.get_weights())
+        task_model.set_weights(gaze_mlp.get_weights())
 
         for _ in range(steps_inner):
-            adapted_weights, support_loss = inner_loop(
+            adapted_weights, support_losses = inner_loop(
                 task_model, support_x, support_y, inner_lr, model_config
             )
             task_model.set_weights(adapted_weights)
@@ -194,74 +207,120 @@ def maml_train(
             features = ['encoder_features'] + [x.name for x in model_config.gaze.inputs]
             input_list = [query_x[feature] for feature in features]
             query_preds = task_model(input_list, training=True)
-            query_l1_loss = mae_cm_loss(query_y, query_preds, query_x['screen_info'])
+            # query_l1_loss = mae_cm_loss(query_y, query_preds, query_x['screen_info'])
+            query_l2_loss = l2_loss(query_y, query_preds)
             query_cont_loss = contrastive_gaze_loss(query_preds, query_y)
             query_center_loss = center_penalty_loss(query_preds)
-            query_loss = L1_COEF * query_l1_loss + CONT_COEF * query_cont_loss + CENTER_COEF * query_center_loss
+            query_loss = L2_COEF * query_l2_loss + CONT_COEF * query_cont_loss + CENTER_COEF * query_center_loss
+
+            metrics_gaze_cm_mae = mae_cm_loss(query_y, query_preds, query_x['screen_info'])
+
+            query_losses = {
+                'gaze_l2_loss': query_l2_loss,
+                'cont_loss': query_cont_loss,
+                'center_loss': query_center_loss,
+                'total_loss': query_loss
+            }
 
         grads = outer_tape.gradient(query_loss, task_model.trainable_weights)
-        meta_optimizer.apply_gradients(zip(grads, gaze_model.trainable_weights))
+        meta_optimizer.apply_gradients(zip(grads, gaze_mlp.trainable_weights))
 
         # --- Logging ---
         # if (step + 1) % (steps_outer // 15) == 0:
         if (step + 1) % 5 == 0:
             if tb_writer:
-                tf.summary.scalar('support_loss', support_loss, step=step)
-                tf.summary.scalar('query_loss', query_loss, step=step)
+                # Scalars for TensorBoard
+                for key, value in support_losses.items():
+                    tf.summary.scalar(f'train/support_{key}', value, step=step)
+                for key, value in query_losses.items():
+                    tf.summary.scalar(f'train/query_{key}', value, step=step)
+                tf.summary.scalar('train/query_gaze_cm_mae', metrics_gaze_cm_mae, step=step)
+
+                gaze_predictions_fig = plot_pog_errors(
+                    query_y.numpy()[:, 0],
+                    query_y.numpy()[:, 1],
+                    query_preds.numpy()[:, 0],
+                    query_preds.numpy()[:, 1],
+                )
+
+                # Convert Matplotlib figure to image tensor
+                gaze_predictions_image = matplotlib_to_image(gaze_predictions_fig)
+                tf.summary.image(f'train/gaze_predictions', np.expand_dims(gaze_predictions_image, axis=0), step=step)
+
                 tb_writer.flush()
-            print(f"Step {step}: Support Loss: {support_loss.numpy():.3f}, Query Loss: {query_loss.numpy():.3f}")
+            # print(f"Step {step}: Support Loss: {support_loss.numpy():.3f}, Query Loss: {query_loss.numpy():.3f}")
 
             # --- Validation ---
-            val_losses = []
+            # val_losses = []
+            val_losses = defaultdict(list)
             for j in tqdm(range(len(val_ids)), desc="Validation Steps"):
-                valid_model.set_weights(gaze_model.get_weights())
+                valid_model.set_weights(gaze_mlp.get_weights())
                 support_x, support_y, query_x, query_y = next(valid_task_iter)
                 support_x['encoder_features'] = encoder_model(support_x['image'], training=False)
-                adapted_weights, support_loss = inner_loop(
+                adapted_weights, support_losses = inner_loop(
                     valid_model, support_x, support_y, inner_lr, model_config
                 )
                 valid_model.set_weights(adapted_weights)
                 query_x['encoder_features'] = encoder_model(query_x['image'], training=False)
                 features = ['encoder_features'] + [x.name for x in model_config.gaze.inputs]
                 input_list = [query_x[feature] for feature in features]
-                query_l1_loss = mae_cm_loss(query_y, valid_model(input_list, training=False), query_x['screen_info'])
+                query_l2_loss = l2_loss(query_y, valid_model(input_list, training=False))
                 query_cont_loss = contrastive_gaze_loss(valid_model(input_list, training=False), query_y)
                 query_center_loss = center_penalty_loss(valid_model(input_list, training=False))
-                query_loss = L1_COEF * query_l1_loss + CONT_COEF * query_cont_loss + CENTER_COEF * query_center_loss
-                val_losses.append(query_loss.numpy())
+                query_loss = L2_COEF * query_l2_loss + CONT_COEF * query_cont_loss + CENTER_COEF * query_center_loss
+                
+                val_losses['gaze_l2_loss'].append(query_l2_loss.numpy())
+                val_losses['cont_loss'].append(query_cont_loss.numpy())
+                val_losses['center_loss'].append(query_center_loss.numpy())
+                val_losses['total_loss'].append(query_loss.numpy())
 
-            avg_val_query_loss = np.mean(val_losses)
+            avg_val_query_loss = np.mean(val_losses['total_loss'])
             print(f"Validation Step {step}: Avg Query Loss = {avg_val_query_loss:.4f}")
 
             # Save best model
             if avg_val_query_loss < best_val_query_loss:
                 best_val_query_loss = avg_val_query_loss
-                gaze_model.save(best_model_path)
+                gaze_mlp.save(best_model_path)
 
                 # Also save thAdame entire model for inference use later
-                full_model = build_full_inference_model(encoder_model, gaze_model, model_config)
+                full_model = build_full_inference_model(encoder_model, gaze_mlp, model_config)
                 full_model.save(best_full_model_path)
 
                 print(f"New best model saved at step {step} with val query loss {avg_val_query_loss:.4f}")
 
             # Log validation loss
             if tb_writer:
-                tf.summary.scalar('valid_query_loss', avg_val_query_loss, step=step)
+                # tf.summary.scalar('valid_query_loss', avg_val_query_loss, step=step)
+                for key, value in val_losses.items():
+                    tf.summary.scalar(f'val/{key}', np.mean(value), step=step)
+
+                gaze_predictions_fig = plot_pog_errors(
+                    query_y.numpy()[:, 0],
+                    query_y.numpy()[:, 1],
+                    query_preds.numpy()[:, 0],
+                    query_preds.numpy()[:, 1],
+                )
+
+                # Convert Matplotlib figure to image tensor
+                gaze_predictions_image = matplotlib_to_image(gaze_predictions_fig)
+                tf.summary.image(f'val/gaze_predictions', np.expand_dims(gaze_predictions_image, axis=0), step=step)
+                
                 tb_writer.flush()
 
     # Save final model
-    # gaze_model.save_weights(RUN_DIR / 'maml_gaze_model_final.h5')
+    # gaze_mlp.save_weights(RUN_DIR / 'maml_gaze_mlp_final.h5')
     print("MAML Training completed.")
 
     # Return the best model
-    gaze_model.load_weights(best_model_path)
+    gaze_mlp.load_weights(best_model_path)
     print(f"Best model loaded from {best_model_path}")
-    return gaze_model
+    return gaze_mlp
 
 def maml_test(
+    RUN_DIR,
     model_config,
     encoder_model,
-    gaze_model,
+    gaze_mlp,
     test_maml_dataset,
     ids,
     inner_lr=0.01,
@@ -278,7 +337,8 @@ def maml_test(
     max_steps = steps_test or len(test_ids)
 
     all_query_losses = []
-    all_query_l1_losses = []
+    all_query_l2_losses = []
+    all_query_mae_cm = []
 
     query_gt_pog_norms = []
     query_pred_pog_norms = []
@@ -294,9 +354,9 @@ def maml_test(
         query_x['encoder_features'] = encoder_model(query_x['image'], training=False)
 
         # Clone the gaze model (meta-initialized)
-        task_model = tf.keras.models.clone_model(gaze_model)
+        task_model = tf.keras.models.clone_model(gaze_mlp)
         task_model.build(support_x['encoder_features'].shape)
-        task_model.set_weights(gaze_model.get_weights())
+        task_model.set_weights(gaze_mlp.get_weights())
 
         features = ['encoder_features'] + [x.name for x in model_config.gaze.inputs]
         input_list = [support_x[feature] for feature in features]
@@ -305,10 +365,10 @@ def maml_test(
         for _ in range(steps_inner):
             with tf.GradientTape() as tape:
                 support_preds = task_model(input_list, training=True)
-                support_l1_loss = mae_cm_loss(support_y, support_preds, support_x['screen_info'])
+                support_l2_loss = l2_loss(support_y, support_preds)
                 support_cont_loss = contrastive_gaze_loss(support_preds, support_y)
                 support_center_loss = center_penalty_loss(support_preds)
-                support_loss = L1_COEF * support_l1_loss + CONT_COEF * support_cont_loss + CENTER_COEF * support_center_loss
+                support_loss = L2_COEF * support_l2_loss + CONT_COEF * support_cont_loss + CENTER_COEF * support_center_loss
             grads = tape.gradient(support_loss, task_model.trainable_weights)
             for w, g in zip(task_model.trainable_weights, grads):
                 w.assign_sub(inner_lr * g)
@@ -322,15 +382,18 @@ def maml_test(
 
         # Evaluate on query set
         query_preds = task_model(input_list, training=False)
-        query_l1_loss = mae_cm_loss(query_y, query_preds, query_x['screen_info']).numpy()
+        query_l2_loss = l2_loss(query_y, query_preds)
         query_cont_loss = contrastive_gaze_loss(query_preds, query_y).numpy()
         query_center_loss = center_penalty_loss(query_preds).numpy()
-        query_loss = L1_COEF * query_l1_loss + CONT_COEF * query_cont_loss + CENTER_COEF * query_center_loss
+        query_loss = L2_COEF * query_l2_loss + CONT_COEF * query_cont_loss + CENTER_COEF * query_center_loss
         query_pred_pog_norms.append(query_preds.numpy())
         query_gt_pog_norms.append(query_y.numpy())
 
+        metric_gaze_cm_mae = mae_cm_loss(query_y, query_preds, query_x['screen_info'])
+
         all_query_losses.append(query_loss)
-        all_query_l1_losses.append(query_l1_loss)
+        all_query_l2_losses.append(query_l2_loss)
+        all_query_mae_cm.append(metric_gaze_cm_mae)
 
         if tb_writer:
             with tb_writer.as_default():
@@ -373,10 +436,14 @@ def maml_test(
             fig.savefig(RUN_DIR / f"maml_test_{kind}_error_vectors.png")
             plt.close(fig)
 
-    print(f"MAML Test Finished — Avg Query Loss: {np.mean(all_query_losses):.4f}, Avg Query L1 Loss: {np.mean(all_query_l1_losses):.4f}")
+    print(f"MAML Test Finished — Avg Query Loss: {np.mean(all_query_losses):.4f}, Avg Query L2 Loss: {np.mean(all_query_l2_losses):.4f}, Avg Query MAE: {np.mean(all_query_mae_cm):.4f}")
     return all_query_losses
 
-def train(config):
+def train(args, config):
+
+    TIMESTAMP = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    RUN_DIR = LOG_PATH / f"{TIMESTAMP}_{args.exp}"
+    os.makedirs(RUN_DIR, exist_ok=True)
 
     with open(RUN_DIR / 'config.yaml', 'w') as f:
         yaml.dump(config, f)
@@ -421,10 +488,11 @@ def train(config):
     )
     
     # Running the MAML training
-    model.gaze_model = maml_train(
+    model.gaze_mlp = maml_train(
+        RUN_DIR=RUN_DIR,
         model_config=model_config,
         encoder_model=encoder,
-        gaze_model=model.gaze_model,
+        gaze_mlp=model.gaze_mlp,
         train_maml_dataset=train_maml_dataset,
         valid_maml_dataset=valid_maml_dataset,
         ids=(train_ids, val_ids, test_ids),
@@ -437,9 +505,10 @@ def train(config):
 
     # Run the test dataset
     maml_test(
+        RUN_DIR=RUN_DIR,
         model_config=model_config,
         encoder_model=encoder,
-        gaze_model=model.gaze_model,
+        gaze_mlp=model.gaze_mlp,
         test_maml_dataset=test_maml_dataset,
         ids=(train_ids, val_ids, test_ids),
         inner_lr=config['optimizer']['inner_lr'],
@@ -452,6 +521,7 @@ if __name__ == "__main__":
     # Add arguments to specify the configuration file
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True, type=str, help="Path to the configuration file")
+    parser.add_argument("--exp", type=str, required=True, help="Experiment name for logging purposes")
     args = parser.parse_args()
 
     # Load the configuration file (YAML)
@@ -478,4 +548,4 @@ if __name__ == "__main__":
     # Start training
     print("Training...")
     
-    train(config)
+    train(args, config)

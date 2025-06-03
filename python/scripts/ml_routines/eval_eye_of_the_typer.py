@@ -3,6 +3,7 @@ import pathlib
 from collections import defaultdict
 import argparse
 
+import tensorflow as tf
 import cv2
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -17,6 +18,10 @@ matplotlib.use('TkAgg')
 from webeyetrack.data_protocols import TrackingStatus
 from webeyetrack import WebEyeTrack, WebEyeTrackConfig
 # from webeyetrack.kalman_filter import create_kalman_filter
+
+# Set all the seeds
+np.random.seed(42)
+tf.random.set_seed(42)
 
 CWD = pathlib.Path(__file__).parent
 FILE_DIR = pathlib.Path(__file__).parent.parent
@@ -110,6 +115,33 @@ def preprocess_csv(csv_path) -> pd.DataFrame:
     # Add the columns to the data
     data.columns = fieldnames
 
+    # Shift all gaze from range [[0,1], [0,1]] to [[-0.5, 0.5], [-0.5, 0.5]], with center of screen being (0, 0)
+    columns_to_shift = [
+        'mouseMoveX', 'mouseMoveY',
+        'mouseClickX', 'mouseClickY',
+        'tobiiLeftScreenGazeX', 'tobiiLeftScreenGazeY',
+        'tobiiRightScreenGazeX', 'tobiiRightScreenGazeY',
+        'webGazerX', 'webGazerY',
+    ]
+    for col in columns_to_shift:
+        # data[col] = data[col].apply(lambda x: (x - 0.5) if pd.notna(x) else x)
+        for i, row in data.iterrows():
+            item = row[col]
+            float_item = None
+            try:
+                float_item = float(item)
+            except ValueError:
+                float_item_list = eval(item)
+                if len(float_item_list) == 0:
+                    float_item = None
+                elif len(float_item_list) >= 1:
+                    float_item = float_item_list[0]
+
+            if float_item is not None:
+                data.at[i, col] = (float_item - 0.5)
+            else:
+                data.at[i, col] = None
+
     return data
 
 def visualize_scanpath(par, calib_pts, csv_data, screen_height_px, screen_width_px, wet) -> plt.Figure:
@@ -151,6 +183,12 @@ def visualize_scanpath(par, calib_pts, csv_data, screen_height_px, screen_width_
         webgazer_gaze = (row['webGazerX'], row['webGazerY'])
         status, gaze_result, _ = wet.process_frame(img)
 
+        # Shifting all gaze points from [[-0.5, 0.5], [-0.5, 0.5]] to [[0,1], [0,1]]
+        if gaze is not None:
+            gaze = (gaze[0] + 0.5, gaze[1] + 0.5)
+        if webgazer_gaze is not None:
+            webgazer_gaze = (webgazer_gaze[0] + 0.5, webgazer_gaze[1] + 0.5)
+
         # Display the gaze point
         if gaze is not None:
             cv2.circle(screen_img, (int(gaze[0]*screen_width_px), int(gaze[1]*screen_height_px)), 5, (0, 255, 0), -1)
@@ -158,15 +196,23 @@ def visualize_scanpath(par, calib_pts, csv_data, screen_height_px, screen_width_
         
         if status == TrackingStatus.SUCCESS and gaze_result is not None:
             gaze_point = gaze_result.norm_pog
+            gaze_point = (gaze_point[0] + 0.5, gaze_point[1] + 0.5)
             gaze_point = (gaze_point[0] * screen_width_px, gaze_point[1] * screen_height_px)
             cv2.circle(screen_img, (int(gaze_point[0]), int(gaze_point[1])), 5, (0, 0, 255), -1)
+
+            # Draw a gray line between the pred and gt points
+            # if gaze is not None:
+            #     cv2.line(screen_img, (int(gaze[0]*screen_width_px), int(gaze[1]*screen_height_px)),
+            #              (int(gaze_point[0]), int(gaze_point[1])), (128, 128, 128), 1)
 
         # cv2.circle(screen_img, (int(webgazer_gaze[0]*screen_width_px), int(webgazer_gaze[1]*screen_height_px)), 5, (255, 0, 0), -1)
         # cv2.circle(screen_img, (int(webeyetrack_gaze[0]*screen_width_px), int(webeyetrack_gaze[1]*screen_height_px)), 5, (0, 0, 255), -1)
 
         # If this is a calibration point, make a big yellow circle
         if row['frameNum'] in [pt['frameNum'] for pt in calib_pts]:
-            x, y = eval(row['mouseClickX'])[0], eval(row['mouseClickY'])[0]
+            # x, y = eval(row['mouseClickX'])[0], eval(row['mouseClickY'])[0]
+            x, y = row['mouseClickX'], row['mouseClickY']
+            x, y = (x + 0.5), (y + 0.5)
             cv2.circle(screen_img, (int(x * screen_width_px), int(y * screen_height_px)), 10, (0, 255, 255), -1)
 
         # Display the image
@@ -197,7 +243,7 @@ def main():
     os.makedirs(RUN_DIR, exist_ok=True)
 
     # Iterate over the folders within the dataset
-    p_dirs = [EYE_OF_THE_TYPER_DATASET / 'P_02']
+    p_dirs = [EYE_OF_THE_TYPER_DATASET / 'P_01']
     # p_dirs = [p for p in EYE_OF_THE_TYPER_DATASET.iterdir() if p.is_dir()]
     gaze_csvs = [p for p in EYE_OF_THE_TYPER_DATASET.iterdir() if p.is_file() and p.suffix == '.csv']
     options = set(['study' + p.stem.split('-study')[1] for p in gaze_csvs])
@@ -261,11 +307,12 @@ def main():
 
         # Extract the 9-point calibration data (which should be top-left, top-center, top-right, center-left, center-center, center-right, bottom-left, bottom-center, bottom-right)
         # x_coords, y_coords = [0.15, 0.5, 0.85], [0.15, 0.5, 0.85]
-        x_coords, y_coords = [0.15, 0.85], [0.15, 0.85]
+        # x_coords, y_coords = [0.15, 0.85], [0.15, 0.85]
+        x_coords, y_coords = [-0.35, 0.35], [-0.35, 0.35]
         pts = [(x, y) for x in x_coords for y in y_coords]
         # pts = pts[:2]
         # pts = [pts[3]]
-        print(pts)
+        # print(pts)
 
         # Create the calibration points by finding the closest points in the mouse clicks
         calib_pts = []
@@ -275,7 +322,11 @@ def main():
             closest_click_info = None
             min_dist = float('inf')
             for i, row in mouse_click_data.iterrows():
-                click_x, click_y = eval(row['mouseClickX'])[0], eval(row['mouseClickY'])[0]
+                # click_x, click_y = eval(row['mouseClickX'])[0], eval(row['mouseClickY'])[0]
+                click_x, click_y = row['mouseClickX'], row['mouseClickY']
+                if not isinstance(click_x, float) or not isinstance(click_y, float):
+                    continue
+
                 dist = np.linalg.norm(np.array([click_x, click_y]) - np.array(pt))
                 if dist < min_dist:
                     min_dist = dist
@@ -297,7 +348,8 @@ def main():
                 print(f"Image not found at {img_path}")
                 continue
             frames.append(img)
-            norm_pogs.append(np.array([eval(row['mouseClickX'])[0], eval(row['mouseClickY'])[0]]))
+            click_x, click_y = row['mouseClickX'], row['mouseClickY']
+            norm_pogs.append(np.array([click_x, click_y]))
         
         norm_pogs = np.stack(norm_pogs)
         

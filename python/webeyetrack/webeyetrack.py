@@ -93,14 +93,36 @@ def generate_support_and_query_samples(
 
     return support_x, support_y, query_x, query_y
 
+def compute_affine_transform(src: np.ndarray, dst: np.ndarray):
+    """
+    Computes the affine transform matrix that maps src → dst via least squares.
+
+    Args:
+        src: (N, 2) source points (predicted)
+        dst: (N, 2) destination points (ground truth)
+
+    Returns:
+        A 2x3 affine matrix for transforming src to dst.
+    """
+    assert src.shape == dst.shape and src.shape[1] == 2, "Shape must be (N, 2)"
+
+    # Add column of ones to src to allow affine transform (2x3 matrix)
+    src_aug = np.hstack([src, np.ones((src.shape[0], 1))])  # (N, 3)
+    
+    # Solve for affine transform: A * src_aug.T ≈ dst.T
+    A, _, _, _ = np.linalg.lstsq(src_aug, dst, rcond=None)  # A: (3, 2)
+
+    return A.T  # (2, 3)
+
 @dataclass
 class WebEyeTrackConfig():
-    blazegaze_model_fp: Union[str, pathlib.Path] = BLAZEGAZE_PATH
+    blazegaze_mlp_fp: Union[str, pathlib.Path] = BLAZEGAZE_PATH
     ear_threshold: float = 0.2
     mediapipe_flm_model_fp: Union[str, pathlib.Path] = FACE_LANDMARKER_PATH
     screen_px_dimensions: Tuple[int, int] = (1920, 1080)
     screen_cm_dimensions: Tuple[float, float] = (53.1, 29.8)
     verbose: bool = False
+    affine_matrix: Optional[np.ndarray] = None
 
 class WebEyeTrack():
 
@@ -121,7 +143,7 @@ class WebEyeTrack():
 
         # Load the BlazeGaze model
         model_config = BlazeGazeConfig(
-            weights_fp=self.config.blazegaze_model_fp
+            weights_fp=self.config.blazegaze_mlp_fp
         )
         self.blazegaze = BlazeGaze(model_config)
 
@@ -230,7 +252,7 @@ class WebEyeTrack():
         inner_lr=1e-6
 
         encoder_model = self.blazegaze.encoder
-        gaze_model = self.blazegaze.gaze_model
+        gaze_mlp = self.blazegaze.gaze_mlp
         support_x, support_y, query_x, query_y = generate_support_and_query_samples(
             eye_patches=eye_patches,
             head_vectors=head_vectors,
@@ -249,12 +271,18 @@ class WebEyeTrack():
         # Adapt on support set
         for _ in range(steps_inner):
             with tf.GradientTape() as tape:
-                support_preds = gaze_model(input_list, training=True)
+                support_preds = gaze_mlp(input_list, training=True)
                 support_loss = mae_cm_loss(support_y, support_preds, support_x['screen_info'])
                 print(f"Support loss: {support_loss.numpy():.4f}")
-            grads = tape.gradient(support_loss, gaze_model.trainable_weights)
-            for w, g in zip(gaze_model.trainable_weights, grads):
+            grads = tape.gradient(support_loss, gaze_mlp.trainable_weights)
+            for w, g in zip(gaze_mlp.trainable_weights, grads):
                 w.assign_sub(inner_lr * g)
+
+        # After adaptation, compute an affine transformation from the gt and predicted gaze points
+        self.affine_matrix = compute_affine_transform(
+            src=support_preds.numpy(),
+            dst=support_y.numpy()
+        )
 
         if query_x is None or query_y is None:
             print(f"Adaptation completed. Support loss: {support_loss.numpy():.4f}")
@@ -265,7 +293,7 @@ class WebEyeTrack():
         query_input_list = [query_x[feature] for feature in features]
 
         # Evaluate on query set
-        query_preds = gaze_model(query_input_list, training=False)
+        query_preds = gaze_mlp(query_input_list, training=False)
         query_loss = mae_cm_loss(query_y, query_preds, query_x['screen_info']).numpy()
 
         print(f"Adaptation completed. Support loss: {support_loss:.4f}, Query loss: {query_loss:.4f}")
@@ -372,6 +400,15 @@ class WebEyeTrack():
             head_vector=tf.convert_to_tensor(np.expand_dims(head_vector, axis=0), dtype=tf.float32),
             face_origin_3d=tf.convert_to_tensor(np.expand_dims(face_origin_3d, axis=0), dtype=tf.float32)
         )
+
+        # Apply affine transformation if available
+        if self.affine_matrix is not None:
+            # augmented_pog = np.append(pog_estimation[0], 1.0)  # shape (3,)
+            # norm_pog = self.affine_matrix @ augmented_pog       # shape (2,)
+            norm_pog = pog_estimation[0] 
+        else:
+            norm_pog = pog_estimation[0]
+
         toc = time.perf_counter()
 
         # Compute the FPS/delay
@@ -386,7 +423,7 @@ class WebEyeTrack():
             metric_face=None,
             metric_transform=None,
             gaze_state='open',
-            norm_pog=pog_estimation[0],
+            norm_pog=norm_pog,
             duration=toc-tic
         )
 
