@@ -54,7 +54,7 @@ PARTICIPANT_CHARACTERISTICS = pd.read_csv(EYE_OF_THE_TYPER_PAR_CHAR)
 
 IMAGE_WIDTH = 640
 IMAGE_HEIGHT = 480
-VISUALIZE = True
+VISUALIZE = False
 
 # A reminder of what the desired field name outputs are.
 fieldnames = [
@@ -122,7 +122,7 @@ def preprocess_csv(pid, csv_path, section) -> pd.DataFrame:
     # Add the columns to the data
     data.columns = fieldnames
 
-    # Shift all gaze from range [[0,1], [0,1]] to [[-0.5, 0.5], [-0.5, 0.5]], with center of screen being (0, 0)
+    # Preprocess columns to make into proper floats
     columns_to_shift = [
         'mouseMoveX', 'mouseMoveY',
         'mouseClickX', 'mouseClickY',
@@ -131,7 +131,6 @@ def preprocess_csv(pid, csv_path, section) -> pd.DataFrame:
         'webGazerX', 'webGazerY',
     ]
     for col in columns_to_shift:
-        # data[col] = data[col].apply(lambda x: (x - 0.5) if pd.notna(x) else x)
         for i, row in data.iterrows():
             item = row[col]
             float_item = None
@@ -176,24 +175,30 @@ def preprocess_csv(pid, csv_path, section) -> pd.DataFrame:
     # Drop rows where the 'tobiiGazeX' or 'tobiiGazeY' is None
     data = data.dropna(subset=['tobiiGazeX', 'tobiiGazeY'])
 
-    # Apply correction to the gaze points
-    # corrections = DATA_CORRECTIONS[(DATA_CORRECTIONS['pid'] == pid) & (DATA_CORRECTIONS['section'] == section)]
-    # if not corrections.empty:
-    #     corrections = corrections.iloc[0]
-    #     data['tobiiGazeX'] = data['tobiiGazeX'] * corrections['scale_x'] + corrections['shift_x']
-    #     data['tobiiGazeY'] = data['tobiiGazeY'] * corrections['scale_y'] + corrections['shift_y']
-
     # If the range of the gaze x and y is not [0, 1], then normalize it to [0, 1]
     gaze_x_min, gaze_x_max = data['tobiiGazeX'].min(), data['tobiiGazeX'].max()
     gaze_y_min, gaze_y_max = data['tobiiGazeY'].min(), data['tobiiGazeY'].max()
-    # import pdb; pdb.set_trace()
 
     data['tobiiGazeX'] = (data['tobiiGazeX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
-    # data['tobiiGazeY'] = (data['tobiiGazeY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
+    data['tobiiGazeY'] = (data['tobiiGazeY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
+    data['webGazerX'] = (data['webGazerX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
+    data['webGazerY'] = (data['webGazerY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
+
+    # Shift all gaze from range [[0,1], [0,1]] to [[-0.5, 0.5], [-0.5, 0.5]], with center of screen being (0, 0)
+    for col in columns_to_shift + ['tobiiGazeX', 'tobiiGazeY']:
+        for i, row in data.iterrows():
+            item = row[col]
+            if item is not None:
+                # Shift the gaze point to be in the range [[-0.5, 0.5], [-0.5, 0.5]]
+                data.at[i, col] = item - 0.5
+            else:
+                data.at[i, col] = None
 
     # Then shift the gaze points to be in the range [[-0.5, 0.5], [-0.5, 0.5]]
-    data['tobiiGazeX'] = data['tobiiGazeX'] - 0.5
-    data['tobiiGazeY'] = data['tobiiGazeY'] - 0.5
+    # data['tobiiGazeX'] = data['tobiiGazeX'] - 0.5
+    # data['tobiiGazeY'] = data['tobiiGazeY'] - 0.5
+    # data['webGazerX'] = data['webGazerX'] - 0.5
+    # data['webGazerY'] = data['webGazerY'] - 0.5
 
     return data
 
@@ -208,6 +213,8 @@ def scanpath_video(video_dst_fp, par, calib_pts, returned_calib, csv_data, scree
 
     # Create a kalman filter for the gaze
     # tobii_kf = create_kalman_filter(dt=1/120)
+    csv_data['webEyeTrackX'] = ''
+    csv_data['webEyeTrackY'] = ''
     
     for i, row in tqdm(csv_data.iterrows(), total=len(csv_data), desc=f'Visualizing scanpath for {par}'):
 
@@ -253,6 +260,10 @@ def scanpath_video(video_dst_fp, par, calib_pts, returned_calib, csv_data, scree
             gaze_point = (gaze_point[0] * screen_width_px, gaze_point[1] * screen_height_px)
             cv2.circle(screen_img, (int(gaze_point[0]), int(gaze_point[1])), 5, (0, 0, 255), -1)
 
+            # Add the information to the csv_data
+            csv_data.at[i, 'webEyeTrackX'] = gaze_result.norm_pog[0]
+            csv_data.at[i, 'webEyeTrackY'] = gaze_result.norm_pog[1]
+
             # Draw a gray line between the pred and gt points
             # if gaze is not None:
             #     cv2.line(screen_img, (int(gaze[0]*screen_width_px), int(gaze[1]*screen_height_px)),
@@ -289,13 +300,65 @@ def scanpath_video(video_dst_fp, par, calib_pts, returned_calib, csv_data, scree
         # Write the frame to the video
         video_writer.write(screen_img)
 
+    # Save the final image
+    final_img_path = video_dst_fp.parent / f'{video_dst_fp.stem}_final.png'
+    cv2.imwrite(final_img_path, screen_img)
+
     # Close the windows
     cv2.destroyAllWindows()
 
     # Release the video writer
     video_writer.release()
 
+def compute_metrics(par_output_dir, par, gaze_data, screen_height_cm, screen_width_cm):
+    
+    # Compute the L1 error for WebGazer and WebEyeTrack
+    webgazer_l1 = []
+    webeyetrack_l1 = []
+    for i, row in gaze_data.iterrows():
+        gt_x, gt_y = row['tobiiGazeX'] * screen_width_cm, row['tobiiGazeY'] * screen_height_cm
+        if pd.isna(gt_x) or pd.isna(gt_y):
+            continue
+        webgazer_x, webgazer_y = row['webGazerX'] * screen_width_cm, row['webGazerY'] * screen_height_cm
+        if not pd.isna(webgazer_x) and not pd.isna(webgazer_y):
+            webgazer_l1.append(np.linalg.norm(np.array([gt_x, gt_y]) - np.array([webgazer_x, webgazer_y])))
+        webeyetrack_x, webeyetrack_y = row['webEyeTrackX'] * screen_width_cm, row['webEyeTrackY'] * screen_height_cm
+        if not pd.isna(webeyetrack_x) and not pd.isna(webeyetrack_y):
+            webeyetrack_l1.append(np.linalg.norm(np.array([gt_x, gt_y]) - np.array([webeyetrack_x, webeyetrack_y])))
 
+    # Make a boxplot of the L1 errors
+    sns.set(style="whitegrid")
+    plt.figure(figsize=(10, 6))
+    sns.boxplot(data=[webgazer_l1, webeyetrack_l1], palette=["#FF6347", "#4682B4"])
+    plt.xticks([0, 1], ['WebGazer', 'WebEyeTrack'])
+    plt.ylabel('L1 Error (normalized)')
+    plt.title(f'L1 Error for {par}')
+    plt.tight_layout()
+
+    # Put a maximum value of 40 for the y-axis
+    ylim = min(40, max(max(webgazer_l1, default=0), max(webeyetrack_l1, default=0)))
+    plt.ylim(0, ylim)
+    
+    # Save the boxplot
+    boxplot_path = par_output_dir / f'{par}_l1_error_boxplot.png'
+    plt.savefig(boxplot_path)
+    plt.close()
+    
+    # Compute the average L1 error
+    webgazer_avg_l1 = np.mean(webgazer_l1)
+    webeyetrack_avg_l1 = np.mean(webeyetrack_l1)
+
+    # Create a dataframe with the metrics
+    metrics_df = pd.DataFrame({
+        'participant': [par],
+        'webGazerAvgL1': [webgazer_avg_l1],
+        'webEyeTrackAvgL1': [webeyetrack_avg_l1],
+    })
+
+    # Save the metrics to a CSV file
+    metrics_csv_path = par_output_dir / f'{par}_metrics.csv'
+    metrics_df.to_csv(metrics_csv_path, index=False)
+            
 def main():
 
     print("Starting Eye of the Typer evaluation...")
@@ -482,8 +545,16 @@ def main():
             wet
         )
 
-    cv2.destroyAllWindows()
+        # Compute the metrics
+        compute_metrics(
+            par_output_dir,
+            par,
+            within_dot_test,
+            screen_height_cm,
+            screen_width_cm,
+        )
 
+    cv2.destroyAllWindows()
 
 if __name__ == '__main__':
     main()

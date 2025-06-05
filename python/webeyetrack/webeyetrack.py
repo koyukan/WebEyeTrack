@@ -396,9 +396,9 @@ class WebEyeTrack():
             print(f"Error in obtaining eye patch: {e}")
             return TrackingStatus.FAILED, None
 
-        cv2.imshow('Eye Patch', eye_patch)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            cv2.destroyAllWindows()
+        # cv2.imshow('Eye Patch', eye_patch)
+        # if cv2.waitKey(1) & 0xFF == ord('q'):
+        #     cv2.destroyAllWindows()
 
         # Perform the gaze estimation via BlazeGaze Model
         pog_estimation = self.infer_fn(
