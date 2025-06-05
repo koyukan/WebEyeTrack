@@ -189,7 +189,7 @@ def preprocess_csv(pid, csv_path, section) -> pd.DataFrame:
     # import pdb; pdb.set_trace()
 
     data['tobiiGazeX'] = (data['tobiiGazeX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
-    data['tobiiGazeY'] = (data['tobiiGazeY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
+    # data['tobiiGazeY'] = (data['tobiiGazeY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
 
     # Then shift the gaze points to be in the range [[-0.5, 0.5], [-0.5, 0.5]]
     data['tobiiGazeX'] = data['tobiiGazeX'] - 0.5
@@ -197,7 +197,11 @@ def preprocess_csv(pid, csv_path, section) -> pd.DataFrame:
 
     return data
 
-def visualize_scanpath(par, calib_pts, returned_calib, csv_data, screen_height_px, screen_width_px, wet) -> plt.Figure:
+def scanpath_video(video_dst_fp, par, calib_pts, returned_calib, csv_data, screen_height_px, screen_width_px, wet) -> plt.Figure:
+
+    # Create a video writer for mp4
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video_writer = cv2.VideoWriter(str(video_dst_fp), fourcc, 30.0, (screen_width_px, screen_height_px))
 
     calib_pts_frames_nums = [pt['frameNum'] for pt in calib_pts]
     screen_img = np.zeros((screen_height_px, screen_width_px, 3), dtype=np.uint8)
@@ -276,22 +280,20 @@ def visualize_scanpath(par, calib_pts, returned_calib, csv_data, screen_height_p
                         (int(x2 * screen_width_px), int(y2 * screen_height_px)), (255, 0, 255), 1)
 
         # Display the image
-        cv2.imshow('Image', img)
-        cv2.imshow('Screen', screen_img)
-        if cv2.waitKey(0) & 0xFF == ord('q'):
-            break
+        if VISUALIZE:
+            cv2.imshow('Image', img)
+            cv2.imshow('Screen', screen_img)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+        # Write the frame to the video
+        video_writer.write(screen_img)
 
     # Close the windows
     cv2.destroyAllWindows()
 
-    # Create the figure from the screen image
-    fig, ax = plt.subplots(figsize=(10, 10))
-    ax.imshow(screen_img)
-    ax.axis('off')
-    ax.set_title(f'Scanpath for {par}')
-    plt.tight_layout()
-    plt.show()
-    return fig
+    # Release the video writer
+    video_writer.release()
 
 
 def main():
@@ -299,12 +301,12 @@ def main():
     print("Starting Eye of the Typer evaluation...")
 
     timestamp = pd.Timestamp.now().strftime('%Y%m%d%H%M%S')
-    RUN_DIR = OUTPUTS_DIR / f'EyeOfTheTyper-{timestamp}'
+    RUN_DIR = OUTPUTS_DIR / f'{timestamp}-EyeOfTheTyper'
     os.makedirs(RUN_DIR, exist_ok=True)
 
     # Iterate over the folders within the dataset
-    p_dirs = [EYE_OF_THE_TYPER_DATASET / 'P_01']
-    # p_dirs = [p for p in EYE_OF_THE_TYPER_DATASET.iterdir() if p.is_dir()]
+    # p_dirs = [EYE_OF_THE_TYPER_DATASET / 'P_02']
+    p_dirs = [p for p in EYE_OF_THE_TYPER_DATASET.iterdir() if p.is_dir()]
     gaze_csvs = [p for p in EYE_OF_THE_TYPER_DATASET.iterdir() if p.is_file() and p.suffix == '.csv']
     options = set(['study' + p.stem.split('-study')[1] for p in gaze_csvs])
 
@@ -365,51 +367,52 @@ def main():
             print(f"No mouse clicks found for participant {par}. Skipping.")
             continue
 
-        # Extract the 9-point calibration data (which should be top-left, top-center, top-right, center-left, center-center, center-right, bottom-left, bottom-center, bottom-right)
-        # x_coords, y_coords = [0.15, 0.5, 0.85], [0.15, 0.5, 0.85]
-        # x_coords, y_coords = [0.15, 0.85], [0.15, 0.85]
-        x_coords, y_coords = [-0.45, 0.45], [-0.35, 0.35]
-        pts = [(x, y) for x in x_coords for y in y_coords]
-        # Top-center, center-left, center-right, bottom-center
-        # pts = [
-        #     (0, 0.25),  # Top-center
-        #     (-0.25, 0),  # Center-left
-        #     (0.25, 0),  # Center-right
-        #     (0, -0.25),  # Bottom-center
-        # ]
-        # pts = pts[:2]
-        # pts = [pts[3]]
-        # print(pts)
 
-        # Create the calibration points by finding the closest points in the mouse clicks
-        # calib_pts = []
-        # pts = eval(CALIB_PTS[CALIB_PTS['pid'] == par].iloc[0].pts)
-        # for pt in pts:
-        #     row = dot_test_data[dot_test_data['frameNum'] == pt].iloc[0]
-        #     calib_pts.append(row)
-
+        # import pdb; pdb.set_trace()
         calib_pts = []
-        for pt in pts:
-            # Find the closest mouse click
-            closest_click = None
-            closest_click_info = None
-            min_dist = float('inf')
-            for i, row in dot_test_data.iterrows():
-                # click_x, click_y = eval(row['mouseClickX'])[0], eval(row['mouseClickY'])[0]
-                # click_x, click_y = row['mouseClickX'], row['mouseClickY']
-                x, y = row['tobiiGazeX'], row['tobiiGazeY']
-                if not isinstance(x, float) or not isinstance(y, float):
-                    continue
+        if par in CALIB_PTS['pid'].values:
+            # Create the calibration points by finding the closest points in the mouse clicks
+            pts = eval(CALIB_PTS[CALIB_PTS['pid'] == par].iloc[0].pts)
+            for pt in pts:
+                row = dot_test_data[dot_test_data['frameNum'] == pt].iloc[0]
+                calib_pts.append(row)
 
-                dist = np.linalg.norm(np.array([x, y]) - np.array(pt))
-                if dist < min_dist:
-                    min_dist = dist
-                    closest_click = (x, y)
-                    closest_click_info = row
-            if closest_click is not None:
-                calib_pts.append(closest_click_info)
+        else:
+            # Extract the 9-point calibration data (which should be top-left, top-center, top-right, center-left, center-center, center-right, bottom-left, bottom-center, bottom-right)
+            # x_coords, y_coords = [0.15, 0.5, 0.85], [0.15, 0.5, 0.85]
+            # x_coords, y_coords = [0.15, 0.85], [0.15, 0.85]
+            x_coords, y_coords = [-0.45, 0.45], [-0.35, 0.35]
+            pts = [(x, y) for x in x_coords for y in y_coords]
+            # Top-center, center-left, center-right, bottom-center
+            # pts = [
+            #     (0, 0.25),  # Top-center
+            #     (-0.25, 0),  # Center-left
+            #     (0.25, 0),  # Center-right
+            #     (0, -0.25),  # Bottom-center
+            # ]
+            # pts = pts[:2]
+            # pts = [pts[3]]
+            # print(pts)
 
-        # print(calib_pts)
+            for pt in pts:
+                # Find the closest mouse click
+                closest_click = None
+                closest_click_info = None
+                min_dist = float('inf')
+                for i, row in dot_test_data.iterrows():
+                    # click_x, click_y = eval(row['mouseClickX'])[0], eval(row['mouseClickY'])[0]
+                    # click_x, click_y = row['mouseClickX'], row['mouseClickY']
+                    x, y = row['tobiiGazeX'], row['tobiiGazeY']
+                    if not isinstance(x, float) or not isinstance(y, float):
+                        continue
+
+                    dist = np.linalg.norm(np.array([x, y]) - np.array(pt))
+                    if dist < min_dist:
+                        min_dist = dist
+                        closest_click = (x, y)
+                        closest_click_info = row
+                if closest_click is not None:
+                    calib_pts.append(closest_click_info)
 
         # Create the frame and point lists
         frames = []
@@ -440,8 +443,6 @@ def main():
             pred_pt = returned_calib[i]
 
             # Draw the points as circles
-            # x, y = (gt_pt[0] + 0.5), (gt_pt[1] + 0.5)
-            # cv2.circle(screen_img, (int(x * screen_width_px), int(y * screen_height_px)), 10, (0, 255, 255), -1)
             x, y = (gt_tb_pt[0] + 0.5), (gt_tb_pt[1] + 0.5)
             cv2.circle(screen_img, (int(x * screen_width_px), int(y * screen_height_px)), 10, (0, 0, 255), -1)
             x2, y2 = (pred_pt[0] + 0.5), (pred_pt[1] + 0.5)
@@ -452,9 +453,13 @@ def main():
                         (int(x2 * screen_width_px), int(y2 * screen_height_px)), (255, 0, 255), 1)
             
         # Display the image
-        cv2.imshow('Calibration Point', screen_img)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+        if VISUALIZE:
+            cv2.imshow('Calibration Point', screen_img)
+            cv2.waitKey(1)
+
+        # Save the calibration image
+        calib_img_path = par_output_dir / f'{SECTIONS[0]}_calib.png'
+        cv2.imwrite(str(calib_img_path), screen_img)
 
         # break
 
@@ -466,7 +471,8 @@ def main():
         within_dot_test = dot_test_data[(dot_test_data['frameNum'] >= first_click['frameNum']) & (dot_test_data['frameNum'] <= last_click['frameNum'])]
 
         # Create the figure
-        fig = visualize_scanpath(
+        scanpath_video(
+            par_output_dir / f'{SECTIONS[0]}.mp4',
             par,
             calib_pts,
             returned_calib,
@@ -475,7 +481,8 @@ def main():
             screen_width_px,
             wet
         )
-        break
+
+    cv2.destroyAllWindows()
 
 
 if __name__ == '__main__':
