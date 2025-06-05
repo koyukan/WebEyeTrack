@@ -150,6 +150,7 @@ class WebEyeTrack():
         # Keep track of the face width cm estimate
         self.face_width_cm = None
         self.intrinsics = None
+        self.affine_matrix = None
 
     def compute_face_origin_3d(self, image_np: np.ndarray, face_landmarks_all: np.ndarray, face_landmarks_rt: np.ndarray):
 
@@ -284,9 +285,14 @@ class WebEyeTrack():
             dst=support_y.numpy()
         )
 
+        # Apply the affine transformation to the preds
+        preds = support_preds.numpy()
+        augmented_preds = np.hstack([preds, np.ones((preds.shape[0], 1))])
+        affine_preds = (self.affine_matrix @ augmented_preds.T).T[:, :2]
+
         if query_x is None or query_y is None:
             print(f"Adaptation completed. Support loss: {support_loss.numpy():.4f}")
-            return
+            return affine_preds
         
         query_x['encoder_features'] = encoder_model(query_x['image'], training=False)
         features = ['encoder_features', 'head_vector', 'face_origin_3d']
@@ -323,7 +329,7 @@ class WebEyeTrack():
             valid_norm_pogs.append(norm_pogs[i])
 
         # Perform the adaptation
-        self.adapt(
+        return self.adapt(
             eye_patches=eye_patches,
             head_vectors=head_vectors,
             face_origin_3ds=face_origin_3ds,
@@ -358,7 +364,7 @@ class WebEyeTrack():
             valid_norm_pogs.append(sample['pog_norm'])
 
         # Perform the adaptation
-        self.adapt(
+        return self.adapt(
             eye_patches=eye_patches,
             head_vectors=head_vectors,
             face_origin_3ds=face_origin_3ds,
@@ -403,9 +409,9 @@ class WebEyeTrack():
 
         # Apply affine transformation if available
         if self.affine_matrix is not None:
-            # augmented_pog = np.append(pog_estimation[0], 1.0)  # shape (3,)
-            # norm_pog = self.affine_matrix @ augmented_pog       # shape (2,)
-            norm_pog = pog_estimation[0] 
+            augmented_pog = np.append(pog_estimation[0], 1.0)  # shape (3,)
+            norm_pog = self.affine_matrix @ augmented_pog       # shape (2,)
+            # norm_pog = pog_estimation[0] 
         else:
             norm_pog = pog_estimation[0]
 

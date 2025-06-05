@@ -17,6 +17,7 @@ matplotlib.use('TkAgg')
 
 from webeyetrack.data_protocols import TrackingStatus
 from webeyetrack import WebEyeTrack, WebEyeTrackConfig
+from webeyetrack.constants import GIT_ROOT
 # from webeyetrack.kalman_filter import create_kalman_filter
 
 # Set all the seeds
@@ -34,6 +35,12 @@ with open(FILE_DIR / 'config.yaml', 'r') as f:
 EYE_OF_THE_TYPER_DATASET = pathlib.Path(config['datasets']['EyeOfTheTyper']['path'])
 assert EYE_OF_THE_TYPER_DATASET.exists(), f"Dataset not found at {EYE_OF_THE_TYPER_DATASET}"
 EYE_OF_THE_TYPER_PAR_CHAR = pathlib.Path(config['datasets']['EyeOfTheTyper']['participant_characteristics'])
+
+GENERATED_DATASET_DIR = GIT_ROOT / 'data' / 'generated'
+DATA_CORRECTIONS_FILE = GENERATED_DATASET_DIR / 'eye_of_the_typer' / 'tobii_data_corrections.xlsx'
+DATA_CORRECTIONS = pd.read_excel(DATA_CORRECTIONS_FILE)
+CALIB_PTS_FILE =  GENERATED_DATASET_DIR / 'eye_of_the_typer' / 'calibration_pts.xlsx'
+CALIB_PTS = pd.read_excel(CALIB_PTS_FILE)
 
 SECTIONS = [
     'study-dot_test.webm_gazePredictionsDone',
@@ -106,7 +113,7 @@ thank_you: Questionnaire.
 
 print("FINISHED IMPORTS and SETUP")
 
-def preprocess_csv(csv_path) -> pd.DataFrame:
+def preprocess_csv(pid, csv_path, section) -> pd.DataFrame:
     data = pd.read_csv(csv_path)
 
     # Drop the columns after 19th column
@@ -138,26 +145,15 @@ def preprocess_csv(csv_path) -> pd.DataFrame:
                     float_item = float_item_list[0]
 
             if float_item is not None:
-                data.at[i, col] = (float_item - 0.5)
+                if float_item == -1:
+                    data.at[i, col] = None
+                else:
+                    data.at[i, col] = float_item
             else:
                 data.at[i, col] = None
 
-    return data
-
-def visualize_scanpath(par, calib_pts, csv_data, screen_height_px, screen_width_px, wet) -> plt.Figure:
-
-    screen_img = np.zeros((screen_height_px, screen_width_px, 3), dtype=np.uint8)
-
-    # Create a kalman filter for the gaze
-    # tobii_kf = create_kalman_filter(dt=1/120)
-    
-    for i, row in tqdm(csv_data.iterrows(), total=len(csv_data), desc=f'Visualizing scanpath for {par}'):
-        
-        # Load the image
-        img_path = EYE_OF_THE_TYPER_DATASET / par / "/".join(row['frameImageFile'].split('/')[3:])
-        assert img_path.exists(), f"Image not found at {img_path}"
-        img = cv2.imread(str(img_path))
-
+    # Combine the left and right gaze points into a single gaze point
+    for i, row in data.iterrows():
         # Compute the normalized gaze point from the Tobii (left and right).
         # If both available, average them.
         # If -1 for one of the eyes, use the other eye.
@@ -171,6 +167,54 @@ def visualize_scanpath(par, calib_pts, csv_data, screen_height_px, screen_width_
             gaze = left_gaze
         elif right_gaze[0] != -1:
             gaze = right_gaze
+        else:
+            gaze = None
+
+        data.at[i, 'tobiiGazeX'] = gaze[0] if gaze is not None else None
+        data.at[i, 'tobiiGazeY'] = gaze[1] if gaze is not None else None
+
+    # Drop rows where the 'tobiiGazeX' or 'tobiiGazeY' is None
+    data = data.dropna(subset=['tobiiGazeX', 'tobiiGazeY'])
+
+    # Apply correction to the gaze points
+    # corrections = DATA_CORRECTIONS[(DATA_CORRECTIONS['pid'] == pid) & (DATA_CORRECTIONS['section'] == section)]
+    # if not corrections.empty:
+    #     corrections = corrections.iloc[0]
+    #     data['tobiiGazeX'] = data['tobiiGazeX'] * corrections['scale_x'] + corrections['shift_x']
+    #     data['tobiiGazeY'] = data['tobiiGazeY'] * corrections['scale_y'] + corrections['shift_y']
+
+    # If the range of the gaze x and y is not [0, 1], then normalize it to [0, 1]
+    gaze_x_min, gaze_x_max = data['tobiiGazeX'].min(), data['tobiiGazeX'].max()
+    gaze_y_min, gaze_y_max = data['tobiiGazeY'].min(), data['tobiiGazeY'].max()
+    # import pdb; pdb.set_trace()
+
+    data['tobiiGazeX'] = (data['tobiiGazeX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
+    data['tobiiGazeY'] = (data['tobiiGazeY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
+
+    # Then shift the gaze points to be in the range [[-0.5, 0.5], [-0.5, 0.5]]
+    data['tobiiGazeX'] = data['tobiiGazeX'] - 0.5
+    data['tobiiGazeY'] = data['tobiiGazeY'] - 0.5
+
+    return data
+
+def visualize_scanpath(par, calib_pts, returned_calib, csv_data, screen_height_px, screen_width_px, wet) -> plt.Figure:
+
+    calib_pts_frames_nums = [pt['frameNum'] for pt in calib_pts]
+    screen_img = np.zeros((screen_height_px, screen_width_px, 3), dtype=np.uint8)
+
+    # Create a kalman filter for the gaze
+    # tobii_kf = create_kalman_filter(dt=1/120)
+    
+    for i, row in tqdm(csv_data.iterrows(), total=len(csv_data), desc=f'Visualizing scanpath for {par}'):
+
+        # Draw on the top left of the screen the frame number
+        cv2.rectangle(screen_img, (0, 0), (150, 40), (0, 0, 0), -1)
+        cv2.putText(screen_img, f'F: {row["frameNum"]}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        
+        # Load the image
+        img_path = EYE_OF_THE_TYPER_DATASET / par / "/".join(row['frameImageFile'].split('/')[3:])
+        assert img_path.exists(), f"Image not found at {img_path}"
+        img = cv2.imread(str(img_path))
 
         # Apply the Kalman filter to the gaze point
         # if gaze is not None:
@@ -178,6 +222,11 @@ def visualize_scanpath(par, calib_pts, csv_data, screen_height_px, screen_width_
         #     tobii_kf.predict()
         #     tobii_kf.update(np.array(gaze_px))
         #     smooth_gaze = (tobii_kf.x[0], tobii_kf.x[1])
+
+        # Obtain the gaze point from the row
+        gaze = (row['tobiiGazeX'], row['tobiiGazeY'])
+        if gaze[0] is None or gaze[1] is None:
+            gaze = None
 
         # Obtain the webgazer gaze point
         webgazer_gaze = (row['webGazerX'], row['webGazerY'])
@@ -209,16 +258,27 @@ def visualize_scanpath(par, calib_pts, csv_data, screen_height_px, screen_width_
         # cv2.circle(screen_img, (int(webeyetrack_gaze[0]*screen_width_px), int(webeyetrack_gaze[1]*screen_height_px)), 5, (0, 0, 255), -1)
 
         # If this is a calibration point, make a big yellow circle
-        if row['frameNum'] in [pt['frameNum'] for pt in calib_pts]:
-            # x, y = eval(row['mouseClickX'])[0], eval(row['mouseClickY'])[0]
-            x, y = row['mouseClickX'], row['mouseClickY']
+        # if row['frameNum'] in [pt['frameNum'] for pt in calib_pts]:
+        frame_idx = calib_pts_frames_nums.index(row['frameNum']) if row['frameNum'] in calib_pts_frames_nums else None
+        if frame_idx is not None:
+            row = calib_pts[frame_idx]
+            x, y = row['tobiiGazeX'], row['tobiiGazeY']
             x, y = (x + 0.5), (y + 0.5)
             cv2.circle(screen_img, (int(x * screen_width_px), int(y * screen_height_px)), 10, (0, 255, 255), -1)
+
+            # Draw the resulting calibration point
+            resulting_calib_point = returned_calib[frame_idx]
+            x2, y2 = (resulting_calib_point[0] + 0.5), (resulting_calib_point[1] + 0.5)
+            cv2.circle(screen_img, (int(x2 * screen_width_px), int(y2 * screen_height_px)), 10, (255, 255, 0), -1)
+
+            # Draw a line between the original calibration point and the resulting calibration point
+            cv2.line(screen_img, (int(x * screen_width_px), int(y * screen_height_px)),
+                        (int(x2 * screen_width_px), int(y2 * screen_height_px)), (255, 0, 255), 1)
 
         # Display the image
         cv2.imshow('Image', img)
         cv2.imshow('Screen', screen_img)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        if cv2.waitKey(0) & 0xFF == ord('q'):
             break
 
     # Close the windows
@@ -297,7 +357,7 @@ def main():
             continue
 
         # Load the calibration data
-        dot_test_data = preprocess_csv(calib_csv)
+        dot_test_data = preprocess_csv(par, calib_csv, SECTIONS[0])
         
         # Use the mouse clicks to calibrate
         mouse_click_data = dot_test_data[dot_test_data['mouseClickX'] != '[]']
@@ -308,29 +368,43 @@ def main():
         # Extract the 9-point calibration data (which should be top-left, top-center, top-right, center-left, center-center, center-right, bottom-left, bottom-center, bottom-right)
         # x_coords, y_coords = [0.15, 0.5, 0.85], [0.15, 0.5, 0.85]
         # x_coords, y_coords = [0.15, 0.85], [0.15, 0.85]
-        x_coords, y_coords = [-0.35, 0.35], [-0.35, 0.35]
+        x_coords, y_coords = [-0.45, 0.45], [-0.35, 0.35]
         pts = [(x, y) for x in x_coords for y in y_coords]
+        # Top-center, center-left, center-right, bottom-center
+        # pts = [
+        #     (0, 0.25),  # Top-center
+        #     (-0.25, 0),  # Center-left
+        #     (0.25, 0),  # Center-right
+        #     (0, -0.25),  # Bottom-center
+        # ]
         # pts = pts[:2]
         # pts = [pts[3]]
         # print(pts)
 
         # Create the calibration points by finding the closest points in the mouse clicks
+        # calib_pts = []
+        # pts = eval(CALIB_PTS[CALIB_PTS['pid'] == par].iloc[0].pts)
+        # for pt in pts:
+        #     row = dot_test_data[dot_test_data['frameNum'] == pt].iloc[0]
+        #     calib_pts.append(row)
+
         calib_pts = []
         for pt in pts:
             # Find the closest mouse click
             closest_click = None
             closest_click_info = None
             min_dist = float('inf')
-            for i, row in mouse_click_data.iterrows():
+            for i, row in dot_test_data.iterrows():
                 # click_x, click_y = eval(row['mouseClickX'])[0], eval(row['mouseClickY'])[0]
-                click_x, click_y = row['mouseClickX'], row['mouseClickY']
-                if not isinstance(click_x, float) or not isinstance(click_y, float):
+                # click_x, click_y = row['mouseClickX'], row['mouseClickY']
+                x, y = row['tobiiGazeX'], row['tobiiGazeY']
+                if not isinstance(x, float) or not isinstance(y, float):
                     continue
 
-                dist = np.linalg.norm(np.array([click_x, click_y]) - np.array(pt))
+                dist = np.linalg.norm(np.array([x, y]) - np.array(pt))
                 if dist < min_dist:
                     min_dist = dist
-                    closest_click = (click_x, click_y)
+                    closest_click = (x, y)
                     closest_click_info = row
             if closest_click is not None:
                 calib_pts.append(closest_click_info)
@@ -348,13 +422,41 @@ def main():
                 print(f"Image not found at {img_path}")
                 continue
             frames.append(img)
-            click_x, click_y = row['mouseClickX'], row['mouseClickY']
-            norm_pogs.append(np.array([click_x, click_y]))
+            x, y = row['tobiiGazeX'], row['tobiiGazeY']
+            norm_pogs.append(np.array([x, y]))
         
         norm_pogs = np.stack(norm_pogs)
         
         # Perform the calibration
-        wet.adapt_from_frames(frames, norm_pogs)
+        # returned_calib = []
+        returned_calib = wet.adapt_from_frames(frames, norm_pogs)
+
+        # Draw the calibration points on the screen
+        screen_img = np.zeros((screen_height_px, screen_width_px, 3), dtype=np.uint8)
+        for i, row in enumerate(calib_pts):
+
+            # gt_pt = row['mouseClickX'], row['mouseClickY']
+            gt_tb_pt = row['tobiiGazeX'], row['tobiiGazeY']
+            pred_pt = returned_calib[i]
+
+            # Draw the points as circles
+            # x, y = (gt_pt[0] + 0.5), (gt_pt[1] + 0.5)
+            # cv2.circle(screen_img, (int(x * screen_width_px), int(y * screen_height_px)), 10, (0, 255, 255), -1)
+            x, y = (gt_tb_pt[0] + 0.5), (gt_tb_pt[1] + 0.5)
+            cv2.circle(screen_img, (int(x * screen_width_px), int(y * screen_height_px)), 10, (0, 0, 255), -1)
+            x2, y2 = (pred_pt[0] + 0.5), (pred_pt[1] + 0.5)
+            cv2.circle(screen_img, (int(x2 * screen_width_px), int(y2 * screen_height_px)), 10, (255, 255, 0), -1)
+
+            # Draw a line between the original calibration point and the resulting calibration point
+            cv2.line(screen_img, (int(x * screen_width_px), int(y * screen_height_px)),
+                        (int(x2 * screen_width_px), int(y2 * screen_height_px)), (255, 0, 255), 1)
+            
+        # Display the image
+        cv2.imshow('Calibration Point', screen_img)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+        # break
 
         # First, visualize the scanpath of the original dot test that we used for calibration
         # For this section, we want to visualize only the scanpath right after the first click and the last click
@@ -367,6 +469,7 @@ def main():
         fig = visualize_scanpath(
             par,
             calib_pts,
+            returned_calib,
             within_dot_test,
             screen_height_px,
             screen_width_px,
