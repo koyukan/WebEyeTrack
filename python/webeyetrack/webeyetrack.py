@@ -413,7 +413,8 @@ class WebEyeTrack():
             norm_pog = self.affine_matrix @ augmented_pog       # shape (2,)
             # norm_pog = pog_estimation[0] 
         else:
-            norm_pog = pog_estimation[0]
+            norm_pog = pog_estimation[0].numpy()
+        norm_pog = np.array([float(norm_pog[0]), float(norm_pog[1])])
 
         toc = time.perf_counter()
 
