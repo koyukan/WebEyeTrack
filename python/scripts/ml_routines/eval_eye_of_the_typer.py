@@ -329,7 +329,7 @@ def compute_metrics(par_output_dir, par, gaze_data, screen_height_cm, screen_wid
 
         webgazer_x, webgazer_y = row['webGazerX'], row['webGazerY']
         webeyetrack_x, webeyetrack_y = row['webEyeTrackX'], row['webEyeTrackY']
-        if isinstance(webgazer_x, float) and isinstance(webgazer_y, float) and isinstance(webeyetrack_x, float) and isinstance(webeyetrack_y, float):
+        if not pd.isna(webgazer_x) and not pd.isna(webgazer_y) and isinstance(webgazer_x, float) and isinstance(webgazer_y, float) and isinstance(webeyetrack_x, float) and isinstance(webeyetrack_y, float):
             webgazer_x, webgazer_y = webgazer_x * screen_width_cm, webgazer_y * screen_height_cm
             webgazer_l1.append(np.linalg.norm(np.array([gt_x, gt_y]) - np.array([webgazer_x, webgazer_y])))
             webeyetrack_x, webeyetrack_y = webeyetrack_x * screen_width_cm, webeyetrack_y * screen_height_cm
@@ -396,7 +396,7 @@ def main():
     os.makedirs(RUN_DIR, exist_ok=True)
 
     # Iterate over the folders within the dataset
-    # p_dirs = [EYE_OF_THE_TYPER_DATASET / 'P_31']
+    # p_dirs = [EYE_OF_THE_TYPER_DATASET / 'P_01', EYE_OF_THE_TYPER_DATASET / 'P_02']
     p_dirs = [p for p in EYE_OF_THE_TYPER_DATASET.iterdir() if p.is_dir()]
     gaze_csvs = [p for p in EYE_OF_THE_TYPER_DATASET.iterdir() if p.is_file() and p.suffix == '.csv']
     options = set(['study' + p.stem.split('-study')[1] for p in gaze_csvs])
@@ -616,23 +616,79 @@ def main():
         )
 
         # Save the metrics to the participants_metrics
-        participants_metrics['webGazerAvgL1'].extend(webgazer_l1)
-        participants_metrics['webEyeTrackAvgL1'].extend(webeyetrack_l1)
+        par_list = [par] * len(webgazer_l1)
+        participants_metrics['participant'].extend(par_list)
+        participants_metrics['gaze'].extend(webgazer_l1)
+        participants_metrics['class'].extend(['webGazer'] * len(webgazer_l1))
+        participants_metrics['participant'].extend(par_list)
+        participants_metrics['gaze'].extend(webeyetrack_l1)
+        participants_metrics['class'].extend(['webEyeTrack'] * len(webeyetrack_l1))
 
-    # Create a DataFrame from the participants_metrics and compute mean and std
     participants_metrics_df = pd.DataFrame(participants_metrics)
-    meta_data = {
-        'webGazerAvgL1': participants_metrics_df['webGazerAvgL1'].mean(),
-        'webGazerStdL1': participants_metrics_df['webGazerAvgL1'].std(),
-        'webEyeTrackAvgL1': participants_metrics_df['webEyeTrackAvgL1'].mean(),
-        'webEyeTrackStdL1': participants_metrics_df['webEyeTrackAvgL1'].std(),
-    }
-    with open(RUN_DIR / 'meta_data.yaml', 'w') as f:
-        yaml.dump(meta_data, f, default_flow_style=False)
+
+    # Add a boxplot for the participants metrics
+    sns.set(style="whitegrid")
+    plt.figure(figsize=(10, 6))
+    sns.boxplot(participants_metrics_df, x="participant", y="gaze", hue="class")
+    plt.xticks([0, 1], ['WebGazer', 'WebEyeTrack'])
+    plt.ylabel('L1 Error (normalized)')
+    plt.title('L1 Error for all participants')
+    plt.tight_layout()
+
+    # Put a limit of 40 for the y-axis
+    ylim = min(40, participants_metrics_df['gaze'].max())
+    plt.ylim(0, ylim)
+
+    # Save the boxplot
+    boxplot_path = RUN_DIR / 'participants_l1_error_boxplot.png'
+    plt.savefig(boxplot_path)
+    plt.close()
+
+    # Compress the data into avg and std for each participant and class
+    new_data = defaultdict(list)
+    for name, group in participants_metrics_df.groupby(['participant']):
+        for name2, group2 in group.groupby(['class']):
+            new_data['Avg'].append(group2['gaze'].mean())
+            new_data['Std'].append(group2['gaze'].std())
+            new_data['participant'].append(name[0])
+            new_data['class'].append(name2[0])
+    
+    participants_metrics_df = pd.DataFrame(new_data)
+
+    # Make a boxplot of the averages
+    plt.figure(figsize=(10, 6))
+    sns.boxplot(data=participants_metrics_df, x='class', y='Avg')
+    plt.xticks(rotation=45)
+    plt.ylabel('Average L1 Error (normalized)')
+    plt.title('Average L1 Error for all participants')
+    plt.tight_layout()
+
+    # Put a limit of 40 for the y-axis
+    ylim = min(40, participants_metrics_df['Avg'].max())
+    plt.ylim(0, ylim)
+
+    # Save the boxplot
+    boxplot_path = RUN_DIR / 'participants_avg_l1_error_boxplot.png'
+    plt.savefig(boxplot_path)
+    plt.close()
     
     # Save the participants metrics to a XLSX file
     participants_metrics_df.to_excel(RUN_DIR / 'participants_metrics.xlsx', index=False)
     cv2.destroyAllWindows()
+
+    # Compress a single avg and std value for the entire dataset
+    data = defaultdict(list)
+    for name, group in participants_metrics_df.groupby(['class']):
+        overall_avg = group['Avg'].mean()
+        overall_std = group['Avg'].std()
+        data[f"{name[0]} Overall Avg L1 Error"].append(overall_avg)
+        data[f"{name[0]} Overall Std L1 Error"].append(overall_std)
+
+    # Create a DataFrame from the data
+    overall_metrics_df = pd.DataFrame(data)
+
+    # Save the overall metrics to a CSV file
+    overall_metrics_df.to_excel(RUN_DIR / 'overall_metrics.xlsx', index=False)
 
 if __name__ == '__main__':
     main()
