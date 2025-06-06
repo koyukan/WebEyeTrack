@@ -249,8 +249,8 @@ class WebEyeTrack():
             steps_inner (int): Number of inner-loop adaptation steps.
             inner_lr (float): Inner-loop learning rate.
         """
-        steps_inner = 100
-        inner_lr=1e-6
+        steps_inner = 5
+        inner_lr=1e-5
 
         encoder_model = self.blazegaze.encoder
         gaze_mlp = self.blazegaze.gaze_mlp

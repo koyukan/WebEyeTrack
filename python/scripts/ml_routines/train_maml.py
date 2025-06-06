@@ -324,7 +324,7 @@ def maml_test(
     test_maml_dataset,
     ids,
     inner_lr=0.01,
-    steps_inner=1,
+    steps_inner=5,
     tb_writer=None,
     steps_test=None, # Optional cap on number of test tasks to evaluate
     plots=False

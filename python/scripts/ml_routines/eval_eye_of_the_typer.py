@@ -184,10 +184,14 @@ def preprocess_csv(pid, csv_path, section) -> pd.DataFrame:
     gaze_x_min, gaze_y_min = gaze_x_min - MARGIN, gaze_y_min - MARGIN
     gaze_x_max, gaze_y_max = gaze_x_max + MARGIN, gaze_y_max + MARGIN
 
-    data['tobiiGazeX'] = (data['tobiiGazeX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
-    data['tobiiGazeY'] = (data['tobiiGazeY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
-    data['webGazerX'] = (data['webGazerX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
-    data['webGazerY'] = (data['webGazerY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
+    # data['tobiiGazeX'] = (data['tobiiGazeX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
+    # data['tobiiGazeY'] = (data['tobiiGazeY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
+    # data['webGazerX'] = (data['webGazerX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
+    # data['webGazerY'] = (data['webGazerY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
+    data.iloc[:, 'tobiiGazeX'] = (data['tobiiGazeX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
+    data.iloc[:, 'tobiiGazeY'] = (data['tobiiGazeY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
+    data.iloc[:, 'webGazerX'] = (data['webGazerX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
+    data.iloc[:, 'webGazerY'] = (data['webGazerY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
 
     # Shift all gaze from range [[0,1], [0,1]] to [[-0.5, 0.5], [-0.5, 0.5]], with center of screen being (0, 0)
     for col in columns_to_shift + ['tobiiGazeX', 'tobiiGazeY']:
