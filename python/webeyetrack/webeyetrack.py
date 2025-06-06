@@ -238,6 +238,7 @@ class WebEyeTrack():
             pog_norms: np.ndarray,
             steps_inner=5, 
             inner_lr=1e-5,
+            affine_transform=False
         ):
         """
         Performs MAML-style adaptation on the gaze head using support samples.
@@ -280,15 +281,20 @@ class WebEyeTrack():
                 w.assign_sub(inner_lr * g)
 
         # After adaptation, compute an affine transformation from the gt and predicted gaze points
-        self.affine_matrix = compute_affine_transform(
-            src=support_preds.numpy(),
-            dst=support_y.numpy()
-        )
+        if affine_transform:
+            self.affine_matrix = compute_affine_transform(
+                src=support_preds.numpy(),
+                dst=support_y.numpy()
+            )
 
-        # Apply the affine transformation to the preds
-        preds = support_preds.numpy()
-        augmented_preds = np.hstack([preds, np.ones((preds.shape[0], 1))])
-        affine_preds = (self.affine_matrix @ augmented_preds.T).T[:, :2]
+            # Apply the affine transformation to the preds
+            preds = support_preds.numpy()
+            augmented_preds = np.hstack([preds, np.ones((preds.shape[0], 1))])
+            affine_preds = (self.affine_matrix @ augmented_preds.T).T[:, :2]
+
+        else:
+            preds = support_preds.numpy()
+            affine_preds = preds
 
         if query_x is None or query_y is None:
             print(f"Adaptation completed. Support loss: {support_loss.numpy():.4f}")
@@ -304,7 +310,7 @@ class WebEyeTrack():
 
         print(f"Adaptation completed. Support loss: {support_loss:.4f}, Query loss: {query_loss:.4f}")
 
-    def adapt_from_frames(self, frames: list, norm_pogs: np.ndarray, steps_inner=5, inner_lr=1e-5):
+    def adapt_from_frames(self, frames: list, norm_pogs: np.ndarray, steps_inner=5, inner_lr=1e-5, affine_transform=False):
         
         # For each frame, obtain the eye patch and head vector
         eye_patches = []
@@ -335,10 +341,11 @@ class WebEyeTrack():
             face_origin_3ds=face_origin_3ds,
             pog_norms=valid_norm_pogs,
             steps_inner=steps_inner,
-            inner_lr=inner_lr
+            inner_lr=inner_lr,
+            affine_transform=affine_transform
         )
 
-    def adapt_from_samples(self, samples, steps_inner=5, inner_lr=1e-5):
+    def adapt_from_samples(self, samples, steps_inner=5, inner_lr=1e-5, affine_transform=False):
         """
         Performs MAML-style adaptation on the gaze head using support samples.
         
@@ -370,7 +377,8 @@ class WebEyeTrack():
             face_origin_3ds=face_origin_3ds,
             pog_norms=valid_norm_pogs,
             steps_inner=steps_inner,
-            inner_lr=inner_lr
+            inner_lr=inner_lr,
+            affine_transform=affine_transform
         )
 
     def step(

@@ -1,0 +1,13 @@
+# Description: Configuration file for the Eye of The Typer dataset.
+config:
+  type: "eye_of_the_typer"
+
+visualize: False
+
+calibration: False
+affine_transform: False
+
+preprocess:
+  margin: 0.05
+
+num_of_participants: 2

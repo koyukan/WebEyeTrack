@@ -2,6 +2,8 @@ import os
 import pathlib
 from collections import defaultdict
 import argparse
+import time
+import json
 
 from sklearn.cluster import KMeans
 import tensorflow as tf
@@ -56,8 +58,6 @@ PARTICIPANT_CHARACTERISTICS = pd.read_csv(EYE_OF_THE_TYPER_PAR_CHAR)
 
 IMAGE_WIDTH = 640
 IMAGE_HEIGHT = 480
-VISUALIZE = False
-CALIBRATE = False
 
 # A reminder of what the desired field name outputs are.
 fieldnames = [
@@ -116,7 +116,7 @@ thank_you: Questionnaire.
 
 print("FINISHED IMPORTS and SETUP")
 
-def preprocess_csv(pid, csv_path, section) -> pd.DataFrame:
+def preprocess_csv(config, pid, csv_path, section) -> pd.DataFrame:
     data = pd.read_csv(csv_path)
 
     # Drop the columns after 19th column
@@ -181,17 +181,17 @@ def preprocess_csv(pid, csv_path, section) -> pd.DataFrame:
     # If the range of the gaze x and y is not [0, 1], then normalize it to [0, 1]
     gaze_x_min, gaze_x_max = data['tobiiGazeX'].min(), data['tobiiGazeX'].max()
     gaze_y_min, gaze_y_max = data['tobiiGazeY'].min(), data['tobiiGazeY'].max()
-    gaze_x_min, gaze_y_min = gaze_x_min - MARGIN, gaze_y_min - MARGIN
-    gaze_x_max, gaze_y_max = gaze_x_max + MARGIN, gaze_y_max + MARGIN
+    gaze_x_min, gaze_y_min = gaze_x_min - config['preprocess']['margin'], gaze_y_min - config['preprocess']['margin']
+    gaze_x_max, gaze_y_max = gaze_x_max + config['preprocess']['margin'], gaze_y_max + config['preprocess']['margin']
 
-    # data['tobiiGazeX'] = (data['tobiiGazeX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
-    # data['tobiiGazeY'] = (data['tobiiGazeY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
-    # data['webGazerX'] = (data['webGazerX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
-    # data['webGazerY'] = (data['webGazerY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
-    data.iloc[:, 'tobiiGazeX'] = (data['tobiiGazeX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
-    data.iloc[:, 'tobiiGazeY'] = (data['tobiiGazeY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
-    data.iloc[:, 'webGazerX'] = (data['webGazerX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
-    data.iloc[:, 'webGazerY'] = (data['webGazerY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
+    data['tobiiGazeX'] = (data['tobiiGazeX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
+    data['tobiiGazeY'] = (data['tobiiGazeY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
+    data['webGazerX'] = (data['webGazerX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
+    data['webGazerY'] = (data['webGazerY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
+    # data.iloc[:, 'tobiiGazeX'] = (data['tobiiGazeX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
+    # data.iloc[:, 'tobiiGazeY'] = (data['tobiiGazeY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
+    # data.iloc[:, 'webGazerX'] = (data['webGazerX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
+    # data.iloc[:, 'webGazerY'] = (data['webGazerY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
 
     # Shift all gaze from range [[0,1], [0,1]] to [[-0.5, 0.5], [-0.5, 0.5]], with center of screen being (0, 0)
     for col in columns_to_shift + ['tobiiGazeX', 'tobiiGazeY']:
@@ -211,7 +211,7 @@ def preprocess_csv(pid, csv_path, section) -> pd.DataFrame:
 
     return data
 
-def scanpath_video(video_dst_fp, par, calib_pts, returned_calib, csv_data, screen_height_px, screen_width_px, wet) -> plt.Figure:
+def scanpath_video(config, video_dst_fp, par, calib_pts, returned_calib, csv_data, screen_height_px, screen_width_px, wet) -> plt.Figure:
 
     # Create a video writer for mp4
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -283,7 +283,7 @@ def scanpath_video(video_dst_fp, par, calib_pts, returned_calib, csv_data, scree
 
         # If this is a calibration point, make a big yellow circle
         # if row['frameNum'] in [pt['frameNum'] for pt in calib_pts]:
-        if returned_calib:
+        if config['calibration']:
             frame_idx = calib_pts_frames_nums.index(row['frameNum']) if row['frameNum'] in calib_pts_frames_nums else None
             if frame_idx is not None:
                 row = calib_pts[frame_idx]
@@ -301,7 +301,7 @@ def scanpath_video(video_dst_fp, par, calib_pts, returned_calib, csv_data, scree
                             (int(x2 * screen_width_px), int(y2 * screen_height_px)), (255, 0, 255), 1)
 
         # Display the image
-        if VISUALIZE:
+        if config['visualize']:
             cv2.imshow('Image', img)
             cv2.imshow('Screen', screen_img)
             if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -391,12 +391,12 @@ def compute_metrics(par_output_dir, par, gaze_data, screen_height_cm, screen_wid
 
     return webgazer_l1, webeyetrack_l1
             
-def main():
+def main(args, config):
 
     print("Starting Eye of the Typer evaluation...")
 
     timestamp = pd.Timestamp.now().strftime('%Y%m%d%H%M%S')
-    RUN_DIR = OUTPUTS_DIR / f'{timestamp}-EyeOfTheTyper'
+    RUN_DIR = OUTPUTS_DIR / f'{timestamp}-EyeOfTheTyper-{args.exp}'
     os.makedirs(RUN_DIR, exist_ok=True)
 
     # Iterate over the folders within the dataset
@@ -404,6 +404,9 @@ def main():
     p_dirs = [p for p in EYE_OF_THE_TYPER_DATASET.iterdir() if p.is_dir()]
     gaze_csvs = [p for p in EYE_OF_THE_TYPER_DATASET.iterdir() if p.is_file() and p.suffix == '.csv']
     options = set(['study' + p.stem.split('-study')[1] for p in gaze_csvs])
+
+    if config['num_of_participants'] > 0:
+        p_dirs = p_dirs[:config['num_of_participants']]
 
     print(f"Found {len(p_dirs)} participants and {len(gaze_csvs)} gaze CSVs.")
 
@@ -454,7 +457,7 @@ def main():
             continue
 
         # Load the calibration data
-        dot_test_data = preprocess_csv(par, calib_csv, SECTIONS[0])
+        dot_test_data = preprocess_csv(config, par, calib_csv, SECTIONS[0])
         
         # Use the mouse clicks to calibrate
         mouse_click_data = dot_test_data[dot_test_data['mouseClickX'] != '[]']
@@ -565,14 +568,18 @@ def main():
         norm_pogs = np.stack(norm_pogs)
         
         # Perform the calibration
-        if CALIBRATE:
-            returned_calib = wet.adapt_from_frames(frames, norm_pogs)
+        if config['calibration']:
+            returned_calib = wet.adapt_from_frames(
+                frames, 
+                norm_pogs,
+                affine_transform=config['affine_transform']
+            )
         else:
             returned_calib = []
 
         # Draw the calibration points on the screen
         screen_img = np.zeros((screen_height_px, screen_width_px, 3), dtype=np.uint8)
-        if returned_calib:
+        if config['calibration']:
             for i, row in enumerate(calib_pts):
 
                 # gt_pt = row['mouseClickX'], row['mouseClickY']
@@ -590,7 +597,7 @@ def main():
                             (int(x2 * screen_width_px), int(y2 * screen_height_px)), (255, 0, 255), 1)
             
         # Display the image
-        if VISUALIZE:
+        if config['visualize']:
             cv2.imshow('Calibration Point', screen_img)
             cv2.waitKey(1)
 
@@ -600,6 +607,7 @@ def main():
 
         # Create the figure
         scanpath_video(
+            config,
             par_output_dir / f'{SECTIONS[0]}.mp4',
             par,
             calib_pts,
@@ -632,9 +640,9 @@ def main():
 
     # Add a boxplot for the participants metrics
     sns.set(style="whitegrid")
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(15, 6))
     sns.boxplot(participants_metrics_df, x="participant", y="gaze", hue="class")
-    plt.xticks([0, 1], ['WebGazer', 'WebEyeTrack'])
+    # plt.xticks([0, 1], ['WebGazer', 'WebEyeTrack'])
     plt.ylabel('L1 Error (normalized)')
     plt.title('L1 Error for all participants')
     plt.tight_layout()
@@ -694,5 +702,37 @@ def main():
     # Save the overall metrics to a CSV file
     overall_metrics_df.to_excel(RUN_DIR / 'overall_metrics.xlsx', index=False)
 
+    # Save a copy of the configuration file
+    with open(RUN_DIR / 'config.yaml', 'w') as f:
+        yaml.dump(config, f)
+
 if __name__ == '__main__':
-    main()
+
+    # Add arguments to specify the configuration file
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", required=True, type=str, help="Path to the configuration file")
+    parser.add_argument("--exp", type=str, required=True, help="Experiment name for logging purposes")
+    args = parser.parse_args()
+
+    # Load the configuration file (YAML)
+    with open(args.config, 'r') as f:
+        config = yaml.safe_load(f)
+
+    # Validate the configuration
+    if config['config']['type'] != 'eye_of_the_typer':
+        raise ValueError("Only 'eye_of_the_typer' type configuration is allowed.")
+    
+    # Print the configuration
+    print("\n")
+    print("#" * 80)
+    print("Configuration:")
+    print(json.dumps(config, indent=4))
+    print("#" * 80)
+    print("\n")
+
+    # Ask confirmation for evaluation with a 5 second loading bar
+    print("Starting evaluation in 5 seconds...\n")
+    for i in tqdm(range(5)):    
+        time.sleep(1)
+
+    main(args, config)

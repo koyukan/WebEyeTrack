@@ -1,8 +1,8 @@
-# Description: Configuration file for the GazeCapture dataset.
+# Description: Configuration file for "autoencoder".
 config:
   type: "autoencoder"
 
-# Configuration file for the GazeCapture dataset.
+# Configuration file for the dataset.
 dataset:
   name: 'MPIIFaceGaze'
   shuffle_buffer: 500
