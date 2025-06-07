@@ -590,7 +590,8 @@ def main(args, config):
     os.makedirs(per_participant_dir, exist_ok=True)
 
     # For each CSV, read the data and display the gaze
-    participants_metrics = defaultdict(list)
+    # participants_metrics = defaultdict(list)
+    participants_metrics = {k: defaultdict(list) for k in SECTIONS}
     for par, csvs in tqdm(gaze_by_participant.groupby('par'), total=len(gaze_by_participant), desc=f'Processing participants data'):
 
         # Create a directory for each participant
@@ -675,14 +676,12 @@ def main(args, config):
 
         # Save the metrics to the participants_metrics
         par_list = [par] * len(webgazer_l1)
-        sec_list = [SECTIONS[0]] * len(webgazer_l1)
-        participants_metrics['participant'].extend(par_list)
-        participants_metrics['section'].extend(sec_list)
-        participants_metrics['gaze'].extend(webgazer_l1)
-        participants_metrics['class'].extend(['webGazer'] * len(webgazer_l1))
-        participants_metrics['participant'].extend(par_list)
-        participants_metrics['gaze'].extend(webeyetrack_l1)
-        participants_metrics['class'].extend(['webEyeTrack'] * len(webeyetrack_l1))
+        participants_metrics[SECTIONS[0]]['participant'].extend(par_list)
+        participants_metrics[SECTIONS[0]]['gaze'].extend(webgazer_l1)
+        participants_metrics[SECTIONS[0]]['class'].extend(['webGazer'] * len(webgazer_l1))
+        participants_metrics[SECTIONS[0]]['participant'].extend(par_list)
+        participants_metrics[SECTIONS[0]]['gaze'].extend(webeyetrack_l1)
+        participants_metrics[SECTIONS[0]]['class'].extend(['webEyeTrack'] * len(webeyetrack_l1))
 
         for section in SECTIONS[1:]:
             csv_path = csvs[section].values[0]
@@ -718,20 +717,23 @@ def main(args, config):
 
             # Save the metrics to the participants_metrics
             par_list = [par] * len(webgazer_l1)
-            sec_list = [section] * len(webgazer_l1)
-            participants_metrics['participant'].extend(par_list)
-            participants_metrics['section'].extend(sec_list)
-            participants_metrics['gaze'].extend(webgazer_l1)
-            participants_metrics['class'].extend(['webGazer'] * len(webgazer_l1))
-            participants_metrics['participant'].extend(par_list)
-            participants_metrics['gaze'].extend(webeyetrack_l1)
-            participants_metrics['class'].extend(['webEyeTrack'] * len(webeyetrack_l1))
+            participants_metrics[section]['participant'].extend(par_list)
+            participants_metrics[section]['gaze'].extend(webgazer_l1)
+            participants_metrics[section]['class'].extend(['webGazer'] * len(webgazer_l1))
+            participants_metrics[section]['participant'].extend(par_list)
+            participants_metrics[section]['gaze'].extend(webeyetrack_l1)
+            participants_metrics[section]['class'].extend(['webEyeTrack'] * len(webeyetrack_l1))
 
-    participants_metrics_df = pd.DataFrame(participants_metrics)
+    # participants_metrics_df = pd.DataFrame(participants_metrics)
+    for k, v in participants_metrics.items():
+        participants_metrics[k] = pd.DataFrame(v)
+
+    sections_output_dir = RUN_DIR / 'sections'
+    os.makedirs(sections_output_dir, exist_ok=True)
 
     # For each section, run the analysis separately
-    for name, group in participants_metrics_df.groupby('section'):
-        section_output_dir = RUN_DIR / name
+    for name, group in participants_metrics.items():
+        section_output_dir = sections_output_dir / name
         os.makedirs(section_output_dir, exist_ok=True)
 
         # Add a boxplot for the participants metrics
