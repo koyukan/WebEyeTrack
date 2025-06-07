@@ -572,7 +572,9 @@ def main(args, config):
             returned_calib = wet.adapt_from_frames(
                 frames, 
                 norm_pogs,
-                affine_transform=config['affine_transform']
+                affine_transform=config['affine_transform'],
+                steps_inner=config['steps_inner'],
+                inner_lr=config['inner_lr'],
             )
         else:
             returned_calib = []
@@ -662,7 +664,7 @@ def main(args, config):
         for name2, group2 in group.groupby(['class']):
             new_data['Avg'].append(group2['gaze'].mean())
             new_data['Std'].append(group2['gaze'].std())
-            new_data['participant'].append(name[0])
+            new_data['participant'].append(name[0].split('_')[1])  # Get the participant ID
             new_data['class'].append(name2[0])
     
     participants_metrics_df = pd.DataFrame(new_data)
