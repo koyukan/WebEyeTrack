@@ -48,10 +48,10 @@ CALIB_PTS = pd.read_excel(CALIB_PTS_FILE)
 
 SECTIONS = [
     'study-dot_test.webm_gazePredictionsDone',
-    'study-benefits_of_running_writing.webm_gazePredictionsDone',
-    'study-educational_advantages_of_social_networking_sites_writing.webm_gazePredictionsDone',
-    'study-where_to_find_morel_mushrooms_writing.webm_gazePredictionsDone',
-    'study-tooth_abscess_writing.webm_gazePredictionsDone',
+    # 'study-benefits_of_running_writing.webm_gazePredictionsDone',
+    # 'study-educational_advantages_of_social_networking_sites_writing.webm_gazePredictionsDone',
+    # 'study-where_to_find_morel_mushrooms_writing.webm_gazePredictionsDone',
+    # 'study-tooth_abscess_writing.webm_gazePredictionsDone',
     'study-dot_test_final.webm_gazePredictionsDone'
 ]
 PARTICIPANT_CHARACTERISTICS = pd.read_csv(EYE_OF_THE_TYPER_PAR_CHAR)
@@ -184,14 +184,24 @@ def preprocess_csv(config, pid, csv_path, section) -> pd.DataFrame:
     gaze_x_min, gaze_y_min = gaze_x_min - config['preprocess']['margin'], gaze_y_min - config['preprocess']['margin']
     gaze_x_max, gaze_y_max = gaze_x_max + config['preprocess']['margin'], gaze_y_max + config['preprocess']['margin']
 
-    data['tobiiGazeX'] = (data['tobiiGazeX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
-    data['tobiiGazeY'] = (data['tobiiGazeY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
-    data['webGazerX'] = (data['webGazerX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
-    data['webGazerY'] = (data['webGazerY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
+    # data['tobiiGazeX'] = (data['tobiiGazeX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
+    # data['tobiiGazeY'] = (data['tobiiGazeY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
+    # data['webGazerX'] = (data['webGazerX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
+    # data['webGazerY'] = (data['webGazerY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
     # data.iloc[:, 'tobiiGazeX'] = (data['tobiiGazeX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
     # data.iloc[:, 'tobiiGazeY'] = (data['tobiiGazeY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
     # data.iloc[:, 'webGazerX'] = (data['webGazerX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
     # data.iloc[:, 'webGazerY'] = (data['webGazerY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
+    data = (
+        data
+        .assign(
+            tobiiGazeX = lambda d: (d["tobiiGazeX"] - gaze_x_min)/(gaze_x_max - gaze_x_min),
+            tobiiGazeY = lambda d: (d["tobiiGazeY"] - gaze_y_min)/(gaze_y_max - gaze_y_min),
+            webGazerX  = lambda d: (d["webGazerX"]  - gaze_x_min)/(gaze_x_max - gaze_x_min),
+            webGazerY  = lambda d: (d["webGazerY"]  - gaze_y_min)/(gaze_y_max - gaze_y_min),
+        )
+    )
+
 
     # Shift all gaze from range [[0,1], [0,1]] to [[-0.5, 0.5], [-0.5, 0.5]], with center of screen being (0, 0)
     for col in columns_to_shift + ['tobiiGazeX', 'tobiiGazeY']:
@@ -211,19 +221,31 @@ def preprocess_csv(config, pid, csv_path, section) -> pd.DataFrame:
 
     return data
 
-def scanpath_video(config, video_dst_fp, par, calib_pts, returned_calib, csv_data, screen_height_px, screen_width_px, wet) -> plt.Figure:
+def scanpath_video(
+        config, 
+        video_dst_fp, 
+        par,
+        csv_data, 
+        screen_height_px, 
+        screen_width_px, 
+        wet,
+        calib_pts=None, 
+        returned_calib=None, 
+    ) -> plt.Figure:
 
     # Create a video writer for mp4
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     video_writer = cv2.VideoWriter(str(video_dst_fp), fourcc, 30.0, (screen_width_px, screen_height_px))
 
-    calib_pts_frames_nums = [pt['frameNum'] for pt in calib_pts]
     screen_img = np.zeros((screen_height_px, screen_width_px, 3), dtype=np.uint8)
 
     # Create a kalman filter for the gaze
     # tobii_kf = create_kalman_filter(dt=1/120)
     csv_data['webEyeTrackX'] = ''
     csv_data['webEyeTrackY'] = ''
+
+    if not (calib_pts is None or returned_calib is None):
+        calib_pts_frames_nums = [pt['frameNum'] for pt in calib_pts]
     
     for i, row in tqdm(csv_data.iterrows(), total=len(csv_data), desc=f'Visualizing scanpath for {par}'):
 
@@ -283,7 +305,7 @@ def scanpath_video(config, video_dst_fp, par, calib_pts, returned_calib, csv_dat
 
         # If this is a calibration point, make a big yellow circle
         # if row['frameNum'] in [pt['frameNum'] for pt in calib_pts]:
-        if config['calibration']:
+        if not (calib_pts is None or returned_calib is None):
             frame_idx = calib_pts_frames_nums.index(row['frameNum']) if row['frameNum'] in calib_pts_frames_nums else None
             if frame_idx is not None:
                 row = calib_pts[frame_idx]
@@ -391,6 +413,144 @@ def compute_metrics(par_output_dir, par, gaze_data, screen_height_cm, screen_wid
 
     return webgazer_l1, webeyetrack_l1
             
+def perform_calib(
+    config,
+    par,
+    gaze_data,
+    par_output_dir,
+    wet,
+    screen_height_px,
+    screen_width_px,
+):
+    # ▶ 1 ─── Build initial guesses ────────────────────────────────────────────────
+    # A loose 3×3 grid that roughly spans your data cloud.
+    # Feel free to tweak these if your calibration rig isn’t perfectly symmetric.
+    calib_pts = []
+    x_guess = np.array([-0.45, 0.0, 0.45])
+    y_guess = np.array([-0.45, 0.0, 0.45])
+    init_centroids = np.array([(x, y) for y in y_guess for x in x_guess])
+
+    # ▶ 2 ─── Run K-means ──────────────────────────────────────────────────────────
+    xy = gaze_data[["tobiiGazeX", "tobiiGazeY"]].to_numpy()
+
+    kmeans = KMeans(
+        n_clusters=9,
+        init=init_centroids,
+        n_init=1,          # crucial – keeps scikit-learn from re-initialising
+        max_iter=300,
+        random_state=42
+    )
+    labels = kmeans.fit_predict(xy)
+    centroids = kmeans.cluster_centers_
+
+    # Attach labels to your original frame if you want them later
+    gaze_data["cluster"] = labels
+
+    # ▶ 3 ─── Visualise ────────────────────────────────────────────────────────────
+    sns.set(style="whitegrid")
+
+    fig, ax = plt.subplots(figsize=(7, 7))
+    scatter = ax.scatter(
+        gaze_data["tobiiGazeX"],
+        gaze_data["tobiiGazeY"],
+        c=labels,
+        cmap="tab10",
+        s=15,
+        alpha=0.8,
+        edgecolor="none"
+    )
+
+    # draw centroids
+    ax.scatter(
+        centroids[:, 0], centroids[:, 1],
+        marker="P", s=200, c="black", label="centroid"
+    )
+    # label centroids 0-8 for clarity
+    for idx, (cx, cy) in enumerate(centroids):
+        ax.text(cx, cy, str(idx), ha="center", va="center",
+                color="white", weight="bold", fontsize=9)
+
+    # ax.set_xlim(-0.5, 0.5)
+    # ax.set_ylim(-0.5, 0.5)
+    ax.set_xlabel("Normalized X Coordinate")
+    ax.set_ylabel("Normalized Y Coordinate")
+    ax.set_title(f"Calibration clusters for {par}")
+    # ax.legend(frameon=False, loc="upper left")
+
+    plt.tight_layout()
+    # plt.show()
+
+    # Save the figure
+    fig.savefig(par_output_dir / f'{SECTIONS[0]}_kmeans_clusters.png')
+    plt.close(fig)
+
+    # Use the centroids to obtain the calibration points
+    used_centroids = [centroids[0], centroids[2], centroids[6], centroids[8]]
+    for centroid in used_centroids:
+        # Find the closest point to the centroid
+        closest_point = gaze_data.iloc[
+            np.argmin(np.linalg.norm(gaze_data[["tobiiGazeX", "tobiiGazeY"]].to_numpy() - centroid, axis=1))
+        ]
+        calib_pts.append(closest_point)
+
+    # Create the frame and point lists
+    frames = []
+    norm_pogs = []
+    for i, row in enumerate(calib_pts):
+        img_path = EYE_OF_THE_TYPER_DATASET / par / "/".join(row['frameImageFile'].split('/')[3:])
+        assert img_path.exists(), f"Image not found at {img_path}"
+        img = cv2.imread(str(img_path))
+        if img is None:
+            print(f"Image not found at {img_path}")
+            continue
+        frames.append(img)
+        x, y = row['tobiiGazeX'], row['tobiiGazeY']
+        norm_pogs.append(np.array([x, y]))
+    
+    norm_pogs = np.stack(norm_pogs)
+    
+    # Perform the calibration
+    if config['calibration']:
+        returned_calib = wet.adapt_from_frames(
+            frames, 
+            norm_pogs,
+            affine_transform=config['affine_transform'],
+            steps_inner=config['steps_inner'],
+            inner_lr=config['inner_lr'],
+        )
+    else:
+        returned_calib = []
+
+    # Draw the calibration points on the screen
+    screen_img = np.zeros((screen_height_px, screen_width_px, 3), dtype=np.uint8)
+    if config['calibration']:
+        for i, row in enumerate(calib_pts):
+
+            # gt_pt = row['mouseClickX'], row['mouseClickY']
+            gt_tb_pt = row['tobiiGazeX'], row['tobiiGazeY']
+            pred_pt = returned_calib[i]
+
+            # Draw the points as circles
+            x, y = (gt_tb_pt[0] + 0.5), (gt_tb_pt[1] + 0.5)
+            cv2.circle(screen_img, (int(x * screen_width_px), int(y * screen_height_px)), 10, (0, 0, 255), -1)
+            x2, y2 = (pred_pt[0] + 0.5), (pred_pt[1] + 0.5)
+            cv2.circle(screen_img, (int(x2 * screen_width_px), int(y2 * screen_height_px)), 10, (255, 255, 0), -1)
+
+            # Draw a line between the original calibration point and the resulting calibration point
+            cv2.line(screen_img, (int(x * screen_width_px), int(y * screen_height_px)),
+                        (int(x2 * screen_width_px), int(y2 * screen_height_px)), (255, 0, 255), 1)
+        
+    # Display the image
+    if config['visualize']:
+        cv2.imshow('Calibration Point', screen_img)
+        cv2.waitKey(1)
+
+    # Save the calibration image
+    calib_img_path = par_output_dir / f'{SECTIONS[0]}_calib.png'
+    cv2.imwrite(str(calib_img_path), screen_img)
+
+    return calib_pts, returned_calib
+
 def main(args, config):
 
     print("Starting Eye of the Typer evaluation...")
@@ -426,12 +586,15 @@ def main(args, config):
     gaze_by_participant = pd.DataFrame(gaze_by_participant)
     print(f"Formed gaze_by_participant dataframe with {len(gaze_by_participant)} rows and {len(gaze_by_participant.columns)} columns.")
 
+    per_participant_dir = RUN_DIR / 'per_participant'
+    os.makedirs(per_participant_dir, exist_ok=True)
+
     # For each CSV, read the data and display the gaze
     participants_metrics = defaultdict(list)
     for par, csvs in tqdm(gaze_by_participant.groupby('par'), total=len(gaze_by_participant), desc=f'Processing participants data'):
 
         # Create a directory for each participant
-        par_output_dir = RUN_DIR / par
+        par_output_dir = per_participant_dir / par
         os.makedirs(par_output_dir, exist_ok=True)
 
         # Obtain the configurations for the participant
@@ -454,16 +617,18 @@ def main(args, config):
         calib_csv = csvs[SECTIONS[0]].values[0]
         if calib_csv is None:
             print(f"Calibration CSV not found for participant {par}. Skipping.")
-            continue
+            return
 
         # Load the calibration data
         dot_test_data = preprocess_csv(config, par, calib_csv, SECTIONS[0])
+        section_output_dir = par_output_dir / SECTIONS[0]
+        os.makedirs(section_output_dir, exist_ok=True)
         
         # Use the mouse clicks to calibrate
         mouse_click_data = dot_test_data[dot_test_data['mouseClickX'] != '[]']
         if len(mouse_click_data) == 0:
             print(f"No mouse clicks found for participant {par}. Skipping.")
-            continue
+            return
 
         # For this section, we want to visualize only the scanpath right after the first click and the last click
         # Get the first and last click
@@ -471,158 +636,37 @@ def main(args, config):
         last_click = mouse_click_data.iloc[-1]
         within_dot_test = dot_test_data[(dot_test_data['frameNum'] >= first_click['frameNum']) & (dot_test_data['frameNum'] <= last_click['frameNum'])]
 
-        # import pdb; pdb.set_trace()
-        calib_pts = []
-        if par in CALIB_PTS['pid'].values:
-            # Create the calibration points by finding the closest points in the mouse clicks
-            pts = eval(CALIB_PTS[CALIB_PTS['pid'] == par].iloc[0].pts)
-            for pt in pts:
-                row = dot_test_data[dot_test_data['frameNum'] == pt].iloc[0]
-                calib_pts.append(row)
-
-        else:
-            # ▶ 1 ─── Build initial guesses ────────────────────────────────────────────────
-            # A loose 3×3 grid that roughly spans your data cloud.
-            # Feel free to tweak these if your calibration rig isn’t perfectly symmetric.
-            x_guess = np.array([-0.45, 0.0, 0.45])
-            y_guess = np.array([-0.45, 0.0, 0.45])
-            init_centroids = np.array([(x, y) for y in y_guess for x in x_guess])
-
-            # ▶ 2 ─── Run K-means ──────────────────────────────────────────────────────────
-            xy = within_dot_test[["tobiiGazeX", "tobiiGazeY"]].to_numpy()
-
-            kmeans = KMeans(
-                n_clusters=9,
-                init=init_centroids,
-                n_init=1,          # crucial – keeps scikit-learn from re-initialising
-                max_iter=300,
-                random_state=42
-            )
-            labels = kmeans.fit_predict(xy)
-            centroids = kmeans.cluster_centers_
-
-            # Attach labels to your original frame if you want them later
-            within_dot_test["cluster"] = labels
-
-            # ▶ 3 ─── Visualise ────────────────────────────────────────────────────────────
-            sns.set(style="whitegrid")
-
-            fig, ax = plt.subplots(figsize=(7, 7))
-            scatter = ax.scatter(
-                within_dot_test["tobiiGazeX"],
-                within_dot_test["tobiiGazeY"],
-                c=labels,
-                cmap="tab10",
-                s=15,
-                alpha=0.8,
-                edgecolor="none"
-            )
-
-            # draw centroids
-            ax.scatter(
-                centroids[:, 0], centroids[:, 1],
-                marker="P", s=200, c="black", label="centroid"
-            )
-            # label centroids 0-8 for clarity
-            for idx, (cx, cy) in enumerate(centroids):
-                ax.text(cx, cy, str(idx), ha="center", va="center",
-                        color="white", weight="bold", fontsize=9)
-
-            # ax.set_xlim(-0.5, 0.5)
-            # ax.set_ylim(-0.5, 0.5)
-            ax.set_xlabel("Normalized X Coordinate")
-            ax.set_ylabel("Normalized Y Coordinate")
-            ax.set_title(f"Calibration clusters for {par}")
-            # ax.legend(frameon=False, loc="upper left")
-
-            plt.tight_layout()
-            # plt.show()
-
-            # Save the figure
-            fig.savefig(par_output_dir / f'{SECTIONS[0]}_kmeans_clusters.png')
-            plt.close(fig)
-
-            # Use the centroids to obtain the calibration points
-            used_centroids = [centroids[0], centroids[2], centroids[6], centroids[8]]
-            for centroid in used_centroids:
-                # Find the closest point to the centroid
-                closest_point = within_dot_test.iloc[
-                    np.argmin(np.linalg.norm(within_dot_test[["tobiiGazeX", "tobiiGazeY"]].to_numpy() - centroid, axis=1))
-                ]
-                calib_pts.append(closest_point)
-
-        # Create the frame and point lists
-        frames = []
-        norm_pogs = []
-        for i, row in enumerate(calib_pts):
-            img_path = EYE_OF_THE_TYPER_DATASET / par / "/".join(row['frameImageFile'].split('/')[3:])
-            assert img_path.exists(), f"Image not found at {img_path}"
-            img = cv2.imread(str(img_path))
-            if img is None:
-                print(f"Image not found at {img_path}")
-                continue
-            frames.append(img)
-            x, y = row['tobiiGazeX'], row['tobiiGazeY']
-            norm_pogs.append(np.array([x, y]))
-        
-        norm_pogs = np.stack(norm_pogs)
-        
         # Perform the calibration
         if config['calibration']:
-            returned_calib = wet.adapt_from_frames(
-                frames, 
-                norm_pogs,
-                affine_transform=config['affine_transform'],
-                steps_inner=config['steps_inner'],
-                inner_lr=config['inner_lr'],
+            calib_pts, returned_calib = perform_calib(
+                config,
+                par,
+                within_dot_test,
+                section_output_dir,
+                wet,
+                screen_height_px,
+                screen_width_px,
             )
         else:
+            calib_pts = []
             returned_calib = []
-
-        # Draw the calibration points on the screen
-        screen_img = np.zeros((screen_height_px, screen_width_px, 3), dtype=np.uint8)
-        if config['calibration']:
-            for i, row in enumerate(calib_pts):
-
-                # gt_pt = row['mouseClickX'], row['mouseClickY']
-                gt_tb_pt = row['tobiiGazeX'], row['tobiiGazeY']
-                pred_pt = returned_calib[i]
-
-                # Draw the points as circles
-                x, y = (gt_tb_pt[0] + 0.5), (gt_tb_pt[1] + 0.5)
-                cv2.circle(screen_img, (int(x * screen_width_px), int(y * screen_height_px)), 10, (0, 0, 255), -1)
-                x2, y2 = (pred_pt[0] + 0.5), (pred_pt[1] + 0.5)
-                cv2.circle(screen_img, (int(x2 * screen_width_px), int(y2 * screen_height_px)), 10, (255, 255, 0), -1)
-
-                # Draw a line between the original calibration point and the resulting calibration point
-                cv2.line(screen_img, (int(x * screen_width_px), int(y * screen_height_px)),
-                            (int(x2 * screen_width_px), int(y2 * screen_height_px)), (255, 0, 255), 1)
-            
-        # Display the image
-        if config['visualize']:
-            cv2.imshow('Calibration Point', screen_img)
-            cv2.waitKey(1)
-
-        # Save the calibration image
-        calib_img_path = par_output_dir / f'{SECTIONS[0]}_calib.png'
-        cv2.imwrite(str(calib_img_path), screen_img)
 
         # Create the figure
         scanpath_video(
             config,
-            par_output_dir / f'{SECTIONS[0]}.mp4',
+            section_output_dir / f'{SECTIONS[0]}.mp4',
             par,
-            calib_pts,
-            returned_calib,
             within_dot_test,
             screen_height_px,
             screen_width_px,
-            wet
+            wet,
+            calib_pts=calib_pts,
+            returned_calib=returned_calib,
         )
 
         # Compute the metrics
         webgazer_l1, webeyetrack_l1 = compute_metrics(
-            par_output_dir,
+            section_output_dir,
             par,
             within_dot_test,
             screen_height_cm,
@@ -631,78 +675,128 @@ def main(args, config):
 
         # Save the metrics to the participants_metrics
         par_list = [par] * len(webgazer_l1)
+        sec_list = [SECTIONS[0]] * len(webgazer_l1)
         participants_metrics['participant'].extend(par_list)
+        participants_metrics['section'].extend(sec_list)
         participants_metrics['gaze'].extend(webgazer_l1)
         participants_metrics['class'].extend(['webGazer'] * len(webgazer_l1))
         participants_metrics['participant'].extend(par_list)
         participants_metrics['gaze'].extend(webeyetrack_l1)
         participants_metrics['class'].extend(['webEyeTrack'] * len(webeyetrack_l1))
 
+        for section in SECTIONS[1:]:
+            csv_path = csvs[section].values[0]
+            if csv_path is None:
+                print(f"CSV not found for participant {par} in section {section}. Skipping.")
+                continue
+
+            section_output_dir = par_output_dir / section
+            os.makedirs(section_output_dir, exist_ok=True)
+
+            # Preprocess the CSV data
+            gaze_data = preprocess_csv(config, par, csv_path, section)
+
+            # Create the video for the scanpath
+            scanpath_video(
+                config,
+                section_output_dir / f'{section}.mp4',
+                par,
+                gaze_data,
+                screen_height_px,
+                screen_width_px,
+                wet
+            )
+
+            # Compute the metrics
+            webgazer_l1, webeyetrack_l1 = compute_metrics(
+                section_output_dir,
+                par,
+                gaze_data,
+                screen_height_cm,
+                screen_width_cm,
+            )
+
+            # Save the metrics to the participants_metrics
+            par_list = [par] * len(webgazer_l1)
+            sec_list = [section] * len(webgazer_l1)
+            participants_metrics['participant'].extend(par_list)
+            participants_metrics['section'].extend(sec_list)
+            participants_metrics['gaze'].extend(webgazer_l1)
+            participants_metrics['class'].extend(['webGazer'] * len(webgazer_l1))
+            participants_metrics['participant'].extend(par_list)
+            participants_metrics['gaze'].extend(webeyetrack_l1)
+            participants_metrics['class'].extend(['webEyeTrack'] * len(webeyetrack_l1))
+
     participants_metrics_df = pd.DataFrame(participants_metrics)
 
-    # Add a boxplot for the participants metrics
-    sns.set(style="whitegrid")
-    plt.figure(figsize=(15, 6))
-    sns.boxplot(participants_metrics_df, x="participant", y="gaze", hue="class")
-    # plt.xticks([0, 1], ['WebGazer', 'WebEyeTrack'])
-    plt.ylabel('L1 Error (normalized)')
-    plt.title('L1 Error for all participants')
-    plt.tight_layout()
+    # For each section, run the analysis separately
+    for name, group in participants_metrics_df.groupby('section'):
+        section_output_dir = RUN_DIR / name
+        os.makedirs(section_output_dir, exist_ok=True)
 
-    # Put a limit of 40 for the y-axis
-    ylim = min(40, participants_metrics_df['gaze'].max())
-    plt.ylim(0, ylim)
+        # Add a boxplot for the participants metrics
+        sns.set(style="whitegrid")
+        plt.figure(figsize=(15, 6))
+        sns.boxplot(group, x="participant", y="gaze", hue="class")
+        # plt.xticks([0, 1], ['WebGazer', 'WebEyeTrack'])
+        plt.ylabel('L1 Error (normalized)')
+        plt.title('L1 Error for all participants')
+        plt.tight_layout()
 
-    # Save the boxplot
-    boxplot_path = RUN_DIR / 'participants_l1_error_boxplot.png'
-    plt.savefig(boxplot_path)
-    plt.close()
+        # Put a limit of 40 for the y-axis
+        ylim = min(40, group['gaze'].max())
+        plt.ylim(0, ylim)
 
-    # Compress the data into avg and std for each participant and class
-    new_data = defaultdict(list)
-    for name, group in participants_metrics_df.groupby(['participant']):
-        for name2, group2 in group.groupby(['class']):
-            new_data['Avg'].append(group2['gaze'].mean())
-            new_data['Std'].append(group2['gaze'].std())
-            new_data['participant'].append(name[0].split('_')[1])  # Get the participant ID
-            new_data['class'].append(name2[0])
-    
-    participants_metrics_df = pd.DataFrame(new_data)
+        # Save the boxplot
+        boxplot_path = section_output_dir / 'participants_l1_error_boxplot.png'
+        plt.savefig(boxplot_path)
+        plt.close()
 
-    # Make a boxplot of the averages
-    plt.figure(figsize=(10, 6))
-    sns.boxplot(data=participants_metrics_df, x='class', y='Avg')
-    plt.xticks(rotation=45)
-    plt.ylabel('Average L1 Error (normalized)')
-    plt.title('Average L1 Error for all participants')
-    plt.tight_layout()
+        # Compress the data into avg and std for each participant and class
+        new_data = defaultdict(list)
+        for name2, group2 in group.groupby('participant'):
+            for name3, group3 in group2.groupby('class'):
+                new_data['Avg'].append(group3['gaze'].mean())
+                new_data['Std'].append(group3['gaze'].std())
+                new_data['participant'].append(name2.split('_')[1])  # Get the participant ID
+                new_data['class'].append(name3)
+        
+        metrics_df = pd.DataFrame(new_data)
 
-    # Put a limit of 40 for the y-axis
-    ylim = min(40, participants_metrics_df['Avg'].max())
-    plt.ylim(0, ylim)
+        # Make a boxplot of the averages
+        plt.figure(figsize=(10, 6))
+        sns.boxplot(data=metrics_df, x='class', y='Avg')
+        plt.xticks(rotation=45)
+        plt.ylabel('Average L1 Error (normalized)')
+        plt.title('Average L1 Error for all participants')
+        plt.tight_layout()
 
-    # Save the boxplot
-    boxplot_path = RUN_DIR / 'participants_avg_l1_error_boxplot.png'
-    plt.savefig(boxplot_path)
-    plt.close()
-    
-    # Save the participants metrics to a XLSX file
-    participants_metrics_df.to_excel(RUN_DIR / 'participants_metrics.xlsx', index=False)
-    cv2.destroyAllWindows()
+        # Put a limit of 40 for the y-axis
+        ylim = min(40, metrics_df['Avg'].max())
+        plt.ylim(0, ylim)
 
-    # Compress a single avg and std value for the entire dataset
-    data = defaultdict(list)
-    for name, group in participants_metrics_df.groupby(['class']):
-        overall_avg = group['Avg'].mean()
-        overall_std = group['Avg'].std()
-        data[f"{name[0]} Overall Avg L1 Error"].append(overall_avg)
-        data[f"{name[0]} Overall Std L1 Error"].append(overall_std)
+        # Save the boxplot
+        boxplot_path = section_output_dir / 'participants_avg_l1_error_boxplot.png'
+        plt.savefig(boxplot_path)
+        plt.close()
+        
+        # Save the participants metrics to a XLSX file
+        metrics_df.to_excel(section_output_dir / 'participants_metrics.xlsx', index=False)
+        cv2.destroyAllWindows()
 
-    # Create a DataFrame from the data
-    overall_metrics_df = pd.DataFrame(data)
+        # Compress a single avg and std value for the entire dataset
+        data = defaultdict(list)
+        for name2, group2 in metrics_df.groupby('class'):
+            overall_avg = group2['Avg'].mean()
+            overall_std = group2['Avg'].std()
+            data[f"{name2} Overall Avg L1 Error"].append(overall_avg)
+            data[f"{name2} Overall Std L1 Error"].append(overall_std)
 
-    # Save the overall metrics to a CSV file
-    overall_metrics_df.to_excel(RUN_DIR / 'overall_metrics.xlsx', index=False)
+        # Create a DataFrame from the data
+        overall_metrics_df = pd.DataFrame(data)
+
+        # Save the overall metrics to a CSV file
+        overall_metrics_df.to_excel(section_output_dir / 'overall_metrics.xlsx', index=False)
 
     # Save a copy of the configuration file
     with open(RUN_DIR / 'config.yaml', 'w') as f:

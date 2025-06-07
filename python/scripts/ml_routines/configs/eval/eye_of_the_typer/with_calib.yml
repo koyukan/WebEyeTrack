@@ -5,11 +5,12 @@ config:
 visualize: False
 
 calibration: True
-steps_inner: 5000
+# steps_inner: 5000
+steps_inner: 5
 inner_lr: 0.00001 # 1e-5
 affine_transform: False
 
 preprocess:
   margin: 0.05
 
-num_of_participants: 3
+num_of_participants: 2
