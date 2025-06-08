@@ -43,6 +43,26 @@ def mae_cm_loss(y_true, y_pred, screen_info):
 
     return tf.reduce_mean(tf.abs(true_cm - pred_cm))  # MAE in cm
 
+def l2_loss(y_true, y_pred, sample_weight=None):
+    """
+    Compute L2 loss between true and predicted values, optionally weighted.
+    
+    Args:
+        y_true: Tensor of shape (B, 2)
+        y_pred: Tensor of shape (B, 2)
+        sample_weight: Optional tensor of shape (B,)
+    Returns:
+        Scalar loss.
+    """
+    loss = tf.reduce_sum(tf.square(y_pred - y_true), axis=-1)  # (B,)
+
+    if sample_weight is not None:
+        sample_weight = tf.cast(sample_weight, tf.float32)
+        loss = loss * sample_weight
+        return tf.reduce_mean(loss)
+    else:
+        return tf.reduce_mean(loss)
+
 def list_to_tensor(input_list: list, dtype=tf.float32):
     return tf.convert_to_tensor(np.stack(input_list), dtype=dtype)
 
@@ -238,7 +258,8 @@ class WebEyeTrack():
             pog_norms: np.ndarray,
             steps_inner=5, 
             inner_lr=1e-5,
-            affine_transform=False
+            affine_transform=False,
+            adaptive_lr=False
         ):
         """
         Performs MAML-style adaptation on the gaze head using support samples.
@@ -250,6 +271,12 @@ class WebEyeTrack():
             steps_inner (int): Number of inner-loop adaptation steps.
             inner_lr (float): Inner-loop learning rate.
         """
+
+        opt = tf.keras.optimizers.Adam(
+            learning_rate=inner_lr,
+            # beta_1=0.9, beta_2=0.999, epsilon=1e-8
+            beta_1=0.85, beta_2=0.9, epsilon=1e-8
+        )
 
         encoder_model = self.blazegaze.encoder
         gaze_mlp = self.blazegaze.gaze_mlp
@@ -264,39 +291,46 @@ class WebEyeTrack():
 
         # Encode features (encoder is frozen)
         support_x['encoder_features'] = encoder_model(support_x['image'], training=False)
-
         features = ['encoder_features', 'head_vector', 'face_origin_3d']
         input_list = [support_x[feature] for feature in features]
 
-        # Adapt on support set
-        for _ in range(steps_inner):
-            with tf.GradientTape() as tape:
-                support_preds = gaze_mlp(input_list, training=True)
-                support_loss = mae_cm_loss(support_y, support_preds, support_x['screen_info'])
-                print(f"Support loss: {support_loss.numpy():.4f}")
-            grads = tape.gradient(support_loss, gaze_mlp.trainable_weights)
-            for w, g in zip(gaze_mlp.trainable_weights, grads):
-                w.assign_sub(inner_lr * g)
-
-        # After adaptation, compute an affine transformation from the gt and predicted gaze points
+        # Perform a single forward pass to compute an affine transformation
         if affine_transform:
+            support_preds = gaze_mlp(input_list, training=False)
             self.affine_matrix = compute_affine_transform(
                 src=support_preds.numpy(),
                 dst=support_y.numpy()
             )
+            self.affine_matrix_tf = tf.convert_to_tensor(self.affine_matrix, dtype=tf.float32)
 
-            # Apply the affine transformation to the preds
-            preds = support_preds.numpy()
-            augmented_preds = np.hstack([preds, np.ones((preds.shape[0], 1))])
-            affine_preds = (self.affine_matrix @ augmented_preds.T).T[:, :2]
+        # Adapt on support set
+        for i in range(steps_inner):
+            with tf.GradientTape() as tape:
+                support_preds = gaze_mlp(input_list, training=True)
 
-        else:
-            preds = support_preds.numpy()
-            affine_preds = preds
+                # Apply affine transformation if available
+                if affine_transform and self.affine_matrix is not None:
+                    # Apply the affine transformation to the predictions
+                    ones  = tf.ones_like(support_preds[:, :1])          # [B,1]
+                    homog = tf.concat([support_preds, ones], axis=1)    # [B,3]
+                    affine_t = tf.transpose(self.affine_matrix_tf)      # [3,2]
+                    support_preds = tf.matmul(homog, affine_t)  
+                    support_preds = support_preds[:, :2]
+
+                support_loss = mae_cm_loss(support_y, support_preds, support_x['screen_info'])
+                if self.config.verbose:
+                    print(f"Support loss ({i}), inner_lr={inner_lr}: {support_loss.numpy():.4f}")
+
+            # grads = tape.gradient(support_loss, gaze_mlp.trainable_weights)
+            grads = tape.gradient(support_loss, gaze_mlp.trainable_variables)
+            opt.apply_gradients(zip(grads, gaze_mlp.trainable_variables))
+            # for w, g in zip(gaze_mlp.trainable_weights, grads):
+            #     w.assign_sub(inner_lr * g)
 
         if query_x is None or query_y is None:
-            print(f"Adaptation completed. Support loss: {support_loss.numpy():.4f}")
-            return affine_preds
+            if self.config.verbose:
+                print(f"Adaptation completed. Support loss: {support_loss.numpy():.4f}")
+            return support_preds.numpy()
         
         query_x['encoder_features'] = encoder_model(query_x['image'], training=False)
         features = ['encoder_features', 'head_vector', 'face_origin_3d']
@@ -308,7 +342,15 @@ class WebEyeTrack():
 
         print(f"Adaptation completed. Support loss: {support_loss:.4f}, Query loss: {query_loss:.4f}")
 
-    def adapt_from_frames(self, frames: list, norm_pogs: np.ndarray, steps_inner=5, inner_lr=1e-5, affine_transform=False):
+    def adapt_from_frames(
+            self, 
+            frames: list, 
+            norm_pogs: np.ndarray, 
+            steps_inner=5, 
+            inner_lr=1e-5, 
+            affine_transform=False,
+            adaptive_lr=False
+        ):
         
         # For each frame, obtain the eye patch and head vector
         eye_patches = []
@@ -340,10 +382,18 @@ class WebEyeTrack():
             pog_norms=valid_norm_pogs,
             steps_inner=steps_inner,
             inner_lr=inner_lr,
-            affine_transform=affine_transform
+            affine_transform=affine_transform,
+            adaptive_lr=adaptive_lr
         )
 
-    def adapt_from_samples(self, samples, steps_inner=5, inner_lr=1e-5, affine_transform=False):
+    def adapt_from_samples(
+            self, 
+            samples, 
+            steps_inner=5, 
+            inner_lr=1e-5, 
+            affine_transform=False,
+            adaptive_lr=False
+        ):
         """
         Performs MAML-style adaptation on the gaze head using support samples.
         
@@ -376,14 +426,16 @@ class WebEyeTrack():
             pog_norms=valid_norm_pogs,
             steps_inner=steps_inner,
             inner_lr=inner_lr,
-            affine_transform=affine_transform
+            affine_transform=affine_transform,
+            adaptive_lr=adaptive_lr
         )
 
     def step(
             self,
             frame: np.ndarray,
             face_landmarks: np.ndarray,
-            face_rt: np.ndarray
+            face_rt: np.ndarray,
+            durations: Optional[dict] = None
         ):
         tic = time.perf_counter()
 
@@ -401,6 +453,10 @@ class WebEyeTrack():
         except Exception as e:
             print(f"Error in obtaining eye patch: {e}")
             return TrackingStatus.FAILED, None
+        toc = time.perf_counter()
+
+        if durations is not None:
+            durations['prepare_input'] = toc - tic
 
         # cv2.imshow('Eye Patch', eye_patch)
         # if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -412,6 +468,9 @@ class WebEyeTrack():
             head_vector=tf.convert_to_tensor(np.expand_dims(head_vector, axis=0), dtype=tf.float32),
             face_origin_3d=tf.convert_to_tensor(np.expand_dims(face_origin_3d, axis=0), dtype=tf.float32)
         )
+        toc2 = time.perf_counter()
+        if durations is not None:
+            durations['infer_fn'] = toc2 - toc
 
         # Apply affine transformation if available
         if self.affine_matrix is not None:
@@ -423,10 +482,16 @@ class WebEyeTrack():
         norm_pog = np.array([float(norm_pog[0]), float(norm_pog[1])])
 
         toc = time.perf_counter()
+        if durations is not None:
+            durations['infer_pog'] = toc - toc2
+            durations['total'] = np.sum(list(durations.values()))
 
         # Compute the FPS/delay
         if self.config.verbose:
-            print(f"FPS: {1 / (toc - tic):.2f}, Delay: {(toc - tic)*1000:.4f} ms")
+            text_str = ""
+            for k, v in durations.items():
+                text_str += f"{k}: {v:.4f}s, "
+            print(f"Durations: \t\t{text_str[:-2]}")
 
         # return True, pog_estimation[0]
         return TrackingStatus.SUCCESS, GazeResult(
@@ -444,21 +509,22 @@ class WebEyeTrack():
             self,
             frame: np.ndarray
     ) -> Tuple[TrackingStatus, Optional[GazeResult], Any]:
+        durations = {}
         tic = time.perf_counter()
 
         # Detect the facial landmarks
         tracking_status, (face_landmarks, face_rt, detection_results) = self.detect_facial_landmarks(frame)
         if not tracking_status:
             return TrackingStatus.FAILED, None, detection_results
+        toc = time.perf_counter()
+        durations['landmark_detection'] = toc - tic
         
         # Perform step
         tracking_status, gaze_result = self.step(
             frame,
             face_landmarks,
-            face_rt
+            face_rt,
+            durations=durations
         )
-        toc = time.perf_counter()
-        if tracking_status == TrackingStatus.SUCCESS:
-            gaze_result.duration = toc - tic
         
         return tracking_status, gaze_result, detection_results

@@ -184,14 +184,6 @@ def preprocess_csv(config, pid, csv_path, section) -> pd.DataFrame:
     gaze_x_min, gaze_y_min = gaze_x_min - config['preprocess']['margin'], gaze_y_min - config['preprocess']['margin']
     gaze_x_max, gaze_y_max = gaze_x_max + config['preprocess']['margin'], gaze_y_max + config['preprocess']['margin']
 
-    # data['tobiiGazeX'] = (data['tobiiGazeX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
-    # data['tobiiGazeY'] = (data['tobiiGazeY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
-    # data['webGazerX'] = (data['webGazerX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
-    # data['webGazerY'] = (data['webGazerY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
-    # data.iloc[:, 'tobiiGazeX'] = (data['tobiiGazeX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
-    # data.iloc[:, 'tobiiGazeY'] = (data['tobiiGazeY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
-    # data.iloc[:, 'webGazerX'] = (data['webGazerX'] - gaze_x_min) / (gaze_x_max - gaze_x_min)
-    # data.iloc[:, 'webGazerY'] = (data['webGazerY'] - gaze_y_min) / (gaze_y_max - gaze_y_min)
     data = (
         data
         .assign(
@@ -213,12 +205,6 @@ def preprocess_csv(config, pid, csv_path, section) -> pd.DataFrame:
             else:
                 data.at[i, col] = None
 
-    # Then shift the gaze points to be in the range [[-0.5, 0.5], [-0.5, 0.5]]
-    # data['tobiiGazeX'] = data['tobiiGazeX'] - 0.5
-    # data['tobiiGazeY'] = data['tobiiGazeY'] - 0.5
-    # data['webGazerX'] = data['webGazerX'] - 0.5
-    # data['webGazerY'] = data['webGazerY'] - 0.5
-
     return data
 
 def scanpath_video(
@@ -233,9 +219,10 @@ def scanpath_video(
         returned_calib=None, 
     ) -> plt.Figure:
 
-    # Create a video writer for mp4
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video_writer = cv2.VideoWriter(str(video_dst_fp), fourcc, 30.0, (screen_width_px, screen_height_px))
+    if config['video_writer']:
+        # Create a video writer for mp4
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        video_writer = cv2.VideoWriter(str(video_dst_fp), fourcc, 30.0, (screen_width_px, screen_height_px))
 
     screen_img = np.zeros((screen_height_px, screen_width_px, 3), dtype=np.uint8)
 
@@ -273,6 +260,7 @@ def scanpath_video(
         # Obtain the webgazer gaze point
         webgazer_gaze = (row['webGazerX'], row['webGazerY'])
         status, gaze_result, _ = wet.process_frame(img)
+        # status, gaze_result = TrackingStatus.FAILED, None
 
         # Shifting all gaze points from [[-0.5, 0.5], [-0.5, 0.5]] to [[0,1], [0,1]]
         if gaze is not None:
@@ -329,8 +317,9 @@ def scanpath_video(
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
-        # Write the frame to the video
-        video_writer.write(screen_img)
+        if config['video_writer']:
+            # Write the frame to the video
+            video_writer.write(screen_img)
 
     # Save the final image
     final_img_path = video_dst_fp.parent / f'{video_dst_fp.stem}_final.png'
@@ -339,8 +328,9 @@ def scanpath_video(
     # Close the windows
     cv2.destroyAllWindows()
 
-    # Release the video writer
-    video_writer.release()
+    if config['video_writer']:
+        # Release the video writer
+        video_writer.release()
 
 def compute_metrics(par_output_dir, par, gaze_data, screen_height_cm, screen_width_cm):
 
@@ -470,8 +460,6 @@ def perform_calib(
         ax.text(cx, cy, str(idx), ha="center", va="center",
                 color="white", weight="bold", fontsize=9)
 
-    # ax.set_xlim(-0.5, 0.5)
-    # ax.set_ylim(-0.5, 0.5)
     ax.set_xlabel("Normalized X Coordinate")
     ax.set_ylabel("Normalized Y Coordinate")
     ax.set_title(f"Calibration clusters for {par}")
@@ -485,7 +473,8 @@ def perform_calib(
     plt.close(fig)
 
     # Use the centroids to obtain the calibration points
-    used_centroids = [centroids[0], centroids[2], centroids[6], centroids[8]]
+    # used_centroids = [centroids[0], centroids[2], centroids[6], centroids[8]]
+    used_centroids = centroids[config['calibration_idx']]
     for centroid in used_centroids:
         # Find the closest point to the centroid
         closest_point = gaze_data.iloc[
@@ -517,6 +506,7 @@ def perform_calib(
             affine_transform=config['affine_transform'],
             steps_inner=config['steps_inner'],
             inner_lr=config['inner_lr'],
+            adaptive_lr=config['adaptive_lr'],
         )
     else:
         returned_calib = []
@@ -610,7 +600,7 @@ def main(args, config):
             WebEyeTrackConfig(
                 screen_px_dimensions=(screen_width_px, screen_height_px),
                 screen_cm_dimensions=(screen_width_cm, screen_height_cm),
-                # verbose=True
+                verbose=config['verbose']
             )
         )
 
@@ -736,11 +726,13 @@ def main(args, config):
         section_output_dir = sections_output_dir / name
         os.makedirs(section_output_dir, exist_ok=True)
 
+        # Make a version of the group where the "participant" column isn't "P_01" but just the number
+        group['participant'] = group['participant'].apply(lambda x: int(x.split('_')[1]))  # Get the participant ID
+
         # Add a boxplot for the participants metrics
         sns.set(style="whitegrid")
         plt.figure(figsize=(15, 6))
         sns.boxplot(group, x="participant", y="gaze", hue="class")
-        # plt.xticks([0, 1], ['WebGazer', 'WebEyeTrack'])
         plt.ylabel('L1 Error (normalized)')
         plt.title('L1 Error for all participants')
         plt.tight_layout()
@@ -760,7 +752,7 @@ def main(args, config):
             for name3, group3 in group2.groupby('class'):
                 new_data['Avg'].append(group3['gaze'].mean())
                 new_data['Std'].append(group3['gaze'].std())
-                new_data['participant'].append(name2.split('_')[1])  # Get the participant ID
+                new_data['participant'].append(name2)  # Get the participant ID
                 new_data['class'].append(name3)
         
         metrics_df = pd.DataFrame(new_data)
