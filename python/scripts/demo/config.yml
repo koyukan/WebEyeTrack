@@ -1,0 +1,6 @@
+verbose: False
+
+# State variable defaults
+show_webcam: True
+show_facial_landmarks: True
+show_eye_patch: True

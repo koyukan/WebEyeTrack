@@ -499,6 +499,7 @@ class WebEyeTrack():
             facial_landmarks=face_landmarks,
             face_rt=face_rt,
             face_blendshapes=None,
+            eye_patch=eye_patch,
             metric_face=None,
             metric_transform=None,
             gaze_state='open',

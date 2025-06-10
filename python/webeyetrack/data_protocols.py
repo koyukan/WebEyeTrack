@@ -115,6 +115,9 @@ class GazeResult:
     face_rt: np.ndarray # [4, 4]
     face_blendshapes: np.ndarray # [N, 1]
 
+    # Preprocessing
+    eye_patch: np.ndarray # [H, W, 3] - RGB image of the eye region
+
     # Face Reconstruction
     metric_face: np.ndarray # [N, 486]
     metric_transform: np.ndarray # [4, 4]
