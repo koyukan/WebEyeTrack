@@ -1,6 +1,6 @@
 # Description: Configuration file for the GazeCapture dataset.
 config:
-  type: "gaze"
+  type: "maml"
 
 # Configuration file for the GazeCapture dataset.
 dataset:
@@ -15,7 +15,7 @@ dataset:
 
 # Configuration for the optimizer.
 optimizer:
-  outer_lr: 0.001 # 1e-3
+  outer_lr: 0.0001 # 1e-4
   inner_lr: 0.00001 # 1e-5
   decay_rate: 0.95
 
@@ -28,22 +28,20 @@ training:
 # Configuration for the model.
 model:
   mode: 'maml'
-  weights_fp: null
+  weights_fp: "2025-06-02-20-57-58_gazecapture_full_run_autoencoder"
   
   # Encoder configuration.
   encoder:
-    weights_fp: 'autoencoder_2025-03-29-12-30-25'
     input_shape: [128,512,3]
-    input_name: 'pixels'
     embedding_size: 512
-    output_shape: [8, 32, 96]
+
+  decoder:
+    input_shape: [8, 32, 96]
 
   # Gaze Estimation configuration.
   gaze:
-    weights_fp: ''
     inputs:
       - name: 'head_vector'
         input_shape: [3]
       - name: 'face_origin_3d'
         input_shape: [3]
-    output: '2d'

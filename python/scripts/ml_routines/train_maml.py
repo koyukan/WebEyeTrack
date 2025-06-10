@@ -146,6 +146,8 @@ def inner_loop(gaze_head, support_x, support_y, inner_lr, model_config):
         center_loss = center_penalty_loss(preds)
         loss = L2_COEF * gaze_l2_loss + CONT_COEF * cont_loss + CENTER_COEF * center_loss + SPREAD_COEF * spread_loss
 
+        metric_gaze_cm = mae_cm_loss(support_y, preds, support_x['screen_info'])
+
     grads = tape.gradient(loss, gaze_head.trainable_weights)
     adapted_weights = [w - inner_lr * g for w, g in zip(gaze_head.trainable_weights, grads)]
 
@@ -156,8 +158,11 @@ def inner_loop(gaze_head, support_x, support_y, inner_lr, model_config):
         'center_loss': center_loss,
         'loss': loss
     }
+    metrics = {
+        'gaze_cm_mae': metric_gaze_cm
+    }
 
-    return adapted_weights, losses
+    return adapted_weights, losses, metrics
 
 def maml_train(
     RUN_DIR,
@@ -198,7 +203,7 @@ def maml_train(
         task_model.set_weights(gaze_mlp.get_weights())
 
         for _ in range(steps_inner):
-            adapted_weights, support_losses = inner_loop(
+            adapted_weights, support_losses, support_metrics = inner_loop(
                 task_model, support_x, support_y, inner_lr, model_config
             )
             task_model.set_weights(adapted_weights)
@@ -234,6 +239,8 @@ def maml_train(
                     tf.summary.scalar(f'train/support_{key}', value, step=step)
                 for key, value in query_losses.items():
                     tf.summary.scalar(f'train/query_{key}', value, step=step)
+                for key, value in support_metrics.items():
+                    tf.summary.scalar(f'train/support_{key}', value, step=step)
                 tf.summary.scalar('train/query_gaze_cm_mae', metrics_gaze_cm_mae, step=step)
 
                 gaze_predictions_fig = plot_pog_errors(
@@ -257,22 +264,26 @@ def maml_train(
                 valid_model.set_weights(gaze_mlp.get_weights())
                 support_x, support_y, query_x, query_y = next(valid_task_iter)
                 support_x['encoder_features'] = encoder_model(support_x['image'], training=False)
-                adapted_weights, support_losses = inner_loop(
+                adapted_weights, support_losses, support_metrics = inner_loop(
                     valid_model, support_x, support_y, inner_lr, model_config
                 )
                 valid_model.set_weights(adapted_weights)
                 query_x['encoder_features'] = encoder_model(query_x['image'], training=False)
                 features = ['encoder_features'] + [x.name for x in model_config.gaze.inputs]
                 input_list = [query_x[feature] for feature in features]
-                query_l2_loss = l2_loss(query_y, valid_model(input_list, training=False))
-                query_cont_loss = contrastive_gaze_loss(valid_model(input_list, training=False), query_y)
-                query_center_loss = center_penalty_loss(valid_model(input_list, training=False))
+                query_preds = valid_model(input_list, training=False)
+                query_l2_loss = l2_loss(query_y, query_preds)
+                query_cont_loss = contrastive_gaze_loss(query_preds, query_y)
+                query_center_loss = center_penalty_loss(query_preds)
                 query_loss = L2_COEF * query_l2_loss + CONT_COEF * query_cont_loss + CENTER_COEF * query_center_loss
                 
+                gaze_cm_mae = mae_cm_loss(query_y, query_preds, query_x['screen_info'])
+
                 val_losses['gaze_l2_loss'].append(query_l2_loss.numpy())
                 val_losses['cont_loss'].append(query_cont_loss.numpy())
                 val_losses['center_loss'].append(query_center_loss.numpy())
                 val_losses['total_loss'].append(query_loss.numpy())
+                val_losses['gaze_cm_mae'].append(gaze_cm_mae.numpy())
 
             avg_val_query_loss = np.mean(val_losses['total_loss'])
             print(f"Validation Step {step}: Avg Query Loss = {avg_val_query_loss:.4f}")
