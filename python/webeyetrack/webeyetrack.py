@@ -458,9 +458,10 @@ class WebEyeTrack():
         if durations is not None:
             durations['prepare_input'] = toc - tic
 
-        # cv2.imshow('Eye Patch', eye_patch)
-        # if cv2.waitKey(1) & 0xFF == ord('q'):
-        #     cv2.destroyAllWindows()
+        if self.config.verbose:
+            cv2.imshow('Eye Patch', eye_patch)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                cv2.destroyAllWindows()
 
         # Perform the gaze estimation via BlazeGaze Model
         pog_estimation = self.infer_fn(

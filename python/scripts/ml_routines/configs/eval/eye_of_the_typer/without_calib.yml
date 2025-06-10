@@ -2,12 +2,19 @@
 config:
   type: "eye_of_the_typer"
 
-visualize: False
+visualize: True
+verbose: False
+video_writer: false
 
 calibration: False
-affine_transform: False
+calibration_idx: [0, 1, 2, 3, 4, 5, 6, 7, 8]
+steps_inner: 10
+inner_lr: 0.0001 # 1e-4
+
+affine_transform: True
+adaptive_lr: False
 
 preprocess:
   margin: 0.05
 
-num_of_participants: 2
+num_of_participants: -1

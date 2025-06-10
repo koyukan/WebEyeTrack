@@ -216,7 +216,7 @@ def scanpath_video(
         screen_width_px, 
         wet,
         calib_pts=None, 
-        returned_calib=None, 
+        returned_calib=None,
     ) -> plt.Figure:
 
     if config['video_writer']:
@@ -224,7 +224,15 @@ def scanpath_video(
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         video_writer = cv2.VideoWriter(str(video_dst_fp), fourcc, 30.0, (screen_width_px, screen_height_px))
 
-    screen_img = np.zeros((screen_height_px, screen_width_px, 3), dtype=np.uint8)
+    screen_img = np.ones((screen_height_px, screen_width_px, 3), dtype=np.uint8) * 255
+
+    # Determine a cell size that makes the grid fit the screen
+    cell_size = np.gcd(screen_width_px, screen_height_px) // 2
+
+    for i in range(0, screen_width_px, cell_size):
+        cv2.line(screen_img, (i, 0), (i, screen_height_px), (200, 200, 200), 1)
+    for i in range(0, screen_height_px, cell_size):
+        cv2.line(screen_img, (0, i), (screen_width_px, i), (200, 200, 200), 1)
 
     # Create a kalman filter for the gaze
     # tobii_kf = create_kalman_filter(dt=1/120)
@@ -237,8 +245,8 @@ def scanpath_video(
     for i, row in tqdm(csv_data.iterrows(), total=len(csv_data), desc=f'Visualizing scanpath for {par}'):
 
         # Draw on the top left of the screen the frame number
-        cv2.rectangle(screen_img, (0, 0), (150, 40), (0, 0, 0), -1)
-        cv2.putText(screen_img, f'F: {row["frameNum"]}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        # cv2.rectangle(screen_img, (0, 0), (150, 40), (0, 0, 0), -1)
+        # cv2.putText(screen_img, f'F: {row["frameNum"]}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
         
         # Load the image
         img_path = EYE_OF_THE_TYPER_DATASET / par / "/".join(row['frameImageFile'].split('/')[3:])
@@ -270,14 +278,16 @@ def scanpath_video(
 
         # Display the gaze point
         if gaze is not None:
-            cv2.circle(screen_img, (int(gaze[0]*screen_width_px), int(gaze[1]*screen_height_px)), 5, (0, 255, 0), -1)
+            cv2.circle(screen_img, (int(gaze[0]*screen_width_px), int(gaze[1]*screen_height_px)), 7, (255, 255, 255), -1)
+            cv2.circle(screen_img, (int(gaze[0]*screen_width_px), int(gaze[1]*screen_height_px)), 6, (0, 255, 0), -1)
             # cv2.circle(screen_img, (int(smooth_gaze[0]*screen_width_px), int(smooth_gaze[1]*screen_height_px)), 5, (255, 0, 0), -1)
         
         if status == TrackingStatus.SUCCESS and gaze_result is not None:
             gaze_point = gaze_result.norm_pog
             gaze_point = (gaze_point[0] + 0.5, gaze_point[1] + 0.5)
             gaze_point = (gaze_point[0] * screen_width_px, gaze_point[1] * screen_height_px)
-            cv2.circle(screen_img, (int(gaze_point[0]), int(gaze_point[1])), 5, (0, 0, 255), -1)
+            cv2.circle(screen_img, (int(gaze_point[0]), int(gaze_point[1])), 7, (255, 255, 255), -1)
+            cv2.circle(screen_img, (int(gaze_point[0]), int(gaze_point[1])), 6, (255, 0, 255), -1)
 
             # Add the information to the csv_data
             csv_data.at[i, 'webEyeTrackX'] = gaze_result.norm_pog[0]
@@ -293,22 +303,22 @@ def scanpath_video(
 
         # If this is a calibration point, make a big yellow circle
         # if row['frameNum'] in [pt['frameNum'] for pt in calib_pts]:
-        if not (calib_pts is None or returned_calib is None):
-            frame_idx = calib_pts_frames_nums.index(row['frameNum']) if row['frameNum'] in calib_pts_frames_nums else None
-            if frame_idx is not None:
-                row = calib_pts[frame_idx]
-                x, y = row['tobiiGazeX'], row['tobiiGazeY']
-                x, y = (x + 0.5), (y + 0.5)
-                cv2.circle(screen_img, (int(x * screen_width_px), int(y * screen_height_px)), 10, (0, 255, 255), -1)
+        # if not (calib_pts is None or returned_calib is None):
+        #     frame_idx = calib_pts_frames_nums.index(row['frameNum']) if row['frameNum'] in calib_pts_frames_nums else None
+        #     if frame_idx is not None:
+        #         row = calib_pts[frame_idx]
+        #         x, y = row['tobiiGazeX'], row['tobiiGazeY']
+        #         x, y = (x + 0.5), (y + 0.5)
+        #         cv2.circle(screen_img, (int(x * screen_width_px), int(y * screen_height_px)), 10, (0, 255, 255), -1)
 
-                # Draw the resulting calibration point
-                resulting_calib_point = returned_calib[frame_idx]
-                x2, y2 = (resulting_calib_point[0] + 0.5), (resulting_calib_point[1] + 0.5)
-                cv2.circle(screen_img, (int(x2 * screen_width_px), int(y2 * screen_height_px)), 10, (255, 255, 0), -1)
+        #         # Draw the resulting calibration point
+        #         resulting_calib_point = returned_calib[frame_idx]
+        #         x2, y2 = (resulting_calib_point[0] + 0.5), (resulting_calib_point[1] + 0.5)
+        #         cv2.circle(screen_img, (int(x2 * screen_width_px), int(y2 * screen_height_px)), 10, (255, 255, 0), -1)
 
-                # Draw a line between the original calibration point and the resulting calibration point
-                cv2.line(screen_img, (int(x * screen_width_px), int(y * screen_height_px)),
-                            (int(x2 * screen_width_px), int(y2 * screen_height_px)), (255, 0, 255), 1)
+        #         # Draw a line between the original calibration point and the resulting calibration point
+        #         cv2.line(screen_img, (int(x * screen_width_px), int(y * screen_height_px)),
+        #                     (int(x2 * screen_width_px), int(y2 * screen_height_px)), (255, 0, 255), 1)
 
         # Display the image
         if config['visualize']:
@@ -376,8 +386,8 @@ def compute_metrics(par_output_dir, par, gaze_data, screen_height_cm, screen_wid
     x_range = np.arange(len(webeyetrack_l1))
     plt.plot(x_range, webeyetrack_l1, label='WebEyeTrack', color='blue', marker='o', markersize=3)
     plt.xlabel('Frame Number')
-    plt.ylabel('L1 Error (normalized)')
-    plt.title(f'L1 Error for {par}')
+    plt.ylabel('PoG Error (cm)')
+    plt.title(f'PoG Error for {par}')
     plt.legend()
     plt.tight_layout()
 
@@ -550,7 +560,7 @@ def main(args, config):
     os.makedirs(RUN_DIR, exist_ok=True)
 
     # Iterate over the folders within the dataset
-    # p_dirs = [EYE_OF_THE_TYPER_DATASET / 'P_01', EYE_OF_THE_TYPER_DATASET / 'P_02']
+    # p_dirs = [EYE_OF_THE_TYPER_DATASET / 'P_08']
     p_dirs = [p for p in EYE_OF_THE_TYPER_DATASET.iterdir() if p.is_dir()]
     gaze_csvs = [p for p in EYE_OF_THE_TYPER_DATASET.iterdir() if p.is_file() and p.suffix == '.csv']
     options = set(['study' + p.stem.split('-study')[1] for p in gaze_csvs])
@@ -673,6 +683,9 @@ def main(args, config):
         participants_metrics[SECTIONS[0]]['gaze'].extend(webeyetrack_l1)
         participants_metrics[SECTIONS[0]]['class'].extend(['webEyeTrack'] * len(webeyetrack_l1))
 
+        # Save the raw data
+        within_dot_test.to_csv(section_output_dir / f'raw_data.csv', index=False)
+
         for section in SECTIONS[1:]:
             csv_path = csvs[section].values[0]
             if csv_path is None:
@@ -695,6 +708,9 @@ def main(args, config):
                 screen_width_px,
                 wet
             )
+
+            # Save the raw data
+            gaze_data.to_csv(section_output_dir / f'raw_data.csv', index=False)
 
             # Compute the metrics
             webgazer_l1, webeyetrack_l1 = compute_metrics(
