@@ -1,15 +1,6 @@
 from PyQt5 import QtWidgets, QtGui, QtCore
 
-def get_screen_offset():
-    screen = QtWidgets.QApplication.primaryScreen()
-    screen_geometry = screen.geometry()
-    available_geometry = screen.availableGeometry()
-
-    # Calculate the offset caused by the menu bar and window decorations
-    x_offset = screen_geometry.x() - available_geometry.x()
-    y_offset = screen_geometry.y() - available_geometry.y()
-
-    return x_offset, y_offset
+from constants import get_screen_offset
 
 class GazeDotCanvas(QtWidgets.QWidget):
 
@@ -18,7 +9,7 @@ class GazeDotCanvas(QtWidgets.QWidget):
         self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
         self.setAttribute(QtCore.Qt.WA_NoSystemBackground)
         self.setStyleSheet("background: transparent;")
-        self.dot_position = [0.5, 0.5]  # Normalized position (center)
+        self.dot_position = [0.0, 0.0]  # Normalized position (center)
         self.dot_radius = 15
         self.dot_color = QtGui.QColor(0, 255, 0)
 
@@ -36,8 +27,8 @@ class GazeDotCanvas(QtWidgets.QWidget):
         painter.translate(x_offset, y_offset)  # Shift the canvas up by the offset
 
         painter.setBrush(QtGui.QBrush(self.dot_color))
-        circle_center_x = int(self.width() * self.dot_position[0])
-        circle_center_y = int(self.height() * self.dot_position[1])
+        circle_center_x = int(self.width() * (self.dot_position[0] + 0.5))
+        circle_center_y = int(self.height() * (self.dot_position[1] + 0.5))
         painter.drawEllipse(circle_center_x - self.dot_radius,
                             circle_center_y - self.dot_radius,
                             self.dot_radius * 2,

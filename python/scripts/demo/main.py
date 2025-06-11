@@ -51,9 +51,10 @@ class App(QtWidgets.QMainWindow):
         self.layout = QtWidgets.QStackedLayout(self.central_widget)
 
         # Add 2D canvas
-        self.canvas_2d = CalibrationWidget()
-        self.layout.addWidget(self.canvas_2d)
-        self.canvas_2d.hide()
+        self.calibration_canvas = CalibrationWidget()
+        self.layout.addWidget(self.calibration_canvas)
+        self.calibration_canvas.hide()
+        self.calibration_canvas.calib_dot_updated.connect(self.calib_point_updated)
 
         # Add gaze dot canvas
         self.gaze_dot_canvas = GazeDotCanvas()
@@ -102,19 +103,36 @@ class App(QtWidgets.QMainWindow):
         self.eye_patch_label.setParent(self.central_widget)
         self.eye_patch_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
 
-    def toggle_canvas(self):
-        print("Toggling canvas visibility")
-        # if self.canvas_2d.isVisible():
-        #     self.canvas_2d.hide()
-        #     self.gl_widget.show()
-        #     self.ui_container.show()
-        #     self.webcam_label.show()
-        # else:
-        #     self.gl_widget.hide()
-        #     self.canvas_2d.show()
-        #     self.canvas_2d.complete = False
-        #     self.ui_container.hide()
-        #     self.webcam_label.hide()
+        # Store the calibration points
+        self.calibrating = False
+        self.current_calib_point = None
+        self.calib_pts = {}
+
+    def start_calib(self):
+        self.calibrating = True
+        self.calibration_canvas.show()
+        self.calibration_canvas.complete = False
+        self.ui_container.hide()
+        if self.show_webcam:
+            self.webcam_label.hide()
+        if self.show_eye_patch:
+            self.eye_patch_label.hide()
+
+    def end_calib(self):
+        self.calibrating = False
+        self.calibration_canvas.hide()
+        self.ui_container.show()
+        if self.show_webcam:
+            self.webcam_label.show()
+        if self.show_eye_patch:
+            self.eye_patch_label.show()
+
+        # Obtain the calibration points
+        print(self.calib_pts)
+
+    def calib_point_updated(self, x, y):
+        print(f"Calibration point updated: ({x}, {y})")
+        self.current_calib_point = (x, y)
 
     def add_ui_controls(self):
         # Create a fixed-position rectangle for the UI controls
@@ -154,7 +172,7 @@ class App(QtWidgets.QMainWindow):
 
         # Add the calibrate button
         calibrate_button = QtWidgets.QPushButton("Calibrate", self)
-        calibrate_button.clicked.connect(self.toggle_canvas)
+        calibrate_button.clicked.connect(self.start_calib)
         calibrate_button.setStyleSheet("color: white; border-radius: 10px; border: 0px; margin: 5px")
         layout.addWidget(calibrate_button)
 
@@ -198,6 +216,14 @@ class App(QtWidgets.QMainWindow):
                         bytes_per_line = ch * w
                         qeye_patch = QtGui.QImage(eye_patch.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888)
                         self.eye_patch_label.setPixmap(QtGui.QPixmap.fromImage(qeye_patch))
+
+                # Update the gaze dot position
+                gaze_x, gaze_y = gaze_result.norm_pog
+                self.gaze_dot_updated.emit(gaze_x, gaze_y)
+
+                # If calibrating, store the calibration point
+                if self.calibrating and self.current_calib_point is not None:
+                    self.calib_pts[self.current_calib_point].append(gaze_result)
 
             # Show the frame
             if self.show_webcam:

@@ -3,6 +3,7 @@ from PyQt5 import QtWidgets, QtGui, QtCore
 from constants import *
 
 class CalibrationWidget(QtWidgets.QWidget):
+    calib_dot_updated = QtCore.pyqtSignal(float, float)
 
     def __init__(self):
         super().__init__()
@@ -42,8 +43,12 @@ class CalibrationWidget(QtWidgets.QWidget):
         self.gradient_duration = 2000  # 5 seconds in milliseconds
         self.gradient_total_steps = self.gradient_duration // 50
 
+        # Add a layout to manage the widget's contents
+        self.layout = QtWidgets.QVBoxLayout(self)
+
         # Add a return button
-        self.return_button = QtWidgets.QPushButton("Return", self)
+        self.return_button = QtWidgets.QPushButton("Return")
+        self.layout.addWidget(self.return_button, alignment=QtCore.Qt.AlignCenter)
         # self.return_button.setGeometry(10, 10, 100, 30)
         # Place the button in the center
         self.return_button.move(self.width() // 2 - 25, self.height() // 2 + 30)
@@ -58,12 +63,13 @@ class CalibrationWidget(QtWidgets.QWidget):
         self.return_button.hide()  # Initially hide the button
 
     def on_return_clicked(self):
-        self.parent().parent().toggle_canvas()  # Assuming parent manages the toggle to GLViewWidget
+        self.parent().parent().end_calib()  # Assuming parent manages the toggle to GLViewWidget
 
     def start_calibration(self):
         self.show_instructions = False
         self.current_step = 0
         self.start_color_transition()
+        self.calib_dot_updated.emit(self.current_position[0]-0.5, self.current_position[1]-0.5)
 
     def start_color_transition(self):
         self.move_timer = QtCore.QTimer(self)
@@ -101,6 +107,7 @@ class CalibrationWidget(QtWidgets.QWidget):
         self.current_color = QtGui.QColor(255, 0, 0)  # Reset to red
         self.start_color_transition()
         self.update()
+        self.calib_dot_updated.emit(self.current_position[0]-0.5, self.current_position[1]-0.5)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -130,16 +137,18 @@ class CalibrationWidget(QtWidgets.QWidget):
         if self.show_instructions:
             # Draw instructions
             if self.complete:
-                painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255)))
+                painter.setPen(QtGui.QPen(QtGui.QColor(0, 255, 0)))
                 painter.setFont(QtGui.QFont("Arial", 16))
+                painter.setBrush(QtGui.QBrush(QtGui.QColor(0, 0, 0, 200)))
                 instructions = "Calibration complete"
                 text_rect = self.rect()
                 painter.drawText(text_rect, QtCore.Qt.AlignCenter, instructions)
 
             else:
-                painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255)))
+                painter.setPen(QtGui.QPen(QtGui.QColor(0, 255, 0)))
                 painter.setFont(QtGui.QFont("Arial", 16))
                 instructions = "Look at the dots until they turn white."
+                painter.setBrush(QtGui.QBrush(QtGui.QColor(0, 0, 0, 200)))
                 text_rect = self.rect()
                 painter.drawText(text_rect, QtCore.Qt.AlignCenter, instructions)
         else:

@@ -144,7 +144,8 @@ def inner_loop(gaze_head, support_x, support_y, inner_lr, model_config):
         spread_loss = match_spread_loss(preds, support_y)
         cont_loss = contrastive_gaze_loss(preds, support_y)
         center_loss = center_penalty_loss(preds)
-        loss = L2_COEF * gaze_l2_loss + CONT_COEF * cont_loss + CENTER_COEF * center_loss + SPREAD_COEF * spread_loss
+        # loss = L2_COEF * gaze_l2_loss + CONT_COEF * cont_loss + CENTER_COEF * center_loss + SPREAD_COEF * spread_loss
+        loss = L2_COEF * gaze_l2_loss
 
         metric_gaze_cm = mae_cm_loss(support_y, preds, support_x['screen_info'])
 
@@ -216,7 +217,7 @@ def maml_train(
             query_l2_loss = l2_loss(query_y, query_preds)
             query_cont_loss = contrastive_gaze_loss(query_preds, query_y)
             query_center_loss = center_penalty_loss(query_preds)
-            query_loss = L2_COEF * query_l2_loss + CONT_COEF * query_cont_loss + CENTER_COEF * query_center_loss
+            query_loss = L2_COEF * query_l2_loss # + CONT_COEF * query_cont_loss + CENTER_COEF * query_center_loss
 
             metrics_gaze_cm_mae = mae_cm_loss(query_y, query_preds, query_x['screen_info'])
 
@@ -275,7 +276,7 @@ def maml_train(
                 query_l2_loss = l2_loss(query_y, query_preds)
                 query_cont_loss = contrastive_gaze_loss(query_preds, query_y)
                 query_center_loss = center_penalty_loss(query_preds)
-                query_loss = L2_COEF * query_l2_loss + CONT_COEF * query_cont_loss + CENTER_COEF * query_center_loss
+                query_loss = L2_COEF * query_l2_loss # + CONT_COEF * query_cont_loss + CENTER_COEF * query_center_loss
                 
                 gaze_cm_mae = mae_cm_loss(query_y, query_preds, query_x['screen_info'])
 
@@ -379,7 +380,7 @@ def maml_test(
                 support_l2_loss = l2_loss(support_y, support_preds)
                 support_cont_loss = contrastive_gaze_loss(support_preds, support_y)
                 support_center_loss = center_penalty_loss(support_preds)
-                support_loss = L2_COEF * support_l2_loss + CONT_COEF * support_cont_loss + CENTER_COEF * support_center_loss
+                support_loss = L2_COEF * support_l2_loss # + CONT_COEF * support_cont_loss + CENTER_COEF * support_center_loss
             grads = tape.gradient(support_loss, task_model.trainable_weights)
             for w, g in zip(task_model.trainable_weights, grads):
                 w.assign_sub(inner_lr * g)
@@ -396,7 +397,7 @@ def maml_test(
         query_l2_loss = l2_loss(query_y, query_preds)
         query_cont_loss = contrastive_gaze_loss(query_preds, query_y).numpy()
         query_center_loss = center_penalty_loss(query_preds).numpy()
-        query_loss = L2_COEF * query_l2_loss + CONT_COEF * query_cont_loss + CENTER_COEF * query_center_loss
+        query_loss = L2_COEF * query_l2_loss # + CONT_COEF * query_cont_loss + CENTER_COEF * query_center_loss
         query_pred_pog_norms.append(query_preds.numpy())
         query_gt_pog_norms.append(query_y.numpy())
 

@@ -48,10 +48,10 @@ CALIB_PTS = pd.read_excel(CALIB_PTS_FILE)
 
 SECTIONS = [
     'study-dot_test.webm_gazePredictionsDone',
-    # 'study-benefits_of_running_writing.webm_gazePredictionsDone',
-    # 'study-educational_advantages_of_social_networking_sites_writing.webm_gazePredictionsDone',
-    # 'study-where_to_find_morel_mushrooms_writing.webm_gazePredictionsDone',
-    # 'study-tooth_abscess_writing.webm_gazePredictionsDone',
+    'study-benefits_of_running_writing.webm_gazePredictionsDone',
+    'study-educational_advantages_of_social_networking_sites_writing.webm_gazePredictionsDone',
+    'study-where_to_find_morel_mushrooms_writing.webm_gazePredictionsDone',
+    'study-tooth_abscess_writing.webm_gazePredictionsDone',
     'study-dot_test_final.webm_gazePredictionsDone'
 ]
 PARTICIPANT_CHARACTERISTICS = pd.read_csv(EYE_OF_THE_TYPER_PAR_CHAR)
@@ -336,7 +336,8 @@ def scanpath_video(
     cv2.imwrite(final_img_path, screen_img)
 
     # Close the windows
-    cv2.destroyAllWindows()
+    if config['visualize']:
+        cv2.destroyAllWindows()
 
     if config['video_writer']:
         # Release the video writer
@@ -792,7 +793,8 @@ def main(args, config):
         
         # Save the participants metrics to a XLSX file
         metrics_df.to_excel(section_output_dir / 'participants_metrics.xlsx', index=False)
-        cv2.destroyAllWindows()
+        if config['visualize']:
+            cv2.destroyAllWindows()
 
         # Compress a single avg and std value for the entire dataset
         data = defaultdict(list)

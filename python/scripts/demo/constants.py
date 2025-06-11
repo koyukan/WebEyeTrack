@@ -1,6 +1,8 @@
 import platform
 import numpy as np
 
+from PyQt5 import QtWidgets, QtGui, QtCore
+
 # Based on platform, use different approaches for determining size
 # For Windows and Linux, use the screeninfo library
 # For MacOS, use the Quartz library
@@ -22,3 +24,14 @@ elif platform.system() == 'Darwin':
     SCREEN_WIDTH_PX = width_px
 
 WEBCAM_WIDTH = 400
+
+def get_screen_offset():
+    screen = QtWidgets.QApplication.primaryScreen()
+    screen_geometry = screen.geometry()
+    available_geometry = screen.availableGeometry()
+
+    # Calculate the offset caused by the menu bar and window decorations
+    x_offset = screen_geometry.x() - available_geometry.x()
+    y_offset = screen_geometry.y() - available_geometry.y()
+
+    return x_offset, y_offset
