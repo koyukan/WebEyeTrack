@@ -1,6 +1,14 @@
-verbose: True
+verbose: False
 
 # State variable defaults
 show_webcam: True
 show_facial_landmarks: True
 show_eye_patch: True
+
+
+# Kalman filter parameters
+kalman_filter:
+  enabled: True
+  dt: 0.1
+  process_noise: 0.0001 # 1e-4
+  measurement_noise: 0.01 # 1e-2
