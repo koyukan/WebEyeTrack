@@ -3,6 +3,7 @@ from PyQt5 import QtWidgets, QtGui, QtCore
 from constants import *
 
 class CalibrationWidget(QtWidgets.QWidget):
+    calibration_status = QtCore.pyqtSignal(bool)
     calib_dot_updated = QtCore.pyqtSignal(float, float)
 
     def __init__(self):
@@ -10,31 +11,25 @@ class CalibrationWidget(QtWidgets.QWidget):
         self.setStyleSheet("background-color: white;")
         self.resize(SCREEN_WIDTH_PX, SCREEN_HEIGHT_PX)
         self.circle_radius = 20
-        self.current_position = [0.5, 0.5]  # Normalized screen position (center)
         self.src_color = QtGui.QColor(255, 0, 0)
         self.current_color = QtGui.QColor(255, 0, 0)
         self.target_color = QtGui.QColor(255, 255, 255)
         # self.calibration_steps = 9
         self.current_step = 0
 
-        self.calib_positions = np.array([ # 9 points
-            [0.5, 0.5],
-            [0.1, 0.1],
-            [0.9, 0.1],
-            [0.1, 0.9],
-            [0.9, 0.9],
-            [0.5, 0.1],
-            [0.5, 0.9],
-            [0.1, 0.5],
-            [0.9, 0.5]
+        self.calib_positions = np.array([ # 4 points
+            [-0.4, -0.4],
+            [0.4, -0.4],
+            [-0.4, 0.4],
+            [0.4, 0.4],
         ])
+        self.current_position = self.calib_positions[0]
 
         self.show_instructions = True
         self.complete = False
         self.instruction_timer = QtCore.QTimer(self)
         self.instruction_timer.setSingleShot(True)
-        self.instruction_timer.timeout.connect(self.start_calibration)
-        self.instruction_timer.start(5*1000)  # 10 seconds
+        self.instruction_timer.timeout.connect(self.perform_calibration)
 
         self.color_transition_timer = QtCore.QTimer(self)
         self.color_transition_timer.timeout.connect(self.update_circle_color)
@@ -66,10 +61,14 @@ class CalibrationWidget(QtWidgets.QWidget):
         self.parent().parent().end_calib()  # Assuming parent manages the toggle to GLViewWidget
 
     def start_calibration(self):
+        self.instruction_timer.start(5*1000)  # 10 seconds
+
+    def perform_calibration(self):
         self.show_instructions = False
         self.current_step = 0
+        self.calibration_status.emit(True)
+        self.calib_dot_updated.emit(self.current_position[0], self.current_position[1])
         self.start_color_transition()
-        self.calib_dot_updated.emit(self.current_position[0]-0.5, self.current_position[1]-0.5)
 
     def start_color_transition(self):
         self.move_timer = QtCore.QTimer(self)
@@ -99,6 +98,7 @@ class CalibrationWidget(QtWidgets.QWidget):
         if self.current_step >= len(self.calib_positions):
             self.show_instructions = True
             self.complete = True
+            self.calibration_status.emit(False)
             self.update()
             self.return_button.show()
             return
@@ -107,7 +107,7 @@ class CalibrationWidget(QtWidgets.QWidget):
         self.current_color = QtGui.QColor(255, 0, 0)  # Reset to red
         self.start_color_transition()
         self.update()
-        self.calib_dot_updated.emit(self.current_position[0]-0.5, self.current_position[1]-0.5)
+        self.calib_dot_updated.emit(self.current_position[0], self.current_position[1])
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -154,8 +154,8 @@ class CalibrationWidget(QtWidgets.QWidget):
         else:
             # Draw the circle
             painter.setBrush(QtGui.QBrush(self.current_color))
-            circle_center_x = int(self.width() * self.current_position[0])
-            circle_center_y = int(self.height() * self.current_position[1])
+            circle_center_x = int(self.width() * (self.current_position[0] + 0.5))
+            circle_center_y = int(self.height() * (self.current_position[1] + 0.5))
             painter.drawEllipse(circle_center_x - self.circle_radius, 
                                 circle_center_y - self.circle_radius, 
                                 self.circle_radius * 2, 

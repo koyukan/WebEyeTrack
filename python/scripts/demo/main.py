@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import imutils
 import pathlib
+from collections import defaultdict
 
 import yaml
 from webeyetrack import WebEyeTrack, WebEyeTrackConfig
@@ -54,6 +55,7 @@ class App(QtWidgets.QMainWindow):
         self.calibration_canvas = CalibrationWidget()
         self.layout.addWidget(self.calibration_canvas)
         self.calibration_canvas.hide()
+        self.calibration_canvas.calibration_status.connect(self.calib_status_update)
         self.calibration_canvas.calib_dot_updated.connect(self.calib_point_updated)
 
         # Add gaze dot canvas
@@ -103,20 +105,32 @@ class App(QtWidgets.QMainWindow):
         self.eye_patch_label.setParent(self.central_widget)
         self.eye_patch_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
 
+        # On the bottom right, show the real-time xy coordinates of the gaze dot
+        self.gaze_coordinates_label = QtWidgets.QLabel(self)
+        self.gaze_coordinates_label.setGeometry(SCREEN_WIDTH_PX - 180, SCREEN_HEIGHT_PX - 100, 190, 40)
+        self.gaze_coordinates_label.setStyleSheet("background-color: black; color: white; font-size: 16px; padding: 5px;")
+        self.gaze_coordinates_label.setParent(self.central_widget)
+        self.gaze_dot_updated.connect(lambda x, y: self.gaze_coordinates_label.setText(f"Gaze: ({x:.2f}, {y:.2f})"))
+
         # Store the calibration points
         self.calibrating = False
         self.current_calib_point = None
-        self.calib_pts = {}
+        self.calib_pts = defaultdict(list)
 
-    def start_calib(self):
-        self.calibrating = True
+    def init_calib(self):
+        self.calibrating = False
+        self.calib_pts.clear()
         self.calibration_canvas.show()
         self.calibration_canvas.complete = False
+        self.calibration_canvas.start_calibration()
         self.ui_container.hide()
         if self.show_webcam:
             self.webcam_label.hide()
         if self.show_eye_patch:
             self.eye_patch_label.hide()
+
+    def calib_status_update(self, status):
+        self.calibrating = status
 
     def end_calib(self):
         self.calibrating = False
@@ -128,7 +142,77 @@ class App(QtWidgets.QMainWindow):
             self.eye_patch_label.show()
 
         # Obtain the calibration points
-        print(self.calib_pts)
+        # print(self.calib_pts)
+
+        # Extract the frames and normalize the points
+        # frames = []
+        calib_gaze_results = []
+        calib_norm_pogs = []
+        pred_norm_pogs = []
+        for point, gaze_results in self.calib_pts.items():
+            # Before adding the frames, we get many points for each
+            # calibration point, so we should try to find the best
+            # one. We want to find the center of the points (remove outliers)
+            # and pick the centermost point.
+            if gaze_results:
+                pogs = [gaze_result.norm_pog for gaze_result in gaze_results]
+                pogs = np.array(pogs)
+                
+                # Compute the mean and standard deviation
+                mean_pog = np.mean(pogs, axis=0)
+                std_pog = np.std(pogs, axis=0)
+
+                print(f"Calibration point {point}: mean={mean_pog}, std={std_pog}")
+                
+                # Get the point closest to the mean
+                distances = np.linalg.norm(pogs - mean_pog, axis=1)
+                closest_index = np.argmin(distances)
+                best_pog = pogs[closest_index]
+                calib_gaze_results.append(gaze_results[closest_index])
+                calib_norm_pogs.append(point)
+                pred_norm_pogs.append(best_pog)
+
+
+        # If we have enough points, we can proceed with the calibration
+        if len(calib_gaze_results) < 3:
+            print("Not enough calibration points collected. Please try again.")
+            return
+        
+        # print(self.calib_pts)
+        print(calib_norm_pogs)
+        print(pred_norm_pogs)
+
+        returned_calib = self.wet.adapt_from_gaze_results(
+            calib_gaze_results,
+            np.stack(calib_norm_pogs),
+            affine_transform=True,
+            steps_inner=10,
+            inner_lr=1e-4,
+            adaptive_lr=True
+        )
+        print(f"Calibration completed successfully: {returned_calib}.")
+
+        screen_height_px, screen_width_px = SCREEN_HEIGHT_PX//2, SCREEN_WIDTH_PX//2
+        screen_img = np.zeros((screen_height_px, screen_width_px, 3), dtype=np.uint8)
+        for i, pog in enumerate(calib_norm_pogs):
+
+            # gt_pt = row['mouseClickX'], row['mouseClickY']
+            gt_tb_pt = pog
+            pred_pt = returned_calib[i]
+
+            # Draw the points as circles
+            x, y = (gt_tb_pt[0] + 0.5), (gt_tb_pt[1] + 0.5)
+            cv2.circle(screen_img, (int(x * screen_width_px), int(y * screen_height_px)), 10, (0, 0, 255), -1)
+            x2, y2 = (pred_pt[0] + 0.5), (pred_pt[1] + 0.5)
+            cv2.circle(screen_img, (int(x2 * screen_width_px), int(y2 * screen_height_px)), 10, (255, 255, 0), -1)
+
+            # Draw a line between the original calibration point and the resulting calibration point
+            cv2.line(screen_img, (int(x * screen_width_px), int(y * screen_height_px)),
+                        (int(x2 * screen_width_px), int(y2 * screen_height_px)), (255, 0, 255), 1)
+
+        # Save the image
+        calib_img_path = CWD / 'calibration_result.png'
+        cv2.imwrite(str(calib_img_path), screen_img)
 
     def calib_point_updated(self, x, y):
         print(f"Calibration point updated: ({x}, {y})")
@@ -172,7 +256,7 @@ class App(QtWidgets.QMainWindow):
 
         # Add the calibrate button
         calibrate_button = QtWidgets.QPushButton("Calibrate", self)
-        calibrate_button.clicked.connect(self.start_calib)
+        calibrate_button.clicked.connect(self.init_calib)
         calibrate_button.setStyleSheet("color: white; border-radius: 10px; border: 0px; margin: 5px")
         layout.addWidget(calibrate_button)
 

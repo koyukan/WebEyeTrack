@@ -1,6 +1,6 @@
 import time
 import pathlib
-from typing import Union, Any, Tuple, Optional
+from typing import Union, Any, Tuple, Optional, List
 from dataclasses import dataclass
 import random
 
@@ -303,6 +303,9 @@ class WebEyeTrack():
             )
             self.affine_matrix_tf = tf.convert_to_tensor(self.affine_matrix, dtype=tf.float32)
 
+            if self.config.verbose:
+                print(f"Computed affine matrix:\n{self.affine_matrix}")
+
         # Adapt on support set
         for i in range(steps_inner):
             with tf.GradientTape() as tape:
@@ -385,6 +388,41 @@ class WebEyeTrack():
             affine_transform=affine_transform,
             adaptive_lr=adaptive_lr
         )
+    
+    def adapt_from_gaze_results(
+            self,
+            gaze_results: List[GazeResult],
+            norm_pogs: np.ndarray, 
+            steps_inner=5,
+            inner_lr=1e-5,
+            affine_transform=False,
+            adaptive_lr=False
+        ):
+        
+        # For each frame, obtain the eye patch and head vector
+        eye_patches = []
+        head_vectors = []
+        face_origin_3ds = []
+        valid_norm_pogs = []
+        for i, gaze_result in enumerate(gaze_results):
+            # Perform preprocessing to obtain the eye patch
+            eye_patches.append(gaze_result.eye_patch)
+            head_vectors.append(gaze_result.head_vector)
+            face_origin_3ds.append(gaze_result.face_origin_3d)
+            valid_norm_pogs.append(norm_pogs[i])
+
+        # Perform the adaptation
+        return self.adapt(
+            eye_patches=eye_patches,
+            head_vectors=head_vectors,
+            face_origin_3ds=face_origin_3ds,
+            pog_norms=valid_norm_pogs,
+            steps_inner=steps_inner,
+            inner_lr=inner_lr,
+            affine_transform=affine_transform,
+            adaptive_lr=adaptive_lr
+        )
+
 
     def adapt_from_samples(
             self, 
@@ -488,11 +526,11 @@ class WebEyeTrack():
             durations['total'] = np.sum(list(durations.values()))
 
         # Compute the FPS/delay
-        if self.config.verbose:
-            text_str = ""
-            for k, v in durations.items():
-                text_str += f"{k}: {v:.4f}s, "
-            print(f"Durations: \t\t{text_str[:-2]}")
+        # if self.config.verbose:
+        #     text_str = ""
+        #     for k, v in durations.items():
+        #         text_str += f"{k}: {v:.4f}s, "
+        #     print(f"Durations: \t\t{text_str[:-2]}")
 
         # return True, pog_estimation[0]
         return TrackingStatus.SUCCESS, GazeResult(
@@ -500,6 +538,8 @@ class WebEyeTrack():
             face_rt=face_rt,
             face_blendshapes=None,
             eye_patch=eye_patch,
+            head_vector=head_vector,
+            face_origin_3d=face_origin_3d,
             metric_face=None,
             metric_transform=None,
             gaze_state='open',

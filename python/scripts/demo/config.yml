@@ -1,4 +1,4 @@
-verbose: False
+verbose: True
 
 # State variable defaults
 show_webcam: True

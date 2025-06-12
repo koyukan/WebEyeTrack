@@ -117,6 +117,8 @@ class GazeResult:
 
     # Preprocessing
     eye_patch: np.ndarray # [H, W, 3] - RGB image of the eye region
+    head_vector: np.ndarray # [3,] - Head vector in camera coordinates
+    face_origin_3d: np.ndarray # X, Y, Z
 
     # Face Reconstruction
     metric_face: np.ndarray # [N, 486]
