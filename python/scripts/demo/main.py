@@ -12,7 +12,6 @@ from webeyetrack.data_protocols import TrackingStatus
 from webeyetrack.constants import GIT_ROOT
 from webeyetrack import vis
 
-from filter import KalmanFilter2D
 from constants import *
 from calibration_widget import CalibrationWidget
 from gaze_dot_canvas import GazeDotCanvas
@@ -82,13 +81,6 @@ class App(QtWidgets.QMainWindow):
         # Determine the size of the webcam frame
         width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-        # Create the Kalman filter for gaze tracking
-        self.kalman_filter = KalmanFilter2D(
-            dt=config['kalman_filter']['dt'], 
-            process_noise=config['kalman_filter']['process_noise'], 
-            measurement_noise=config['kalman_filter']['measurement_noise']
-        )
 
         # Initialize the WebEyeTrack pipeline
         self.wet = WebEyeTrack(
@@ -391,10 +383,7 @@ class App(QtWidgets.QMainWindow):
                         qeye_patch = QtGui.QImage(eye_patch.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888)
                         self.eye_patch_label.setPixmap(QtGui.QPixmap.fromImage(qeye_patch))
 
-                # Apply Kalman filter to the gaze result
-                if config['kalman_filter']['enabled']:
-                    gaze_result.norm_pog = self.kalman_filter.step(gaze_result.norm_pog).flatten()
-                
+             
                 # If the prediction is outside of [-0.4, 0.4], clip it
                 bound = 0.5
                 y_margin = 0.05

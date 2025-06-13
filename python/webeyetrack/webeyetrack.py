@@ -11,6 +11,7 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import mediapipe as mp
 
+from .filter import KalmanFilter2D
 from .constants import FACE_LANDMARKER_PATH, BLAZEGAZE_PATH
 from .model_based import (
     obtain_eyepatch, 
@@ -134,6 +135,14 @@ def compute_affine_transform(src: np.ndarray, dst: np.ndarray):
 
     return A.T  # (2, 3)
 
+
+@dataclass
+class KalmanFilterConfig:
+    enabled: bool = True
+    dt: float = 0.1
+    process_noise: float = 1e-5
+    measurement_noise: float = 1e-2
+
 @dataclass
 class WebEyeTrackConfig():
     blazegaze_mlp_fp: Union[str, pathlib.Path] = BLAZEGAZE_PATH
@@ -143,6 +152,7 @@ class WebEyeTrackConfig():
     screen_cm_dimensions: Tuple[float, float] = (53.1, 29.8)
     verbose: bool = False
     affine_matrix: Optional[np.ndarray] = None
+    kalman_config: KalmanFilterConfig = KalmanFilterConfig()
 
 class WebEyeTrack():
 
@@ -166,6 +176,13 @@ class WebEyeTrack():
             weights_fp=self.config.blazegaze_mlp_fp
         )
         self.blazegaze = BlazeGaze(model_config)
+
+        # Create Kalman filter
+        self.kalman_filter = KalmanFilter2D(
+            dt=self.config.kalman_config.dt, 
+            process_noise=self.config.kalman_config.process_noise, 
+            measurement_noise=self.config.kalman_config.measurement_noise
+        )
 
         # Keep track of the face width cm estimate
         self.face_width_cm = None
@@ -518,6 +535,10 @@ class WebEyeTrack():
         else:
             norm_pog = pog_estimation[0].numpy()
         norm_pog = np.array([float(norm_pog[0]), float(norm_pog[1])])
+
+        # Apply Kalman filter to the gaze result
+        if self.config.kalman_config.enabled:
+            norm_pog = self.kalman_filter.step(norm_pog).flatten()
 
         toc = time.perf_counter()
         if durations is not None:
