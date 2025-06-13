@@ -122,69 +122,45 @@ class App(QtWidgets.QMainWindow):
 
         # Store the latest gaze result and calibration data
         self.latest_gaze_result = None
-        self.calib_data = {
-            'calib_gaze_results': [],
-            'calib_norm_pogs': [],
-            'calib_point_timestamps': [],
-            'calib_point_type': []
-        }
-
-    def prune_calib_data(self):
-        # Prune the calibration data to keep only the last 100 points
-        max_points = config['calib']['max_points']
-        if len(self.calib_data['calib_gaze_results']) > max_points:
-            self.calib_data['calib_gaze_results'] = self.calib_data['calib_gaze_results'][-max_points:]
-            self.calib_data['calib_norm_pogs'] = self.calib_data['calib_norm_pogs'][-max_points:]
-            self.calib_data['calib_point_timestamps'] = self.calib_data['calib_point_timestamps'][-max_points:]
-            self.calib_data['calib_point_type'] = self.calib_data['calib_point_type'][-max_points:]
-
-        # Apply time-to-live pruning for 'click' points
-        current_time = time.time()
-        ttl = config['calib']['click_ttl']
-        for i in self.calib_data['calib_point_timestamps']:
-            if current_time - i > ttl:
-                index = self.calib_data['calib_point_timestamps'].index(i)
-                self.calib_data['calib_gaze_results'].pop(index)
-                self.calib_data['calib_norm_pogs'].pop(index)
-                self.calib_data['calib_point_timestamps'].pop(index)
-                self.calib_data['calib_point_type'].pop(index)
+        self.latest_click_calib = None
 
     def handle_mouse_click(self, event):
         # Convert xy pixel coordinates to normalized coordinates
         x,y = (event.x() / self.width() - 0.5), (event.y() / self.height() - 0.5)
+        timestamp = time.time()
         print(f"Mouse clicked at normalized coordinates: ({x:.2f}, {y:.2f})")
-        # print(f"Mouse clicked at: ({event.x()}, {event.y()})")
+
+        # To avoid spamming the calibration, debounce the click by using the 
+        # latest_click_calib
+        if self.latest_click_calib is not None:
+            time_diff = timestamp - self.latest_click_calib['timestamp']
+            space_diff = np.linalg.norm(self.latest_click_calib['norm_pog'] - np.array([x, y]))
+            if time_diff < config['calib']['click_interval'] or space_diff < config['calib']['click_dist']:
+                print("Click ignored due to debounce.")
+                self.latest_click_calib['timestamp'] = timestamp
+                self.latest_click_calib['norm_pog'] = np.array([x, y])
+                return
 
         # Use the latest gaze result and the current calibration
         if self.latest_gaze_result is None:
             print("No gaze result available yet.")
             return
         
-        calib_gaze_results = self.calib_data['calib_gaze_results'] if self.calib_data else []
-        calib_norm_pogs = self.calib_data['calib_norm_pogs'] if self.calib_data else []
-
-        # Add the latest gaze result to the calibration points
-        calib_gaze_results.append(self.latest_gaze_result)
-        calib_norm_pogs.append(np.array([x, y]))
-        
         returned_calib = self.wet.adapt_from_gaze_results(
-            calib_gaze_results,
-            np.stack(calib_norm_pogs),
+            [self.latest_gaze_result],
+            np.array([[x, y]]),
             affine_transform=True,
             steps_inner=10,
             inner_lr=1e-4,
-            adaptive_lr=True
+            pt_type='click'
         )
         print(f"Calibration completed successfully: {returned_calib}.")
 
-        # Update the calibration points
-        self.calib_data['calib_gaze_results'].append(self.latest_gaze_result)
-        self.calib_data['calib_norm_pogs'].append(np.array([x, y]))
-        self.calib_data['calib_point_timestamps'].append(time.time())
-        self.calib_data['calib_point_type'].append('click')
-
-        # Prune the calibration data to keep only the last 100 points
-        self.prune_calib_data()
+        # Store the xy and timestamp of the click
+        self.latest_click_calib = {
+            'norm_pog': np.array([x, y]),
+            'timestamp': timestamp,
+        }
 
     def init_calib(self):
         self.calibrating = False
@@ -203,11 +179,7 @@ class App(QtWidgets.QMainWindow):
         self.calibrating = status
 
         if not status:
-            # Obtain the calibration points
-            # print(self.calib_pts)
-
             # Extract the frames and normalize the points
-            # frames = []
             calib_gaze_results = []
             calib_norm_pogs = []
             pred_norm_pogs = []
@@ -240,28 +212,15 @@ class App(QtWidgets.QMainWindow):
                 print("Not enough calibration points collected. Please try again.")
                 return
             
-            # print(self.calib_pts)
-            print(calib_norm_pogs)
-            print(pred_norm_pogs)
-
             returned_calib = self.wet.adapt_from_gaze_results(
                 calib_gaze_results,
                 np.stack(calib_norm_pogs),
                 affine_transform=True,
                 steps_inner=10,
                 inner_lr=1e-4,
-                adaptive_lr=True
+                pt_type='calib_dot'
             )
             print(f"Calibration completed successfully: {returned_calib}.")
-
-            # Store the calibration data
-            self.calib_data['calib_gaze_results'].extend(calib_gaze_results)
-            self.calib_data['calib_norm_pogs'].extend(calib_norm_pogs)
-            self.calib_data['calib_point_timestamps'].extend([time.time()] * len(calib_norm_pogs))
-            self.calib_data['calib_point_type'].extend(['calib_dot'] * len(calib_norm_pogs))
-
-            # Prune the calibration data to keep only the last 100 points
-            self.prune_calib_data()
 
             if config['debug']:
                 screen_height_px, screen_width_px = SCREEN_HEIGHT_PX//2, SCREEN_WIDTH_PX//2

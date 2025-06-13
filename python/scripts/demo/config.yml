@@ -11,6 +11,8 @@ show_eye_patch: True
 calib:
   max_points: 20
   click_ttl: 60
+  click_interval: 1
+  click_dist: 0.05
 
 # Kalman filter parameters
 kalman_filter:

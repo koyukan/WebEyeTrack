@@ -1,6 +1,6 @@
 import time
 import pathlib
-from typing import Union, Any, Tuple, Optional, List
+from typing import Union, Any, Tuple, Optional, List, Literal
 from dataclasses import dataclass
 import random
 
@@ -66,6 +66,21 @@ def l2_loss(y_true, y_pred, sample_weight=None):
 
 def list_to_tensor(input_list: list, dtype=tf.float32):
     return tf.convert_to_tensor(np.stack(input_list), dtype=dtype)
+
+def list_to_concat_tensor(input_list: list, dtype=tf.float32, dim=0):
+    """
+    Convert a list of tensors to a single concatenated tensor along the specified dimension.
+    
+    Args:
+        input_list: List of tensors to concatenate.
+        dtype: Data type of the resulting tensor.
+        dim: Dimension along which to concatenate.
+    
+    Returns:
+        A single concatenated tensor.
+    """
+    return tf.concat([tf.convert_to_tensor(x, dtype=dtype) for x in input_list], axis=dim)
+
 
 def generate_support_and_query_samples(
         eye_patches, 
@@ -135,6 +150,10 @@ def compute_affine_transform(src: np.ndarray, dst: np.ndarray):
 
     return A.T  # (2, 3)
 
+@dataclass
+class CalibConfig:
+    max_points: int = 100
+    click_ttl: float = 60
 
 @dataclass
 class KalmanFilterConfig:
@@ -153,6 +172,7 @@ class WebEyeTrackConfig():
     verbose: bool = False
     affine_matrix: Optional[np.ndarray] = None
     kalman_config: KalmanFilterConfig = KalmanFilterConfig()
+    calib_config: CalibConfig = CalibConfig()
 
 class WebEyeTrack():
 
@@ -188,6 +208,34 @@ class WebEyeTrack():
         self.face_width_cm = None
         self.intrinsics = None
         self.affine_matrix = None
+
+        # Keep track of calibration data
+        self.calib_data = {
+            'support_x': [],
+            'support_y': [],
+            'timestamps': [],
+            'pt_type': []
+        }
+
+    def prune_calib_data(self):
+        # Prune the calibration data to keep only the last 100 points
+        max_points = self.config.calib_config.max_points
+        if len(self.calib_data['support_x']) > max_points:
+            self.calib_data['support_x'] = self.calib_data['support_x'][-max_points:]
+            self.calib_data['support_y'] = self.calib_data['support_y'][-max_points:]
+            self.calib_data['timestamps'] = self.calib_data['timestamps'][-max_points:]
+            self.calib_data['pt_type'] = self.calib_data['pt_type'][-max_points:]
+
+        # Apply time-to-live pruning for 'click' points
+        current_time = time.time()
+        ttl = self.config.calib_config.click_ttl
+        for i in self.calib_data['timestamps']:
+            if current_time - i > ttl and self.calib_data['pt_type'][i] == 'click':
+                index = self.calib_data['timestamps'].index(i)
+                self.calib_data['support_x'].pop(index)
+                self.calib_data['support_y'].pop(index)
+                self.calib_data['timestamps'].pop(index)
+                self.calib_data['pt_type'].pop(index)
 
     def compute_face_origin_3d(self, image_np: np.ndarray, face_landmarks_all: np.ndarray, face_landmarks_rt: np.ndarray):
 
@@ -273,10 +321,10 @@ class WebEyeTrack():
             head_vectors: list,
             face_origin_3ds: list,
             pog_norms: np.ndarray,
-            steps_inner=5, 
-            inner_lr=1e-5,
-            affine_transform=False,
-            adaptive_lr=False
+            steps_inner:int=5, 
+            inner_lr:float=1e-5,
+            affine_transform:bool=False,
+            pt_type:Literal['calib','click']='calib' # Literal['calib', 'click']
         ):
         """
         Performs MAML-style adaptation on the gaze head using support samples.
@@ -297,7 +345,7 @@ class WebEyeTrack():
 
         encoder_model = self.blazegaze.encoder
         gaze_mlp = self.blazegaze.gaze_mlp
-        support_x, support_y, query_x, query_y = generate_support_and_query_samples(
+        support_x, support_y, _, _ = generate_support_and_query_samples(
             eye_patches=eye_patches,
             head_vectors=head_vectors,
             face_origin_3ds=face_origin_3ds,
@@ -305,6 +353,23 @@ class WebEyeTrack():
             screen_cm_dimensions=self.config.screen_cm_dimensions,
             split_ratio=1
         )
+
+        # Make a copy of the support_x and support_y
+        single_support_x = {k: tf.identity(v) for k, v in support_x.items()}
+        single_support_y = tf.identity(support_y)
+
+        # Extend support_x and support_y with prior calibration data
+        if len(self.calib_data['support_x']) > 0:
+            for k, v in support_x.items():
+                print(f"Extending support_x[{k}] with prior calibration data")
+                prior_v = list_to_concat_tensor([x[k] for x in self.calib_data['support_x']], dtype=tf.float32, dim=0)
+                support_x[k] = tf.concat(
+                    [v, prior_v], axis=0
+                )
+            prior_v = list_to_concat_tensor(self.calib_data['support_y'], dtype=tf.float32, dim=0)
+            support_y = tf.concat(
+                [support_y, prior_v], axis=0
+            )
 
         # Encode features (encoder is frozen)
         support_x['encoder_features'] = encoder_model(support_x['image'], training=False)
@@ -344,23 +409,20 @@ class WebEyeTrack():
             # grads = tape.gradient(support_loss, gaze_mlp.trainable_weights)
             grads = tape.gradient(support_loss, gaze_mlp.trainable_variables)
             opt.apply_gradients(zip(grads, gaze_mlp.trainable_variables))
-            # for w, g in zip(gaze_mlp.trainable_weights, grads):
-            #     w.assign_sub(inner_lr * g)
 
-        if query_x is None or query_y is None:
-            if self.config.verbose:
-                print(f"Adaptation completed. Support loss: {support_loss.numpy():.4f}")
-            return support_preds.numpy()
-        
-        query_x['encoder_features'] = encoder_model(query_x['image'], training=False)
-        features = ['encoder_features', 'head_vector', 'face_origin_3d']
-        query_input_list = [query_x[feature] for feature in features]
+        # Store the calibration data
+        self.calib_data['support_x'].append(single_support_x)
+        self.calib_data['support_y'].append(single_support_y.numpy()) 
+        self.calib_data['timestamps'].append(time.time())
+        self.calib_data['pt_type'].append(pt_type)
 
-        # Evaluate on query set
-        query_preds = gaze_mlp(query_input_list, training=False)
-        query_loss = mae_cm_loss(query_y, query_preds, query_x['screen_info']).numpy()
+        print(f"Calibration data size: {len(self.calib_data['support_x'])}")
 
-        print(f"Adaptation completed. Support loss: {support_loss:.4f}, Query loss: {query_loss:.4f}")
+        # For debugging purposes, print out the 
+
+        if self.config.verbose:
+            print(f"Adaptation completed. Support loss: {support_loss.numpy():.4f}")
+        return support_preds.numpy()
 
     def adapt_from_frames(
             self, 
@@ -369,7 +431,7 @@ class WebEyeTrack():
             steps_inner=5, 
             inner_lr=1e-5, 
             affine_transform=False,
-            adaptive_lr=False
+            pt_type:Literal['calib_dot','click']='calib_dot' # Literal['calib', 'click']
         ):
         
         # For each frame, obtain the eye patch and head vector
@@ -403,7 +465,7 @@ class WebEyeTrack():
             steps_inner=steps_inner,
             inner_lr=inner_lr,
             affine_transform=affine_transform,
-            adaptive_lr=adaptive_lr
+            pt_type=pt_type
         )
     
     def adapt_from_gaze_results(
@@ -413,7 +475,7 @@ class WebEyeTrack():
             steps_inner=5,
             inner_lr=1e-5,
             affine_transform=False,
-            adaptive_lr=False
+            pt_type:Literal['calib','click']='calib' # Literal['calib', 'click']
         ):
         
         # For each frame, obtain the eye patch and head vector
@@ -437,7 +499,7 @@ class WebEyeTrack():
             steps_inner=steps_inner,
             inner_lr=inner_lr,
             affine_transform=affine_transform,
-            adaptive_lr=adaptive_lr
+            pt_type=pt_type
         )
 
     def adapt_from_samples(
@@ -446,7 +508,7 @@ class WebEyeTrack():
             steps_inner=5, 
             inner_lr=1e-5, 
             affine_transform=False,
-            adaptive_lr=False
+            pt_type:Literal['calib','click']='calib' # Literal['calib', 'click']
         ):
         """
         Performs MAML-style adaptation on the gaze head using support samples.
@@ -481,7 +543,7 @@ class WebEyeTrack():
             steps_inner=steps_inner,
             inner_lr=inner_lr,
             affine_transform=affine_transform,
-            adaptive_lr=adaptive_lr
+            pt_type=pt_type
         )
 
     def step(
