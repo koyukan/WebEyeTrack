@@ -295,7 +295,7 @@ class WebEyeTrack():
         input_list = [support_x[feature] for feature in features]
 
         # Perform a single forward pass to compute an affine transformation
-        if affine_transform:
+        if affine_transform and len(support_y) > 3:
             support_preds = gaze_mlp(input_list, training=False)
             self.affine_matrix = compute_affine_transform(
                 src=support_preds.numpy(),
@@ -422,7 +422,6 @@ class WebEyeTrack():
             affine_transform=affine_transform,
             adaptive_lr=adaptive_lr
         )
-
 
     def adapt_from_samples(
             self, 

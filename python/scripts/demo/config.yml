@@ -1,10 +1,16 @@
+# Debugging configuration
 verbose: False
+debug: False
 
 # State variable defaults
 show_webcam: True
 show_facial_landmarks: True
 show_eye_patch: True
 
+# Calibration parameters
+calib:
+  max_points: 20
+  click_ttl: 60
 
 # Kalman filter parameters
 kalman_filter:

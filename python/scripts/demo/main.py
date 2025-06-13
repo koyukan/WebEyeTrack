@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import imutils
 import pathlib
+import time
 from collections import defaultdict
 
 import yaml
@@ -51,6 +52,9 @@ class App(QtWidgets.QMainWindow):
         self.central_widget = QtWidgets.QWidget()
         self.setCentralWidget(self.central_widget)
         self.layout = QtWidgets.QStackedLayout(self.central_widget)
+
+        # Add a mouse click event to the central widget
+        self.central_widget.mousePressEvent = lambda event: self.handle_mouse_click(event)
 
         # Add 2D canvas
         self.calibration_canvas = CalibrationWidget()
@@ -124,8 +128,75 @@ class App(QtWidgets.QMainWindow):
         self.current_calib_point = None
         self.calib_pts = defaultdict(list)
 
+        # Store the latest gaze result and calibration data
+        self.latest_gaze_result = None
+        self.calib_data = {
+            'calib_gaze_results': [],
+            'calib_norm_pogs': [],
+            'calib_point_timestamps': [],
+            'calib_point_type': []
+        }
+
+    def prune_calib_data(self):
+        # Prune the calibration data to keep only the last 100 points
+        max_points = config['calib']['max_points']
+        if len(self.calib_data['calib_gaze_results']) > max_points:
+            self.calib_data['calib_gaze_results'] = self.calib_data['calib_gaze_results'][-max_points:]
+            self.calib_data['calib_norm_pogs'] = self.calib_data['calib_norm_pogs'][-max_points:]
+            self.calib_data['calib_point_timestamps'] = self.calib_data['calib_point_timestamps'][-max_points:]
+            self.calib_data['calib_point_type'] = self.calib_data['calib_point_type'][-max_points:]
+
+        # Apply time-to-live pruning for 'click' points
+        current_time = time.time()
+        ttl = config['calib']['click_ttl']
+        for i in self.calib_data['calib_point_timestamps']:
+            if current_time - i > ttl:
+                index = self.calib_data['calib_point_timestamps'].index(i)
+                self.calib_data['calib_gaze_results'].pop(index)
+                self.calib_data['calib_norm_pogs'].pop(index)
+                self.calib_data['calib_point_timestamps'].pop(index)
+                self.calib_data['calib_point_type'].pop(index)
+
+    def handle_mouse_click(self, event):
+        # Convert xy pixel coordinates to normalized coordinates
+        x,y = (event.x() / self.width() - 0.5), (event.y() / self.height() - 0.5)
+        print(f"Mouse clicked at normalized coordinates: ({x:.2f}, {y:.2f})")
+        # print(f"Mouse clicked at: ({event.x()}, {event.y()})")
+
+        # Use the latest gaze result and the current calibration
+        if self.latest_gaze_result is None:
+            print("No gaze result available yet.")
+            return
+        
+        calib_gaze_results = self.calib_data['calib_gaze_results'] if self.calib_data else []
+        calib_norm_pogs = self.calib_data['calib_norm_pogs'] if self.calib_data else []
+
+        # Add the latest gaze result to the calibration points
+        calib_gaze_results.append(self.latest_gaze_result)
+        calib_norm_pogs.append(np.array([x, y]))
+        
+        returned_calib = self.wet.adapt_from_gaze_results(
+            calib_gaze_results,
+            np.stack(calib_norm_pogs),
+            affine_transform=True,
+            steps_inner=10,
+            inner_lr=1e-4,
+            adaptive_lr=True
+        )
+        print(f"Calibration completed successfully: {returned_calib}.")
+
+        # Update the calibration points
+        self.calib_data['calib_gaze_results'].append(self.latest_gaze_result)
+        self.calib_data['calib_norm_pogs'].append(np.array([x, y]))
+        self.calib_data['calib_point_timestamps'].append(time.time())
+        self.calib_data['calib_point_type'].append('click')
+
+        # Prune the calibration data to keep only the last 100 points
+        self.prune_calib_data()
+
     def init_calib(self):
         self.calibrating = False
+        self.current_calib_point = None
         self.calib_pts.clear()
         self.calibration_canvas.show()
         self.calibration_canvas.complete = False
@@ -191,30 +262,41 @@ class App(QtWidgets.QMainWindow):
             )
             print(f"Calibration completed successfully: {returned_calib}.")
 
-            screen_height_px, screen_width_px = SCREEN_HEIGHT_PX//2, SCREEN_WIDTH_PX//2
-            screen_img = np.zeros((screen_height_px, screen_width_px, 3), dtype=np.uint8)
-            for i, pog in enumerate(calib_norm_pogs):
+            # Store the calibration data
+            self.calib_data['calib_gaze_results'].extend(calib_gaze_results)
+            self.calib_data['calib_norm_pogs'].extend(calib_norm_pogs)
+            self.calib_data['calib_point_timestamps'].extend([time.time()] * len(calib_norm_pogs))
+            self.calib_data['calib_point_type'].extend(['calib_dot'] * len(calib_norm_pogs))
 
-                # gt_pt = row['mouseClickX'], row['mouseClickY']
-                gt_tb_pt = pog
-                pred_pt = returned_calib[i]
+            # Prune the calibration data to keep only the last 100 points
+            self.prune_calib_data()
 
-                # Draw the points as circles
-                x, y = (gt_tb_pt[0] + 0.5), (gt_tb_pt[1] + 0.5)
-                cv2.circle(screen_img, (int(x * screen_width_px), int(y * screen_height_px)), 10, (0, 0, 255), -1)
-                x2, y2 = (pred_pt[0] + 0.5), (pred_pt[1] + 0.5)
-                cv2.circle(screen_img, (int(x2 * screen_width_px), int(y2 * screen_height_px)), 10, (255, 255, 0), -1)
+            if config['debug']:
+                screen_height_px, screen_width_px = SCREEN_HEIGHT_PX//2, SCREEN_WIDTH_PX//2
+                screen_img = np.zeros((screen_height_px, screen_width_px, 3), dtype=np.uint8)
+                for i, pog in enumerate(calib_norm_pogs):
 
-                # Draw a line between the original calibration point and the resulting calibration point
-                cv2.line(screen_img, (int(x * screen_width_px), int(y * screen_height_px)),
-                            (int(x2 * screen_width_px), int(y2 * screen_height_px)), (255, 0, 255), 1)
+                    gt_tb_pt = pog
+                    pred_pt = returned_calib[i]
 
-            # Save the image
-            calib_img_path = CWD / 'calibration_result.png'
-            cv2.imwrite(str(calib_img_path), screen_img)
+                    # Draw the points as circles
+                    x, y = (gt_tb_pt[0] + 0.5), (gt_tb_pt[1] + 0.5)
+                    cv2.circle(screen_img, (int(x * screen_width_px), int(y * screen_height_px)), 10, (0, 0, 255), -1)
+                    x2, y2 = (pred_pt[0] + 0.5), (pred_pt[1] + 0.5)
+                    cv2.circle(screen_img, (int(x2 * screen_width_px), int(y2 * screen_height_px)), 10, (255, 255, 0), -1)
+
+                    # Draw a line between the original calibration point and the resulting calibration point
+                    cv2.line(screen_img, (int(x * screen_width_px), int(y * screen_height_px)),
+                                (int(x2 * screen_width_px), int(y2 * screen_height_px)), (255, 0, 255), 1)
+
+                # Save the image
+                calib_img_path = CWD / 'calibration_result.png'
+                cv2.imwrite(str(calib_img_path), screen_img)
 
     def end_calib(self):
         self.calibrating = False
+        self.current_calib_point = None
+        self.calib_pts.clear()
         self.calibration_canvas.hide()
         self.ui_container.show()
         if self.show_webcam:
@@ -326,6 +408,9 @@ class App(QtWidgets.QMainWindow):
                 # If calibrating, store the calibration point
                 if self.calibrating and self.current_calib_point is not None:
                     self.calib_pts[self.current_calib_point].append(gaze_result)
+
+                # Store the latest gaze result
+                self.latest_gaze_result = gaze_result
 
             # Show the frame
             if self.show_webcam:

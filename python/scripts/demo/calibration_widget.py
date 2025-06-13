@@ -61,11 +61,14 @@ class CalibrationWidget(QtWidgets.QWidget):
         self.parent().parent().end_calib()  # Assuming parent manages the toggle to GLViewWidget
 
     def start_calibration(self):
+        self.show_instructions = True
+        self.complete = False
         self.instruction_timer.start(5*1000)  # 10 seconds
 
     def perform_calibration(self):
         self.show_instructions = False
         self.current_step = 0
+        self.current_position = self.calib_positions[self.current_step]
         self.calibration_status.emit(True)
         self.calib_dot_updated.emit(self.current_position[0], self.current_position[1])
         self.start_color_transition()
