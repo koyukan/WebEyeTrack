@@ -131,7 +131,7 @@ class GazeResult:
     norm_pog: np.ndarray = np.array([0.5, 0.5])
 
     # Meta data
-    duration: float = -1 # seconds
+    durations: dict[str, float] = field(default_factory=dict) # seconds
 
 class TrackingStatus(Enum):
     FAILED = 0

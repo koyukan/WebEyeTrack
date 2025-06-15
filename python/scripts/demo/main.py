@@ -33,7 +33,8 @@ with open(CWD / 'config.yml', 'r') as f:
     config = yaml.safe_load(f)
 
 class App(QtWidgets.QMainWindow):
-    gaze_dot_updated = QtCore.pyqtSignal(float, float)
+    gaze_dot_updated = QtCore.pyqtSignal(str, float, float)
+    gaze_speed_updated = QtCore.pyqtSignal(dict)
 
     def __init__(self):
         super().__init__()
@@ -110,10 +111,18 @@ class App(QtWidgets.QMainWindow):
 
         # On the bottom right, show the real-time xy coordinates of the gaze dot
         self.gaze_coordinates_label = QtWidgets.QLabel(self)
-        self.gaze_coordinates_label.setGeometry(SCREEN_WIDTH_PX - 180, SCREEN_HEIGHT_PX - 100, 190, 40)
+        self.gaze_coordinates_label.setGeometry(SCREEN_WIDTH_PX - 260, SCREEN_HEIGHT_PX - 115, 250, 40)
         self.gaze_coordinates_label.setStyleSheet("background-color: black; color: white; font-size: 16px; padding: 5px;")
         self.gaze_coordinates_label.setParent(self.central_widget)
-        self.gaze_dot_updated.connect(lambda x, y: self.gaze_coordinates_label.setText(f"Gaze: ({x:.2f}, {y:.2f})"))
+        self.gaze_dot_updated.connect(lambda state, x, y: self.gaze_coordinates_label.setText(f"State: {state}, Gaze: ({x:.2f}, {y:.2f})"))
+
+        # On the bottom left, show the real-time gaze speed (a dictionary of routine durations in sec)
+        self.gaze_speed_label = QtWidgets.QLabel(self)
+        self.gaze_speed_label.setGeometry(10, SCREEN_HEIGHT_PX - 225, 250, 150)
+        self.gaze_speed_label.setStyleSheet("background-color: black; color: white; font-size: 16px; padding: 5px;")
+        self.gaze_speed_label.setParent(self.central_widget)
+        # self.gaze_speed_updated.connect(lambda durations: self.gaze_speed_label.setText(f"Speed: {durations}"))
+        self.gaze_speed_updated.connect(self.handle_gaze_speed_update)
 
         # Store the calibration points
         self.calibrating = False
@@ -123,6 +132,13 @@ class App(QtWidgets.QMainWindow):
         # Store the latest gaze result and calibration data
         self.latest_gaze_result = None
         self.latest_click_calib = None
+
+    def handle_gaze_speed_update(self, durations):
+        # Convert seconds to ms
+        durations = {key: value * 1000 for key, value in durations.items()}
+        # Format the dict to have each key-value pair on a new line
+        speed_text = "\n".join([f"{key}: {value:.2f} ms" for key, value in durations.items()])
+        self.gaze_speed_label.setText(f"Speed:\n{speed_text}")
 
     def handle_mouse_click(self, event):
         # Convert xy pixel coordinates to normalized coordinates
@@ -136,7 +152,6 @@ class App(QtWidgets.QMainWindow):
             time_diff = timestamp - self.latest_click_calib['timestamp']
             space_diff = np.linalg.norm(self.latest_click_calib['norm_pog'] - np.array([x, y]))
             if time_diff < config['calib']['click_interval'] or space_diff < config['calib']['click_dist']:
-                print("Click ignored due to debounce.")
                 self.latest_click_calib['timestamp'] = timestamp
                 self.latest_click_calib['norm_pog'] = np.array([x, y])
                 return
@@ -341,7 +356,6 @@ class App(QtWidgets.QMainWindow):
                         bytes_per_line = ch * w
                         qeye_patch = QtGui.QImage(eye_patch.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888)
                         self.eye_patch_label.setPixmap(QtGui.QPixmap.fromImage(qeye_patch))
-
              
                 # If the prediction is outside of [-0.4, 0.4], clip it
                 bound = 0.5
@@ -351,7 +365,10 @@ class App(QtWidgets.QMainWindow):
 
                 # Update the gaze dot position
                 gaze_x, gaze_y = gaze_result.norm_pog
-                self.gaze_dot_updated.emit(gaze_x, gaze_y)
+                self.gaze_dot_updated.emit(gaze_result.gaze_state, gaze_x, gaze_y)
+
+                # Update the gaze speed
+                self.gaze_speed_updated.emit(gaze_result.durations)
 
                 # If calibrating, store the calibration point
                 if self.calibrating and self.current_calib_point is not None:

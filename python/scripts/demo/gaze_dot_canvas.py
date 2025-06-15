@@ -10,17 +10,22 @@ class GazeDotCanvas(QtWidgets.QWidget):
         self.setAttribute(QtCore.Qt.WA_NoSystemBackground)
         self.setStyleSheet("background: transparent;")
         self.dot_position = [0.0, 0.0]  # Normalized position (center)
+        self.dot_state = 'open'  # Default state
         self.dot_radius = 15
         self.dot_color = QtGui.QColor(0, 255, 0)
 
-    def update_dot(self, x, y):
+    def update_dot(self, state, x, y):
         """Update the dot's position and trigger a repaint."""
         self.dot_position = [x, y]
+        self.dot_state = state
         self.update()
 
     def paintEvent(self, event):
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
+
+        if self.dot_state == 'closed':
+            return
 
         # Get the screen offset
         x_offset, y_offset = get_screen_offset()

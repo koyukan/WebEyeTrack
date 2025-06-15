@@ -11,7 +11,7 @@ from .data_protocols import PoGResult
 # Blink Detection
 ########################################################################################
 
-def compute_ear(facial_landmarks, side):
+def compute_ear(facial_landmarks, side='left'):
 
     EYE_EAR_LANDMARKS = LEFT_EYE_EAR_LANDMARKS if side == 'left' else RIGHT_EYE_EAR_LANDMARKS
     p1 = facial_landmarks[EYE_EAR_LANDMARKS[0]]

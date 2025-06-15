@@ -20,7 +20,8 @@ from .model_based import (
     estimate_camera_intrinsics,
     create_perspective_matrix,
     face_reconstruction,
-    estimate_gaze_origins
+    estimate_gaze_origins,
+    compute_ear
 )
 from .data_protocols import GazeResult, TrackingStatus
 from .blazegaze import BlazeGaze, BlazeGazeConfig
@@ -553,6 +554,8 @@ class WebEyeTrack():
             face_rt: np.ndarray,
             durations: Optional[dict] = None
         ):
+        if durations is None:
+            durations = {}
         tic = time.perf_counter()
 
         # Extract the 2D coordinates of the face landmarks
@@ -571,13 +574,38 @@ class WebEyeTrack():
             return TrackingStatus.FAILED, None
         toc = time.perf_counter()
 
-        if durations is not None:
-            durations['prepare_input'] = toc - tic
+        durations['prepare_input'] = toc - tic
 
         if self.config.verbose:
             cv2.imshow('Eye Patch', eye_patch)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 cv2.destroyAllWindows()
+
+        # Check if the gaze_state is open or closed via EAR threshold
+        if (compute_ear(facial_landmarks=face_landmarks_2d, side='left') < self.config.ear_threshold) or \
+            (compute_ear(facial_landmarks=face_landmarks_2d, side='right') < self.config.ear_threshold):
+            gaze_state = 'closed'
+        else:
+            gaze_state = 'open'
+
+        # If 'closed' return (0, 0) as the PoG
+        if gaze_state == 'closed':
+            durations['infer_pog'] = 0.0
+            durations['affine_&_kalman'] = 0.0
+            durations['total'] = np.sum(list(durations.values()))
+            return TrackingStatus.SUCCESS, GazeResult(
+                facial_landmarks=face_landmarks,
+                face_rt=face_rt,
+                face_blendshapes=None,
+                eye_patch=eye_patch,
+                head_vector=head_vector,
+                face_origin_3d=face_origin_3d,
+                metric_face=None,
+                metric_transform=None,
+                gaze_state=gaze_state,
+                norm_pog=np.array([0, 0]),
+                durations=durations
+            )
 
         # Perform the gaze estimation via BlazeGaze Model
         pog_estimation = self.infer_fn(
@@ -586,8 +614,7 @@ class WebEyeTrack():
             face_origin_3d=tf.convert_to_tensor(np.expand_dims(face_origin_3d, axis=0), dtype=tf.float32)
         )
         toc2 = time.perf_counter()
-        if durations is not None:
-            durations['infer_fn'] = toc2 - toc
+        durations['infer_pog'] = toc2 - toc
 
         # Apply affine transformation if available
         if self.affine_matrix is not None:
@@ -603,16 +630,8 @@ class WebEyeTrack():
             norm_pog = self.kalman_filter.step(norm_pog).flatten()
 
         toc = time.perf_counter()
-        if durations is not None:
-            durations['infer_pog'] = toc - toc2
-            durations['total'] = np.sum(list(durations.values()))
-
-        # Compute the FPS/delay
-        # if self.config.verbose:
-        #     text_str = ""
-        #     for k, v in durations.items():
-        #         text_str += f"{k}: {v:.4f}s, "
-        #     print(f"Durations: \t\t{text_str[:-2]}")
+        durations['affine_&_kalman'] = toc - toc2
+        durations['total'] = np.sum(list(durations.values()))
 
         # return True, pog_estimation[0]
         return TrackingStatus.SUCCESS, GazeResult(
@@ -624,9 +643,9 @@ class WebEyeTrack():
             face_origin_3d=face_origin_3d,
             metric_face=None,
             metric_transform=None,
-            gaze_state='open',
+            gaze_state=gaze_state,
             norm_pog=norm_pog,
-            duration=toc-tic
+            durations=durations
         )
 
     def process_frame(
