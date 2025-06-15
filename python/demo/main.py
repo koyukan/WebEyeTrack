@@ -185,6 +185,7 @@ class App(QtWidgets.QMainWindow):
         self.calibration_canvas.complete = False
         self.calibration_canvas.start_calibration()
         self.ui_container.hide()
+        self.gaze_speed_label.hide()
         if self.show_webcam:
             self.webcam_label.hide()
         if self.show_eye_patch:
@@ -265,6 +266,7 @@ class App(QtWidgets.QMainWindow):
         self.calib_pts.clear()
         self.calibration_canvas.hide()
         self.ui_container.show()
+        self.gaze_speed_label.show()
         if self.show_webcam:
             self.webcam_label.show()
         if self.show_eye_patch:

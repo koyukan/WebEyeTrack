@@ -1,18 +1,57 @@
+import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
+import { obtainEyePatch } from "./mathUtils";
+
+import { Point, GazeResult } from "./types";
+import { Matrix } from "mathjs";
+
 export default class WebEyeTrack {
     constructor() {
       console.log('WebEyeTrack constructor');
     }
-  
-    /**
-     * Step function that processes incoming results from the facial landmark model.
-     *
-     * @param {Object} result - The result object from the facial landmark model.
-     * @param {Array} result.landmarks - The facial landmarks points.
-     * @param {Array} result.transformationMatrix - The facial transformation matrix.
-     * @param {Array} result.faceBlendshapes - The face blendshapes.
-     * @param {HTMLVideoElement} frame - The original frame being processed.
-     * @param {...any} inputArgs - Additional input arguments for further customization.
-     */
-    step(result: any, frame: HTMLVideoElement) {
+
+    prepare_input(frame: HTMLVideoElement, result: FaceLandmarkerResult): HTMLCanvasElement {
+
+      // Convert the normalized landmarks to non-normalized coordinates
+      const width = frame.videoWidth;
+      const height = frame.videoHeight;
+      const landmarks = result.faceLandmarks[0];
+      const landmarks2d: Point[] = landmarks.map((landmark: NormalizedLandmark) => {
+        return [
+          Math.floor(landmark.x * width),
+          Math.floor(landmark.y * height),
+        ];
+      });
+
+      // First, extract the eye patch
+      const eyePatch = obtainEyePatch(
+        frame,
+        landmarks2d,
+        [0.4, 0.2], // facePaddingCoefs
+        512, // faceCropSize
+        [512, 128] // dstImgSize
+      );
+
+      return eyePatch;
     }
+
+    step(result: FaceLandmarkerResult, frame: HTMLVideoElement): GazeResult {
+      // Perform preprocessing to obtain the eye patch, head_vector, and face_origin_3d
+      const eyePatch = this.prepare_input(frame, result);
+
+      // Return GazeResult
+      let gaze_result: GazeResult = {
+        facialLandmarks: result.faceLandmarks[0],
+        faceRt: result.facialTransformationMatrixes[0],
+        faceBlendshapes: result.faceBlendshapes,
+        eyePatch: eyePatch,
+        headVector: [0, 0, 0], // Placeholder, should be computed
+        faceOrigin3D: [0, 0, 0], // Placeholder, should be computed
+        metric_transform: {rows: 3, columns: 3, data: [1, 0, 0, 1, 0, 0, 1, 0, 0]}, // Placeholder, should be computed
+        gazeState: 'open', // Placeholder, should be computed
+        normPog: [0, 0], // Placeholder, should be computed
+        durations: {}
+    };
+
+    return gaze_result;
+  }
 }

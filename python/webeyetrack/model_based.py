@@ -35,7 +35,7 @@ def obtain_eyepatch(
         face_crop_size: int = 512,
         dst_img_size: Tuple[int, int] = (512, 128)):
     
-        # Compute the homography matrix (4 pts) from the points to a final flat rectangle
+    # Compute the homography matrix (4 pts) from the points to a final flat rectangle
     lefttop = face_landmarks[103]
     leftbottom = face_landmarks[150]
     righttop = face_landmarks[332]

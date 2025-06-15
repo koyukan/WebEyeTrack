@@ -3,6 +3,7 @@ import { WebcamClient, FaceLandmarkerClient, WebEyeTrack } from 'webeyetrack';
 
 export default function App() {
   const videoRef = useRef(null);
+  const eyePatchRef = useRef(null);
   const canvasRef = useRef(null);
   const faceLandmarkerRef = useRef(null);
   const webEyeTrack = new WebEyeTrack();
@@ -28,10 +29,19 @@ export default function App() {
           }
 
           let results = await faceLandmarker.processFrame(frame);
-          console.log(results);
 
           // Further process the results with the WebEyeTrack library
-          webEyeTrack.step(results, frame);
+          const gaze_result = webEyeTrack.step(results, frame);
+
+          // Show the eye patch based on the gaze result
+          if (gaze_result && eyePatchRef.current instanceof HTMLCanvasElement) {
+            const ctx = eyePatchRef.current.getContext('2d');
+            if (ctx) {
+              // Draw the eye patch canvas onto the display canvas
+              ctx.clearRect(0, 0, eyePatchRef.current.width, eyePatchRef.current.height);
+              ctx.drawImage(gaze_result.eyePatch, 0, 0);
+            }
+          }
         });
 
         // Cleanup: stop the webcam and clear references when the component unmounts
@@ -53,6 +63,10 @@ export default function App() {
         autoPlay
         playsInline
         className="absolute z-10 top-0 left-0 h-1/5"
+      />
+      <canvas
+        ref={eyePatchRef}
+        className="absolute z-10 top-0 right-0 h-1/5"
       />
       <canvas
         ref={canvasRef}

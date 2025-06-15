@@ -1,4 +1,4 @@
-import { FaceLandmarker, FilesetResolver, DrawingUtils } from "@mediapipe/tasks-vision";
+import { FaceLandmarker, FilesetResolver, DrawingUtils, FaceLandmarkerResult } from "@mediapipe/tasks-vision";
 
 export default class FaceLandmarkerClient {
   private faceLandmarker: any;
@@ -41,7 +41,7 @@ export default class FaceLandmarkerClient {
     }
 
     const startTimeMs = performance.now();
-    let result: any;
+    let result: FaceLandmarkerResult;
     if (!frame) {
       result = await this.faceLandmarker.detectForVideo(this.videoElement, startTimeMs);
     } else {
