@@ -1,6 +1,7 @@
 import { FaceLandmarkerResult, NormalizedLandmark, Matrix, Classifications} from "@mediapipe/tasks-vision";
 
-export type Point = [number, number];
+// export type Point = [number, number];
+export type Point = number[];
 
 export enum TrackingStatus {
   FAILED = 0,
