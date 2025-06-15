@@ -9,7 +9,7 @@ export default class WebEyeTrack {
       console.log('WebEyeTrack constructor');
     }
 
-    prepare_input(frame: HTMLVideoElement, result: FaceLandmarkerResult): HTMLCanvasElement {
+    prepare_input(frame: HTMLVideoElement, result: FaceLandmarkerResult): ImageData {
 
       // Convert the normalized landmarks to non-normalized coordinates
       const width = frame.videoWidth;
@@ -26,9 +26,6 @@ export default class WebEyeTrack {
       const eyePatch = obtainEyePatch(
         frame,
         landmarks2d,
-        [0.4, 0.2], // facePaddingCoefs
-        512, // faceCropSize
-        [512, 128] // dstImgSize
       );
 
       return eyePatch;

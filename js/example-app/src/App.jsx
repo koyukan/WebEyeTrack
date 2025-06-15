@@ -34,12 +34,16 @@ export default function App() {
           const gaze_result = webEyeTrack.step(results, frame);
 
           // Show the eye patch based on the gaze result
-          if (gaze_result && eyePatchRef.current instanceof HTMLCanvasElement) {
+          // if (gaze_result && eyePatchRef.current instanceof HTMLCanvasElement) {
+          if (gaze_result && eyePatchRef.current) {
             const ctx = eyePatchRef.current.getContext('2d');
+            eyePatchRef.current.width = gaze_result.eyePatch.width;
+            eyePatchRef.current.height = gaze_result.eyePatch.height;
+
             if (ctx) {
               // Draw the eye patch canvas onto the display canvas
               ctx.clearRect(0, 0, eyePatchRef.current.width, eyePatchRef.current.height);
-              ctx.drawImage(gaze_result.eyePatch, 0, 0);
+              ctx.putImageData(gaze_result.eyePatch, 0, 0);
             }
           }
         });
