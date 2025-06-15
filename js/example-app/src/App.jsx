@@ -52,13 +52,11 @@ export default function App() {
         ref={videoRef}
         autoPlay
         playsInline
-        className="absolute z-10 w-full h-auto w-1/2 max-h-full"
+        className="absolute z-10 top-0 left-0 h-1/5"
       />
       <canvas
         ref={canvasRef}
-        // height={600}
-        // width={600}
-        className="absolute z-20 w-full h-auto w-1/2 max-h-full"
+        className="absolute z-20 top-0 left-0 h-1/5"
       />
     </div>
   );

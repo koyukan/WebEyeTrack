@@ -24,7 +24,7 @@ export default class FaceLandmarkerClient {
         delegate: "GPU",
       },
       outputFaceBlendshapes: true,
-      runningMode: "VIDEO",
+      runningMode: "IMAGE", // VIDEO
       numFaces: 1,
     });
 
@@ -45,7 +45,8 @@ export default class FaceLandmarkerClient {
     if (!frame) {
       result = await this.faceLandmarker.detectForVideo(this.videoElement, startTimeMs);
     } else {
-      result = await this.faceLandmarker.process(frame, startTimeMs);
+      // result = await this.faceLandmarker.process(frame, startTimeMs);
+      result = await this.faceLandmarker.detect(frame);
     }
 
     // Clear the canvas before drawing
