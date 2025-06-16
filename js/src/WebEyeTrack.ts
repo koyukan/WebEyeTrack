@@ -1,6 +1,7 @@
 import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
-import { computeFaceOrigin3D, getHeadVector, obtainEyePatch, computeEAR } from "./mathUtils";
+import * as tf from '@tensorflow/tfjs';
 
+import { computeFaceOrigin3D, getHeadVector, obtainEyePatch, computeEAR } from "./mathUtils";
 import { Point, GazeResult } from "./types";
 import BlazeGaze from "./BlazeGaze";
 import FaceLandmarkerClient from "./FaceLandmarkerClient";
@@ -77,6 +78,20 @@ export default class WebEyeTrack {
       }
 
       // Perform the gaze estimation via BlazeGaze Model (tensorflow.js)
+      const inputTensor = tf.browser.fromPixels(eyePatch).toFloat().expandDims(0);
+
+      // Divide the inputTensor by 255 to normalize pixel values
+      const normalizedInputTensor = inputTensor.div(tf.scalar(255.0));
+
+      const headVectorTensor = tf.tensor2d(headVector, [1, 3]);
+      const faceOriginTensor = tf.tensor2d(faceOrigin3D, [1, 3]);
+      const outputTensor = await this.blazeGaze.predict(normalizedInputTensor, headVectorTensor, faceOriginTensor);
+
+      // Extract the 2D gaze point data from the output tensor
+      if (!outputTensor || outputTensor.shape.length === 0) {
+        throw new Error("BlazeGaze model did not return valid output");
+      }
+      const normPog = outputTensor.arraySync() as number[][];
 
       // Return GazeResult
       let gaze_result: GazeResult = {
@@ -87,8 +102,8 @@ export default class WebEyeTrack {
         headVector: headVector,
         faceOrigin3D: faceOrigin3D,
         metric_transform: {rows: 3, columns: 3, data: [1, 0, 0, 1, 0, 0, 1, 0, 0]}, // Placeholder, should be computed
-        gazeState: gaze_state, // Placeholder, should be computed
-        normPog: [0, 0], // Placeholder, should be computed
+        gazeState: gaze_state,
+        normPog: normPog[0],
         durations: {}
     };
 

@@ -229,11 +229,51 @@ export function computeFaceOrigin3D(
   return [0, 0, 0]; // Placeholder for face origin computation
 }
 
+function matrixToEuler(matrix: Matrix): [number, number, number] {
+  // Extract Euler angles from the rotation matrix
+  const pitch = Math.asin(-matrix.get(2, 0));
+  const yaw = Math.atan2(matrix.get(2, 1), matrix.get(2, 2));
+  const roll = Math.atan2(matrix.get(1, 0), matrix.get(0, 0));
+  return [pitch, yaw, roll];
+}
+
+function pyrToVector(pitch: number, yaw: number, roll: number): number[] {
+  // Convert spherical coordinates to Cartesian coordinates
+  const x = Math.cos(pitch) * Math.sin(yaw);
+  const y = Math.sin(pitch);
+  const z = -Math.cos(pitch) * Math.cos(yaw);
+  const vector = new Matrix([[x, y, z]]);
+
+  // Apply roll rotation around the z-axis
+  const [cos_r, sin_r] = [Math.cos(roll), Math.sin(roll)];
+  const roll_matrix = new Matrix([
+    [cos_r, -sin_r, 0],
+    [sin_r, cos_r, 0],
+    [0, 0, 1],
+  ]);
+
+  const rotated_vector = roll_matrix.mmul(vector.transpose()).transpose();
+  return rotated_vector.to1DArray();
+}
+
 export function getHeadVector(
-    transformationMatrix: MediaPipeMatrix,
+    tfMatrix: MediaPipeMatrix,
 ): number[] {
-  // Placeholder for head vector computation
-  return [0, 0, 0];
+
+  // Convert MediaPipe matrix (4x4) to a 3x3 rotation matrix
+  const rotationMatrix = new Matrix([
+    [tfMatrix.data[0], tfMatrix.data[1], tfMatrix.data[2]],
+    [tfMatrix.data[4], tfMatrix.data[5], tfMatrix.data[6]],
+    [tfMatrix.data[8], tfMatrix.data[9], tfMatrix.data[10]],
+  ]);
+
+  // Convert the matrix to euler angles and change the order/direction
+  const [pitch, yaw, roll] = matrixToEuler(rotationMatrix);
+  const [h_pitch, h_yaw, h_roll] = [-yaw, pitch, roll];
+
+  // Construct a unit vector
+  const vector = pyrToVector(h_pitch, h_yaw, h_roll);
+  return vector;
 }
 
 // ============================================================================

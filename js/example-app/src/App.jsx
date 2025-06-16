@@ -1,7 +1,10 @@
-import React, { useEffect, useRef } from 'react';
-import { WebcamClient, FaceLandmarkerClient, WebEyeTrack, BlazeGaze } from 'webeyetrack';
+import React, { useState, useEffect, useRef } from 'react';
+import { WebcamClient, WebEyeTrack } from 'webeyetrack';
+
+import GazeDot from './GazeDot.jsx';
 
 export default function App() {
+  const [gaze, setGaze] = useState({ x: 0, y: 0 });
   const videoRef = useRef(null);
   const eyePatchRef = useRef(null);
   const canvasRef = useRef(null);
@@ -26,6 +29,14 @@ export default function App() {
 
           // Further process the results with the WebEyeTrack library
           const gaze_result = await webEyeTrack.step(frame);
+
+          // Set the gaze coordinates
+          if (gaze_result) {
+            setGaze({
+              x: (gaze_result.normPog[0]+0.5) * canvasRef.current.width,
+              y: (gaze_result.normPog[1]+0.5) * canvasRef.current.height,
+            });
+          }
 
           // Show the eye patch based on the gaze result
           // if (gaze_result && eyePatchRef.current instanceof HTMLCanvasElement) {
@@ -53,22 +64,27 @@ export default function App() {
   }, []); // Empty dependency array to run only on mount/unmount
 
   return (
-    <div className="flex items-center justify-center h-screen bg-gray-100 relative">
-      <video
-        id='webcam'
-        ref={videoRef}
-        autoPlay
-        playsInline
-        className="absolute z-10 top-0 left-0 h-1/5"
-      />
-      <canvas
-        ref={eyePatchRef}
-        className="absolute z-10 top-0 right-0 h-1/5"
-      />
-      <canvas
-        ref={canvasRef}
-        className="absolute z-20 top-0 left-0 h-1/5"
-      />
-    </div>
+    <>
+      <div className="absolute left-0 right-0 w-full h-full z-10 pointer-events-none">
+        <GazeDot x={gaze.x} y={gaze.y} />
+      </div>
+      <div className="flex items-center justify-center h-screen bg-gray-100 relative">
+        <video
+          id='webcam'
+          ref={videoRef}
+          autoPlay
+          playsInline
+          className="absolute z-10 top-0 left-0 h-1/5"
+        />
+        <canvas
+          ref={eyePatchRef}
+          className="absolute z-10 top-0 right-0 h-1/5"
+        />
+        <canvas
+          ref={canvasRef}
+          className="absolute z-20 top-0 left-0 h-1/5"
+        />
+      </div>
+    </>
   );
 }

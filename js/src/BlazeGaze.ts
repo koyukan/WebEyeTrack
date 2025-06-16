@@ -18,13 +18,20 @@ export default class BlazeGaze {
         }
     }
 
-    async predict(input: tf.Tensor): Promise<tf.Tensor | null> {
+    async predict(image: tf.Tensor, head_vector: tf.Tensor, face_origin_3d: tf.Tensor): Promise<tf.Tensor | null> {
         if (!this.model) {
             throw new Error('Model not loaded. Call loadModel() first.');
         }
 
+        // Use a tf.NamedTensorMap if your model expects named inputs
+        const inputs: tf.NamedTensorMap = {
+            image: image,
+            head_vector: head_vector,
+            face_origin_3d: face_origin_3d
+        };
+
         // Run inference
-        const output = this.model.predict(input) as tf.Tensor | tf.Tensor[];  // GraphModel always returns Tensor or Tensor[]
+        const output = this.model.predict(inputs) as tf.Tensor | tf.Tensor[];  // GraphModel always returns Tensor or Tensor[]
 
         if (Array.isArray(output)) {
             return output[0];  // Return the first tensor if multiple
