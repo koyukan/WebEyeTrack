@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { WebcamClient, FaceLandmarkerClient, WebEyeTrack } from 'webeyetrack';
+import { WebcamClient, FaceLandmarkerClient, WebEyeTrack, BlazeGaze } from 'webeyetrack';
 
 export default function App() {
   const videoRef = useRef(null);
@@ -7,6 +7,7 @@ export default function App() {
   const canvasRef = useRef(null);
   const faceLandmarkerRef = useRef(null);
   const webEyeTrack = new WebEyeTrack();
+  const blazeGaze = new BlazeGaze();
   let canvasDimensionFlag = false;
 
   useEffect(() => {
@@ -17,6 +18,9 @@ export default function App() {
 
         // faceLandmarkerRef.current = faceLandmarker;
         await faceLandmarker.initialize();
+
+        // Initialize Blazegaze as well
+        await blazeGaze.loadModel();
 
         // Start the webcam
         webcamClient.startWebcam(async (frame) => {

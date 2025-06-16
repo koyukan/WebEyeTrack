@@ -22,13 +22,15 @@ optimizer:
 # Training configuration.
 training:
   batch_size: 8
-  num_outer_steps: 1000
+  # num_outer_steps: 1000
+  num_outer_steps: 500
   num_inner_steps: 5
 
 # Configuration for the model.
 model:
   mode: 'maml'
-  weights_fp: "2025-06-02-20-57-58_gazecapture_full_run_autoencoder"
+  # weights_fp: "2025-06-02-20-57-58_gazecapture_full_run_autoencoder"
+  weights_fp: "2025-06-10-17-04-00_gazecapture_full_run_restart"
   
   # Encoder configuration.
   encoder:

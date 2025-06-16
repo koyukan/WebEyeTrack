@@ -464,6 +464,13 @@ def train(args, config):
     if config['model']['weights_fp'] is not None:
         dir = SAVED_MODELS_DIR / config['model']['weights_fp']
         model_path = dir / 'best_model.keras'
+        if model_path.exists():
+            print(f"Using 'autoencoder' prior checkpoint")
+        if not model_path.exists():
+            model_path = dir / 'full_model_best.keras'
+            if not model_path.exists():
+                raise FileNotFoundError(f"Model weights not found at {model_path}. Please check the path.")
+            print(f"Using 'maml' prior checkpoint")
         config['model']['weights_fp'] = model_path
     else:
         print("WARNING: No model weights path provided, using default.")
