@@ -3,6 +3,12 @@ import { Matrix as MediaPipeMatrix, NormalizedLandmark } from '@mediapipe/tasks-
 import { Point } from './types';
 import { safeSVD } from './safeSVD';
 
+// According to https://github.com/google-ai-edge/mediapipe/blob/master/mediapipe/graphs/face_effect/face_effect_gpu.pbtxt#L61-L65
+const VERTICAL_FOV_DEGREES = 60;
+const NEAR = 1.0; // 1cm
+const FAR = 10000; // 100m
+const ORIGIN_POINT_LOCATION = 'BOTTOM_LEFT_CORNER';
+
 // ============================================================================
 // Eye Patch Extraction and Homography
 // ============================================================================
@@ -221,12 +227,58 @@ export function obtainEyePatch(
 // Face Origin and Head Vector
 // ============================================================================
 
-export function computeFaceOrigin3D(
-    frame: HTMLVideoElement,
+export function translateMatrix(
+    matrix: MediaPipeMatrix,
+): Matrix {
+  // Convert MediaPipeMatrix to ml-matrix format
+  const data = matrix.data;
+  const translatedMatrix = new Matrix(matrix.rows, matrix.columns);
+  for (let i = 0; i < matrix.rows; i++) {
+    for (let j = 0; j < matrix.columns; j++) {
+      translatedMatrix.set(i, j, data[i * matrix.columns + j]);
+    }
+  }
+  return translatedMatrix;
+}
+
+export function createPerspectiveMatrix(aspectRatio: number): Matrix {
+    const kDegreesToRadians = Math.PI / 180.0;
+
+    // Standard perspective projection matrix calculations
+    const f = 1.0 / Math.tan(kDegreesToRadians * VERTICAL_FOV_DEGREES / 2.0);
+    const denom = 1.0 / (NEAR - FAR);
+
+    // Create and populate the matrix
+    const perspectiveMatrix = new Matrix(4, 4).fill(0);
+
+    perspectiveMatrix.set(0, 0, f / aspectRatio);
+    perspectiveMatrix.set(1, 1, f);
+    perspectiveMatrix.set(2, 2, (NEAR + FAR) * denom);
+    perspectiveMatrix.set(2, 3, -1.0);
+    perspectiveMatrix.set(3, 2, 2.0 * FAR * NEAR * denom);
+
+    return perspectiveMatrix;
+}
+
+export function estimateFaceWidth(
     faceLandmarks: Point[],
-    transformationMatrix: MediaPipeMatrix,
-): number[] {
-  return [0, 0, 0]; // Placeholder for face origin computation
+    faceRT: Matrix,
+): number {
+  return 15;
+}
+
+export function faceReconstruction(
+    perspectiveMatrix: Matrix,
+    faceLandmarks: Point[],
+    faceRT: Matrix,
+    faceWidthCm: number,
+    videoWidth: number,
+    videoHeight: number
+): [Matrix, Point[]] {
+  // Placeholder for face reconstruction logic
+  const metricTransform = new Matrix(4, 4);
+  const metricFace = faceLandmarks.map(pt => [pt[0], pt[1], 0]);
+  return [metricTransform, metricFace];
 }
 
 function matrixToEuler(matrix: Matrix): [number, number, number] {
@@ -257,14 +309,14 @@ function pyrToVector(pitch: number, yaw: number, roll: number): number[] {
 }
 
 export function getHeadVector(
-    tfMatrix: MediaPipeMatrix,
+    tfMatrix: Matrix,
 ): number[] {
 
-  // Convert MediaPipe matrix (4x4) to a 3x3 rotation matrix
+  // Extract the rotation part of the transformation matrix
   const rotationMatrix = new Matrix([
-    [tfMatrix.data[0], tfMatrix.data[1], tfMatrix.data[2]],
-    [tfMatrix.data[4], tfMatrix.data[5], tfMatrix.data[6]],
-    [tfMatrix.data[8], tfMatrix.data[9], tfMatrix.data[10]],
+    [tfMatrix.get(0, 0), tfMatrix.get(0, 1), tfMatrix.get(0, 2)],
+    [tfMatrix.get(1, 0), tfMatrix.get(1, 1), tfMatrix.get(1, 2)],
+    [tfMatrix.get(2, 0), tfMatrix.get(2, 1), tfMatrix.get(2, 2)],
   ]);
 
   // Convert the matrix to euler angles and change the order/direction
