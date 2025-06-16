@@ -1,6 +1,6 @@
-import { multiply, inv, matrix } from 'mathjs';
-import { Matrix, SVD, inverse } from 'ml-matrix';
+import { Matrix, inverse } from 'ml-matrix';
 import { Point } from './types';
+import { safeSVD } from './safeSVD';
 
 /**
  * Estimates a 3x3 homography matrix from 4 point correspondences.
@@ -21,7 +21,7 @@ export function computeHomography(src: Point[], dst: Point[]): number[][] {
   }
 
   const A_mat = new Matrix(A);
-  const svd = new SVD(A_mat, {autoTranspose: false});
+  const svd = safeSVD(A_mat);
 
   // Last column of V (right-singular vectors) is the solution to Ah=0
   // const h = svd.V.getColumn(svd.V.columns - 1);
@@ -95,6 +95,33 @@ export function warpImageData(
   return output;
 }
 
+export function cropImageData(
+  source: ImageData,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+): ImageData {
+  const output = new ImageData(width, height);
+  const src = source.data;
+  const dst = output.data;
+  const srcWidth = source.width;
+
+  for (let j = 0; j < height; j++) {
+    for (let i = 0; i < width; i++) {
+      const srcIdx = ((y + j) * srcWidth + (x + i)) * 4;
+      const dstIdx = (j * width + i) * 4;
+
+      dst[dstIdx] = src[srcIdx];       // R
+      dst[dstIdx + 1] = src[srcIdx + 1]; // G
+      dst[dstIdx + 2] = src[srcIdx + 2]; // B
+      dst[dstIdx + 3] = src[srcIdx + 3]; // A
+    }
+  }
+
+  return output;
+}
+
 export function obtainEyePatch(
     frame: HTMLVideoElement,
     faceLandmarks: Point[],
@@ -120,30 +147,17 @@ export function obtainEyePatch(
     const rightTop = faceLandmarks[332];
     const rightBottom = faceLandmarks[379];
 
-    const leftMost = Math.round(Math.min(leftTop[0], leftBottom[0]));
-    // const leftMost = 0 // frame.videoWidth - Math.round(leftTop[0])
-    // const rightMost = Math.round(Math.max(rightTop[0], rightBottom[0]));
-    // const rightMost = frame.videoWidth - Math.round(Math.max(leftTop[0], leftBottom[0]));
-    // const rightMost = Math.round(frame.videoWidth/2);
-    const rightMost = frame.videoWidth;
-
     let srcPts: Point[] = [leftTop, leftBottom, rightBottom, rightTop];
-    // let srcPts: Point[] = [
-    //     [leftMost, 0],
-    //     [leftMost, frame.videoHeight],
-    //     [rightMost, frame.videoHeight],
-    //     [rightMost, 0],
-    // ];
 
     // Apply radial padding
-    // srcPts = srcPts.map(([x, y]) => {
-    //     const dx = x - center[0];
-    //     const dy = y - center[1];
-    //     return [
-    //         x + dx * facePaddingCoefs[0],
-    //         y + dy * facePaddingCoefs[1],
-    //     ];
-    // });
+    srcPts = srcPts.map(([x, y]) => {
+        const dx = x - center[0];
+        const dy = y - center[1];
+        return [
+            x + dx * facePaddingCoefs[0],
+            y + dy * facePaddingCoefs[1],
+        ];
+    });
 
     const dstPts: Point[] = [
         [0, 0],
@@ -152,14 +166,48 @@ export function obtainEyePatch(
         [faceCropSize, 0],
     ];
 
-    // console.log("srcPts", srcPts)
-    // console.log("dstPts", dstPts)
-
     // Compute homography matrix
     const H = computeHomography(srcPts, dstPts);
 
     // Step 5: Warp the image
     const warped = warpImageData(imageData, H, faceCropSize, faceCropSize);
 
-    return warped;
+    // Step 6: Apply the homography matrix to the facial landmarks
+    const warpedLandmarks = faceLandmarks.map(pt => applyHomography(H, pt));
+
+    // Step 7: Generate the crop of the eyes
+    const top_eyes_patch = warpedLandmarks[151];
+    const bottom_eyes_patch = warpedLandmarks[195];
+    const eye_patch = cropImageData(
+        warped,
+        0,
+        Math.round(top_eyes_patch[1]),
+        warped.width,
+        Math.round(bottom_eyes_patch[1] - top_eyes_patch[1]) 
+    );
+
+    // Step 8: Obtain new homography matrix to apply the resize
+    const eyePatchSrcPts: Point[] = [
+        [0, 0],
+        [0, eye_patch.height],
+        [eye_patch.width, eye_patch.height],
+        [eye_patch.width, 0],
+    ];
+    const eyePatchDstPts: Point[] = [
+        [0, 0],
+        [0, dstImgSize[1]],
+        [dstImgSize[0], dstImgSize[1]],
+        [dstImgSize[0], 0],
+    ];
+    const eyePatchH = computeHomography(eyePatchSrcPts, eyePatchDstPts);
+
+    // Step 9: Resize the eye patch to the desired output size
+    const resizedEyePatch = warpImageData(
+        eye_patch,
+        eyePatchH,
+        dstImgSize[0],
+        dstImgSize[1]
+    );
+
+    return resizedEyePatch;
 }
