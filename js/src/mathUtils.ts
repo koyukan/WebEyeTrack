@@ -3,6 +3,13 @@ import { Matrix as MediaPipeMatrix, NormalizedLandmark } from '@mediapipe/tasks-
 import { Point } from './types';
 import { safeSVD } from './safeSVD';
 
+// Used to determine the width of the face
+const LEFTMOST_LANDMARK = 356
+const RIGHTMOST_LANDMARK = 127
+
+// Depth radial parameters
+const MAX_STEP_CM = 5
+
 // According to https://github.com/google-ai-edge/mediapipe/blob/master/mediapipe/graphs/face_effect/face_effect_gpu.pbtxt#L61-L65
 const VERTICAL_FOV_DEGREES = 60;
 const NEAR = 1.0; // 1cm
@@ -260,6 +267,36 @@ export function createPerspectiveMatrix(aspectRatio: number): Matrix {
     return perspectiveMatrix;
 }
 
+export function createIntrinsicsMatrix(
+    width: number, height: number,
+    fovX?: number // in degrees
+): Matrix {
+    const w = width;
+    const h = height;
+
+    const cX = w / 2;
+    const cY = h / 2;
+
+    let fX: number, fY: number;
+
+    if (fovX !== undefined) {
+        const fovXRad = (fovX * Math.PI) / 180;
+        fX = w / (2 * Math.tan(fovXRad / 2));
+        fY = fX; // Assume square pixels
+    } else {
+        fX = fY = w; // Fallback estimate
+    }
+
+    // Construct the intrinsic matrix
+    const K = new Matrix([
+        [fX, 0, cX],
+        [0, fY, cY],
+        [0, 0, 1],
+    ]);
+
+    return K;
+}
+
 export function estimateFaceWidth(
     faceLandmarks: Point[],
     faceRT: Matrix,
@@ -267,26 +304,255 @@ export function estimateFaceWidth(
   return 15;
 }
 
-export function faceReconstruction(
-    perspectiveMatrix: Matrix,
-    faceLandmarks: Point[],
-    faceRT: Matrix,
-    faceWidthCm: number,
-    videoWidth: number,
-    videoHeight: number
-): [Matrix, Point[]] {
-  // Placeholder for face reconstruction logic
-  const metricTransform = new Matrix(4, 4);
-  const metricFace = faceLandmarks.map(pt => [pt[0], pt[1], 0]);
-  return [metricTransform, metricFace];
+export function convertUvToXyz(
+  perspectiveMatrix: Matrix,
+  u: number,
+  v: number,
+  zRelative: number
+): [number, number, number] {
+  // Step 1: Convert to Normalized Device Coordinates (NDC)
+  const ndcX = 2 * u - 1;
+  const ndcY = 1 - 2 * v;
+
+  // Step 2: Create NDC point in homogeneous coordinates
+  const ndcPoint = new Matrix([[ndcX], [ndcY], [-1.0], [1.0]]);
+
+  // Step 3: Invert the perspective matrix
+  const invPerspective = inverse(perspectiveMatrix);
+
+  // Step 4: Multiply to get world point in homogeneous coords
+  const worldHomogeneous = invPerspective.mmul(ndcPoint);
+
+  // Step 5: Dehomogenize
+  const w = worldHomogeneous.get(3, 0);
+  const x = worldHomogeneous.get(0, 0) / w;
+  const y = worldHomogeneous.get(1, 0) / w;
+  const z = worldHomogeneous.get(2, 0) / w;
+
+  // Step 6: Scale using the provided zRelative
+  const xRelative = -x; // negated to match original convention
+  const yRelative = y;
+  // zRelative stays as-is (external input)
+
+  return [xRelative, yRelative, zRelative];
 }
 
-function matrixToEuler(matrix: Matrix): [number, number, number] {
-  // Extract Euler angles from the rotation matrix
+export function imageShiftTo3D(shift2d: [number, number], depthZ: number, K: Matrix): [number, number, number] {
+  const fx = K.get(0, 0);
+  const fy = K.get(1, 1);
+
+  const dx3D = shift2d[0] * (depthZ / fx);
+  const dy3D = shift2d[1] * (depthZ / fy);
+
+  return [dx3D, dy3D, 0.0];
+}
+
+export function transform3DTo3D(
+  point: [number, number, number],
+  rtMatrix: Matrix
+): [number, number, number] {
+  const homogeneous = [point[0], point[1], point[2], 1];
+  const result = rtMatrix.mmul(Matrix.columnVector(homogeneous)).to1DArray();
+  return [result[0], result[1], result[2]];
+}
+
+
+export function transform3DTo2D(
+  point3D: [number, number, number],
+  K: Matrix
+): [number, number] {
+  const eps = 1e-6;
+  const [x, y, z] = point3D;
+
+  const projected = K.mmul(Matrix.columnVector([x, y, z])).to1DArray();
+
+  const zVal = Math.abs(projected[2]) < eps ? eps : projected[2];
+  const u = Math.round(projected[0] / zVal);
+  const v = Math.round(projected[1] / zVal);
+
+  return [u, v];
+}
+
+
+export function partialProcrustesTranslation2D(
+  canonical2D: [number, number][],
+  detected2D: [number, number][]
+): [number, number] {
+  const [cx, cy] = canonical2D[4];
+  const [dx, dy] = detected2D[4];
+  return [dx - cx, dy - cy];
+}
+
+export function refineDepthByRadialMagnitude(
+  finalProjectedPts: [number, number][],
+  detected2D: [number, number][],
+  oldZ: number,
+  alpha = 0.5
+): number {
+  const numPts = finalProjectedPts.length;
+
+  // Compute centroid of detected 2D
+  const detectedCenter = detected2D.reduce(
+    (acc, [x, y]) => [acc[0] + x / numPts, acc[1] + y / numPts],
+    [0, 0]
+  );
+
+  let totalDistance = 0;
+
+  for (let i = 0; i < numPts; i++) {
+    const p1 = finalProjectedPts[i];
+    const p2 = detected2D[i];
+
+    const v: [number, number] = [p2[0] - p1[0], p2[1] - p1[1]];
+    const vNorm = Math.hypot(v[0], v[1]);
+
+    const c: [number, number] = [detectedCenter[0] - p1[0], detectedCenter[1] - p1[1]];
+    const dotProduct = v[0] * c[0] + v[1] * c[1];
+
+    totalDistance += dotProduct < 0 ? -vNorm : vNorm;
+  }
+
+  const distancePerPoint = totalDistance / numPts;
+  const delta = 1e-1 * distancePerPoint;
+  const safeDelta = Math.max(-MAX_STEP_CM, Math.min(MAX_STEP_CM, delta));
+
+  const newZ = oldZ + safeDelta;
+  return newZ;
+}
+
+export function faceReconstruction(
+    perspectiveMatrix: Matrix,
+    faceLandmarks: [number, number][],
+    faceRT: Matrix,
+    intrinsicsMatrix: Matrix,
+    faceWidthCm: number,
+    videoWidth: number,
+    videoHeight: number,
+    initialZGuess = 60
+): [Matrix, [number, number, number][]] {
+    // Step 1: Convert UVZ to XYZ
+    const relativeFaceMesh = faceLandmarks.map(([u, v]) => convertUvToXyz(perspectiveMatrix, u, v, initialZGuess));
+
+    // Step 2: Center to nose (index 4 is assumed nose)
+    const nose = relativeFaceMesh[4];
+    const centered = relativeFaceMesh.map(([x, y, z]) => [-(x - nose[0]), -(y - nose[1]), z - nose[2]]) as [number, number, number][];
+
+    // Step 3: Normalize by width
+    const left = centered[LEFTMOST_LANDMARK];
+    const right = centered[RIGHTMOST_LANDMARK];
+    const euclideanDistance = Math.hypot(
+        left[0] - right[0],
+        left[1] - right[1],
+        left[2] - right[2]
+    );
+    const normalized = centered.map(([x, y, z]) => [x / euclideanDistance * faceWidthCm, y / euclideanDistance * faceWidthCm, z / euclideanDistance * faceWidthCm]) as [number, number, number][];
+
+    // Step 4: Extract + invert MediaPipe face rotation, convert to euler, flip pitch/yaw, back to rotmat
+    const faceR = faceRT.subMatrix(0, 2, 0, 2);
+    let [pitch, yaw, roll] = matrixToEuler(faceR);
+    [pitch, yaw] = [-yaw, pitch];
+    const finalR = eulerToMatrix(pitch, yaw, roll);
+
+    // Step 5: Derotate face
+    const canonical = normalized.map(p => multiplyVecByMat(p, finalR.transpose()));
+
+    // Step 6: Scale from R columns
+    const scales = [0, 1, 2].map(i => Math.sqrt(faceR.get(0, i) ** 2 + faceR.get(1, i) ** 2 + faceR.get(2, i) ** 2));
+    const faceS = scales.reduce((a, b) => a + b, 0) / 3;
+
+    // Step 7: Initial transform
+    const initTransform = Matrix.eye(4);
+    initTransform.setSubMatrix(finalR.div(faceS), 0, 0);
+    initTransform.set(0, 3, 0);
+    initTransform.set(1, 3, 0);
+    initTransform.set(2, 3, initialZGuess);
+
+    const cameraPts3D = canonical.map(p => transform3DTo3D(p, initTransform));
+    const canonicalProj2D = cameraPts3D.map(p => transform3DTo2D(p, intrinsicsMatrix));
+
+    const detected2D = faceLandmarks.map(([x, y]) => [x * videoWidth, y * videoHeight]) as [number, number][];
+    const shift2D = partialProcrustesTranslation2D(canonicalProj2D, detected2D);
+
+    const shift3D = imageShiftTo3D(shift2D, initialZGuess, intrinsicsMatrix);
+    const finalTransform = initTransform.clone();
+    finalTransform.set(0, 3, finalTransform.get(0, 3) + shift3D[0]);
+    finalTransform.set(1, 3, finalTransform.get(1, 3) + shift3D[1]);
+    finalTransform.set(2, 3, finalTransform.get(2, 3) + shift3D[2]);
+    const firstFinalTransform = finalTransform.clone();
+
+    let newZ = initialZGuess;
+    for (let i = 0; i < 10; i++) {
+        const projectedPts = canonical.map(p => transform3DTo2D(transform3DTo3D(p, finalTransform), intrinsicsMatrix));
+        newZ = refineDepthByRadialMagnitude(projectedPts, detected2D, finalTransform.get(2, 3), 0.5);
+        if (Math.abs(newZ - finalTransform.get(2, 3)) < 0.25) break;
+
+        const newX = firstFinalTransform.get(0, 3) * (newZ / initialZGuess);
+        const newY = firstFinalTransform.get(1, 3) * (newZ / initialZGuess);
+
+        finalTransform.set(0, 3, newX);
+        finalTransform.set(1, 3, newY);
+        finalTransform.set(2, 3, newZ);
+    }
+
+    const finalFacePts = canonical.map(p => transform3DTo3D(p, finalTransform));
+    return [finalTransform, finalFacePts];
+}
+
+function multiplyVecByMat(v: [number, number, number], m: Matrix): [number, number, number] {
+    const [x, y, z] = v;
+    const res = m.mmul(Matrix.columnVector([x, y, z])).to1DArray();
+    return [res[0], res[1], res[2]];
+}
+
+export function matrixToEuler(matrix: Matrix, degrees: boolean = true): [number, number, number] {
+  if (matrix.rows !== 3 || matrix.columns !== 3) {
+    throw new Error('Rotation matrix must be 3x3.');
+  }
+
   const pitch = Math.asin(-matrix.get(2, 0));
   const yaw = Math.atan2(matrix.get(2, 1), matrix.get(2, 2));
   const roll = Math.atan2(matrix.get(1, 0), matrix.get(0, 0));
+
+  if (degrees) {
+    const radToDeg = 180 / Math.PI;
+    return [pitch * radToDeg, yaw * radToDeg, roll * radToDeg];
+  }
+
   return [pitch, yaw, roll];
+}
+
+export function eulerToMatrix(pitch: number, yaw: number, roll: number, degrees: boolean = true): Matrix {
+ 
+  if (degrees) {
+    pitch *= Math.PI / 180;
+    yaw *= Math.PI / 180;
+    roll *= Math.PI / 180;
+  }
+
+  const cosPitch = Math.cos(pitch), sinPitch = Math.sin(pitch);
+  const cosYaw = Math.cos(yaw), sinYaw = Math.sin(yaw);
+  const cosRoll = Math.cos(roll), sinRoll = Math.sin(roll);
+
+  const R_x = new Matrix([
+    [1, 0, 0],
+    [0, cosPitch, -sinPitch],
+    [0, sinPitch, cosPitch],
+  ]);
+
+  const R_y = new Matrix([
+    [cosYaw, 0, sinYaw],
+    [0, 1, 0],
+    [-sinYaw, 0, cosYaw],
+  ]);
+
+  const R_z = new Matrix([
+    [cosRoll, -sinRoll, 0],
+    [sinRoll, cosRoll, 0],
+    [0, 0, 1],
+  ]);
+
+  // Final rotation matrix: R = Rz * Ry * Rx
+  return R_z.mmul(R_y).mmul(R_x);
 }
 
 function pyrToVector(pitch: number, yaw: number, roll: number): number[] {
@@ -320,7 +586,7 @@ export function getHeadVector(
   ]);
 
   // Convert the matrix to euler angles and change the order/direction
-  const [pitch, yaw, roll] = matrixToEuler(rotationMatrix);
+  const [pitch, yaw, roll] = matrixToEuler(rotationMatrix, false);
   const [h_pitch, h_yaw, h_roll] = [-yaw, pitch, roll];
 
   // Construct a unit vector

@@ -2,7 +2,7 @@ import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-visio
 import * as tf from '@tensorflow/tfjs';
 import { Matrix } from 'ml-matrix';
 
-import { createPerspectiveMatrix, translateMatrix, faceReconstruction, estimateFaceWidth, getHeadVector, obtainEyePatch, computeEAR } from "./mathUtils";
+import { createIntrinsicsMatrix, createPerspectiveMatrix, translateMatrix, faceReconstruction, estimateFaceWidth, getHeadVector, obtainEyePatch, computeEAR } from "./mathUtils";
 import { Point, GazeResult } from "./types";
 import BlazeGaze from "./BlazeGaze";
 import FaceLandmarkerClient from "./FaceLandmarkerClient";
@@ -12,15 +12,15 @@ export default class WebEyeTrack {
   private blazeGaze: BlazeGaze;
   private faceLandmarkerClient: FaceLandmarkerClient;
   private faceWidthComputed: boolean = false;
-  private faceWidthCm: number;
+  private faceWidthCm: number = -1;
   private perspectiveMatrixSet: boolean = false;
-  private perspectiveMatrix: Matrix;
+  private perspectiveMatrix: Matrix = new Matrix(4, 4);
+  private intrinsicsMatrixSet: boolean = false;
+  private intrinsicsMatrix: Matrix = new Matrix(3, 3);
 
   constructor(videoRef: HTMLVideoElement, canvasRef: HTMLCanvasElement) {
     this.blazeGaze = new BlazeGaze();
     this.faceLandmarkerClient = new FaceLandmarkerClient(videoRef, canvasRef);
-    this.faceWidthCm = -1;
-    this.perspectiveMatrix = new Matrix(4, 4); // Placeholder for perspective matrix
   }
 
   async initialize(): Promise<void> {
@@ -39,8 +39,9 @@ export default class WebEyeTrack {
     // Perform 3D face reconstruction and determine the pose in 3d cm space
     const [metricTransform, metricFace] = faceReconstruction(
       this.perspectiveMatrix,
-      faceLandmarks,
+      faceLandmarks as [number, number][],
       faceRT,
+      this.intrinsicsMatrix,
       this.faceWidthCm,
       frame.videoWidth,
       frame.videoHeight
@@ -60,6 +61,11 @@ export default class WebEyeTrack {
       const aspectRatio = width / height;
       this.perspectiveMatrix = createPerspectiveMatrix(aspectRatio);
       this.perspectiveMatrixSet = true;
+    }
+
+    // If intrinsics matrix is not set, initialize it
+    if (!this.intrinsicsMatrixSet) {
+      this.intrinsicsMatrix = createIntrinsicsMatrix(width, height);
     }
 
     // Convert the normalized landmarks to non-normalized coordinates
