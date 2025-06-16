@@ -10,7 +10,7 @@ export default class BlazeGaze {
     async loadModel(): Promise<void> {
         try {
             // Load model from local directory (adjust path if needed)
-            this.model = await tf.loadGraphModel('./web_model/model.json');
+            this.model = await tf.loadGraphModel('./web/model.json');
             console.log('✅ BlazeGaze model loaded successfully');
         } catch (error) {
             console.error('❌ Error loading BlazeGaze model:', error);
