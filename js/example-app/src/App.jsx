@@ -5,22 +5,14 @@ export default function App() {
   const videoRef = useRef(null);
   const eyePatchRef = useRef(null);
   const canvasRef = useRef(null);
-  const faceLandmarkerRef = useRef(null);
-  const webEyeTrack = new WebEyeTrack();
-  const blazeGaze = new BlazeGaze();
   let canvasDimensionFlag = false;
 
   useEffect(() => {
     async function startWebcamAndLandmarker() {
       if (videoRef.current && canvasRef.current) {
         const webcamClient = new WebcamClient(videoRef.current.id);
-        const faceLandmarker = new FaceLandmarkerClient(videoRef.current, canvasRef.current);
-
-        // faceLandmarkerRef.current = faceLandmarker;
-        await faceLandmarker.initialize();
-
-        // Initialize Blazegaze as well
-        await blazeGaze.loadModel();
+        const webEyeTrack = new WebEyeTrack(videoRef.current, canvasRef.current);
+        await webEyeTrack.initialize();
 
         // Start the webcam
         webcamClient.startWebcam(async (frame) => {
@@ -32,10 +24,8 @@ export default function App() {
             canvasDimensionFlag = true;
           }
 
-          let results = await faceLandmarker.processFrame(frame);
-
           // Further process the results with the WebEyeTrack library
-          const gaze_result = webEyeTrack.step(results, frame);
+          const gaze_result = await webEyeTrack.step(frame);
 
           // Show the eye patch based on the gaze result
           // if (gaze_result && eyePatchRef.current instanceof HTMLCanvasElement) {
@@ -55,7 +45,6 @@ export default function App() {
         // Cleanup: stop the webcam and clear references when the component unmounts
         return () => {
           webcamClient.stopWebcam();
-          faceLandmarkerRef.current = null;
         };
       }
     }

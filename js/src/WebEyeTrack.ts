@@ -2,12 +2,24 @@ import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-visio
 import { computeFaceOrigin3D, getHeadVector, obtainEyePatch, computeEAR } from "./mathUtils";
 
 import { Point, GazeResult } from "./types";
-import { Matrix } from "mathjs";
+import BlazeGaze from "./BlazeGaze";
+import FaceLandmarkerClient from "./FaceLandmarkerClient";
 
 export default class WebEyeTrack {
-    constructor() {
-      console.log('WebEyeTrack constructor');
-    }
+    
+  private blazeGaze: BlazeGaze;
+  private faceLandmarkerClient: FaceLandmarkerClient;
+
+  constructor(videoRef: HTMLVideoElement, canvasRef: HTMLCanvasElement) {
+    console.log('WebEyeTrack constructor');
+    this.blazeGaze = new BlazeGaze();
+    this.faceLandmarkerClient = new FaceLandmarkerClient(videoRef, canvasRef);
+  }
+
+  async initialize(): Promise<void> {
+    await this.faceLandmarkerClient.initialize();
+    await this.blazeGaze.loadModel();
+  }
 
     prepare_input(frame: HTMLVideoElement, result: FaceLandmarkerResult):  [ImageData, number[], number[]] {
 
@@ -47,8 +59,13 @@ export default class WebEyeTrack {
       ];
     }
 
-    step(result: FaceLandmarkerResult, frame: HTMLVideoElement): GazeResult {
-      
+    async step(frame: HTMLVideoElement): Promise<GazeResult> {
+
+      let result = await this.faceLandmarkerClient.processFrame(frame);
+      if (!result || !result.faceLandmarks || result.faceLandmarks.length === 0) {
+        throw new Error("No face landmarks detected");
+      }
+
       // Perform preprocessing to obtain the eye patch, head_vector, and face_origin_3d
       const [eyePatch, headVector, faceOrigin3D] = this.prepare_input(frame, result);
 
