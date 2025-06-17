@@ -290,7 +290,7 @@ export default class WebEyeTrack {
 
     for (let i = 0; i < stepsInner; i++) {
       opt.minimize(() => {
-        const supportPreds = this.blazeGaze.predict(
+        let supportPreds = this.blazeGaze.predict(
           tfEyePatches,
           tfHeadVectors,
           tfFaceOrigins3D
@@ -298,6 +298,17 @@ export default class WebEyeTrack {
         if (!supportPreds) {
           throw new Error("BlazeGaze model did not return valid predictions");
         }
+
+        // Apply the affine transformation if available
+        if (this.affineMatrix) {
+          const reshapedPreds = supportPreds.reshape([-1, 2]);        // [B, 2]
+          const ones = tf.ones([reshapedPreds.shape[0], 1]);          // [B, 1]
+          const homog = tf.concat([reshapedPreds, ones], 1);          // [B, 3]
+          const affineT = this.affineMatrix.transpose();              // [3, 2]
+          const transformed = tf.matMul(homog, affineT);              // [B, 2]
+          supportPreds = transformed.reshape(supportPreds.shape);     // reshape back
+        }
+
         const loss = tf.losses.meanSquaredError(
           tfSupportY,
           supportPreds
@@ -335,7 +346,17 @@ export default class WebEyeTrack {
 
     const headVectorTensor = tf.tensor2d(headVector, [1, 3]);
     const faceOriginTensor = tf.tensor2d(faceOrigin3D, [1, 3]);
-    const outputTensor = this.blazeGaze.predict(normalizedInputTensor, headVectorTensor, faceOriginTensor);
+    let outputTensor = this.blazeGaze.predict(normalizedInputTensor, headVectorTensor, faceOriginTensor);
+
+    // If affine transformation is available, apply it
+    if (this.affineMatrix) {
+      const reshapedOutput = outputTensor.reshape([-1, 2]);        // [B, 2]
+      const ones = tf.ones([reshapedOutput.shape[0], 1]);          // [B, 1]
+      const homog = tf.concat([reshapedOutput, ones], 1);          // [B, 3]
+      const affineT = this.affineMatrix.transpose();                // [3, 2]
+      const transformed = tf.matMul(homog, affineT);                // [B, 2]
+      outputTensor = transformed.reshape(outputTensor.shape);       // reshape back
+    }
 
     // Extract the 2D gaze point data from the output tensor
     if (!outputTensor || outputTensor.shape.length === 0) {
