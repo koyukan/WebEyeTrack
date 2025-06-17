@@ -17,6 +17,7 @@ import {
   computeEAR,
   computeAffineMatrixML
 } from "./mathUtils";
+import { KalmanFilter2D } from "./filter";
 
 interface SupportX {
   eyePatches: tf.Tensor;
@@ -56,6 +57,7 @@ export default class WebEyeTrack {
   private intrinsicsMatrixSet: boolean = false;
   private intrinsicsMatrix: Matrix = new Matrix(3, 3);
   private affineMatrix: tf.Tensor | null = null;
+  private kalmanFilter: KalmanFilter2D;
 
   // Public variables
   public loaded: boolean = false;
@@ -86,6 +88,7 @@ export default class WebEyeTrack {
     // Initialize services
     this.blazeGaze = new BlazeGaze();
     this.faceLandmarkerClient = new FaceLandmarkerClient(videoRef, canvasRef);
+    this.kalmanFilter = new KalmanFilter2D();
     
     // Storing configs
     this.maxPoints = maxPoints;
@@ -364,6 +367,9 @@ export default class WebEyeTrack {
     }
     const normPog = outputTensor.arraySync() as number[][];
 
+    // Apply Kalman filter to smooth the gaze point
+    const kalmanOutput = this.kalmanFilter.step(normPog[0]);
+
     // Return GazeResult
     let gaze_result: GazeResult = {
       facialLandmarks: result.faceLandmarks[0],
@@ -374,7 +380,7 @@ export default class WebEyeTrack {
       faceOrigin3D: faceOrigin3D,
       metric_transform: {rows: 3, columns: 3, data: [1, 0, 0, 1, 0, 0, 1, 0, 0]}, // Placeholder, should be computed
       gazeState: gaze_state,
-      normPog: normPog[0],
+      normPog: kalmanOutput,
       durations: {}
     };
 
