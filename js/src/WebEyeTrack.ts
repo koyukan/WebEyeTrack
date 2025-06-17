@@ -2,10 +2,21 @@ import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-visio
 import * as tf from '@tensorflow/tfjs';
 import { Matrix } from 'ml-matrix';
 
-import { computeFaceOrigin3D, createIntrinsicsMatrix, createPerspectiveMatrix, translateMatrix, faceReconstruction, estimateFaceWidth, getHeadVector, obtainEyePatch, computeEAR } from "./mathUtils";
 import { Point, GazeResult } from "./types";
 import BlazeGaze from "./BlazeGaze";
 import FaceLandmarkerClient from "./FaceLandmarkerClient";
+import { 
+  computeFaceOrigin3D, 
+  createIntrinsicsMatrix, 
+  createPerspectiveMatrix, 
+  translateMatrix, 
+  faceReconstruction, 
+  estimateFaceWidth, 
+  getHeadVector, 
+  obtainEyePatch, 
+  computeEAR,
+  computeAffineMatrixML
+} from "./mathUtils";
 
 interface SupportX {
   eyePatches: tf.Tensor;
@@ -44,6 +55,7 @@ export default class WebEyeTrack {
   private perspectiveMatrix: Matrix = new Matrix(4, 4);
   private intrinsicsMatrixSet: boolean = false;
   private intrinsicsMatrix: Matrix = new Matrix(3, 3);
+  private affineMatrix: tf.Tensor | null = null;
 
   // Public variables
   public loaded: boolean = false;
@@ -260,6 +272,22 @@ export default class WebEyeTrack {
       tfSupportY = supportY;
     }
 
+    // Perform a single forward pass to compute an affine transformation
+    if (tfEyePatches.shape[0] > 3) {
+      const supportPreds = this.blazeGaze.predict(
+        tfEyePatches,
+        tfHeadVectors,
+        tfFaceOrigins3D
+      );
+      const supportPredsNumber = supportPreds.arraySync() as number[][];
+      const supportYNumber = tfSupportY.arraySync() as number[][];
+      const affineMatrixML = computeAffineMatrixML(
+        supportPredsNumber,
+        supportYNumber
+      )
+      this.affineMatrix = tf.tensor2d(affineMatrixML, [2, 3], 'float32');
+    }
+
     for (let i = 0; i < stepsInner; i++) {
       opt.minimize(() => {
         const supportPreds = this.blazeGaze.predict(
@@ -279,7 +307,6 @@ export default class WebEyeTrack {
         return loss.asScalar();
       });
     }
-
   }
 
   async step(frame: HTMLVideoElement): Promise<GazeResult> {

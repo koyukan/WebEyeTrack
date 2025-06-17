@@ -1,4 +1,4 @@
-import { Matrix, inverse } from 'ml-matrix';
+import { Matrix, inverse, pseudoInverse, solve} from 'ml-matrix';
 import { Matrix as MediaPipeMatrix, NormalizedLandmark } from '@mediapipe/tasks-vision';
 import { Point } from './types';
 import { safeSVD } from './safeSVD';
@@ -20,6 +20,21 @@ const VERTICAL_FOV_DEGREES = 60;
 const NEAR = 1.0; // 1cm
 const FAR = 10000; // 100m
 const ORIGIN_POINT_LOCATION = 'BOTTOM_LEFT_CORNER';
+
+// ============================================================================
+// Compute Affine Transformation Matrix
+// ============================================================================
+
+export function computeAffineMatrixML(src: number[][], dst: number[][]): number[][] {
+  const N = src.length;
+  const srcAug = src.map(row => [...row, 1]); // [N, 3]
+
+  const X = new Matrix(srcAug);   // [N, 3]
+  const Y = new Matrix(dst);      // [N, 2]
+
+  const A = solve(X, Y); // [3, 2]
+  return A.transpose().to2DArray(); // [2, 3]
+}
 
 // ============================================================================
 // Eye Patch Extraction and Homography
