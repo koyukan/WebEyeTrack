@@ -179,7 +179,7 @@ def get_gaze_mlp(config):
     cnn_input = Input(shape=[config.encoder.embedding_size], name="encoder_input")
 
     # Flatten instead of pooling to retain spatial information
-    flattened_output = Flatten(name="flattened_output")(cnn_input)
+    # flattened_output = Flatten(name="flattened_output")(cnn_input)
 
     # Handle optional inputs from config
     additional_inputs = []
@@ -194,9 +194,9 @@ def get_gaze_mlp(config):
 
     # Concatenate all features
     if additional_tensors:
-        concat = Concatenate(name="feature_concat")([flattened_output] + additional_tensors)
+        concat = Concatenate(name="feature_concat")([cnn_input] + additional_tensors)
     else:
-        concat = flattened_output
+        concat = cnn_input
 
     # MLP layers before computing the gaze vector
     # mlp1 = Dense(128, activation='relu')(concat)
