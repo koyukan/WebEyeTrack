@@ -28,7 +28,7 @@ export default class WebEyeTrack {
     await this.blazeGaze.loadModel();
   }
 
-  computeFaceOrigin3D(frame: HTMLVideoElement, faceLandmarks: Point[], faceRT: Matrix): number[] {
+  computeFaceOrigin3D(frame: HTMLVideoElement, normFaceLandmarks: Point[], faceLandmarks: Point[], faceRT: Matrix): number[] {
 
     // Estimate the face width in centimeters if not set
     if (this.faceWidthComputed === false) {
@@ -39,7 +39,7 @@ export default class WebEyeTrack {
     // Perform 3D face reconstruction and determine the pose in 3d cm space
     const [metricTransform, metricFace] = faceReconstruction(
       this.perspectiveMatrix,
-      faceLandmarks as [number, number][],
+      normFaceLandmarks as [number, number][],
       faceRT,
       this.intrinsicsMatrix,
       this.faceWidthCm,
@@ -52,6 +52,8 @@ export default class WebEyeTrack {
       metricFace
     );
 
+    // return faceOrigin3D;
+    // return [0, 0, 0]; // Placeholder, should be computed
     return faceOrigin3D;
   }
 
@@ -94,6 +96,7 @@ export default class WebEyeTrack {
     // Second, compute the face origin in 3D space
     const face_origin_3d = this.computeFaceOrigin3D(
       frame,
+      landmarks.map((l: NormalizedLandmark) => [l.x, l.y]),
       landmarks2d,
       faceRT
     )

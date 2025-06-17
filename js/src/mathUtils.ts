@@ -512,16 +512,16 @@ export function faceReconstruction(
 
     let newZ = initialZGuess;
     for (let i = 0; i < 10; i++) {
-        const projectedPts = canonical.map(p => transform3DTo2D(transform3DTo3D(p, finalTransform), intrinsicsMatrix));
-        newZ = refineDepthByRadialMagnitude(projectedPts, detected2D, finalTransform.get(2, 3), 0.5);
-        if (Math.abs(newZ - finalTransform.get(2, 3)) < 0.25) break;
+      const projectedPts = canonical.map(p => transform3DTo2D(transform3DTo3D(p, finalTransform), intrinsicsMatrix));
+      newZ = refineDepthByRadialMagnitude(projectedPts, detected2D, finalTransform.get(2, 3), 0.5);
+      if (Math.abs(newZ - finalTransform.get(2, 3)) < 0.25) break;
 
-        const newX = firstFinalTransform.get(0, 3) * (newZ / initialZGuess);
-        const newY = firstFinalTransform.get(1, 3) * (newZ / initialZGuess);
+      const newX = firstFinalTransform.get(0, 3) * (newZ / initialZGuess);
+      const newY = firstFinalTransform.get(1, 3) * (newZ / initialZGuess);
 
-        finalTransform.set(0, 3, newX);
-        finalTransform.set(1, 3, newY);
-        finalTransform.set(2, 3, newZ);
+      finalTransform.set(0, 3, newX);
+      finalTransform.set(1, 3, newY);
+      finalTransform.set(2, 3, newZ);
     }
 
     const finalFacePts = canonical.map(p => transform3DTo3D(p, finalTransform));
