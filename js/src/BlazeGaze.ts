@@ -1,7 +1,8 @@
 import * as tf from '@tensorflow/tfjs';
 
 export default class BlazeGaze {
-    private model: tf.GraphModel | null = null;
+    // private model: tf.GraphModel | null = null;
+    private model: tf.LayersModel | null = null;  // Use LayersModel for tf.loadLayersModel
 
     constructor() {
         // Optionally trigger model load in constructor
@@ -10,10 +11,12 @@ export default class BlazeGaze {
     async loadModel(): Promise<void> {
         try {
             // Load model from local directory (adjust path if needed)
-            this.model = await tf.loadGraphModel('./web/model.json');
+            // this.model = await tf.loadGraphModel('./web/model.json');
+            this.model = await tf.loadLayersModel('./web_layer6/model.json');
             console.log('✅ BlazeGaze model loaded successfully');
         } catch (error) {
-            console.error('❌ Error loading BlazeGaze model:', error);
+            console.error('❌ Error loading BlazeGaze model at web_layer6:', error);
+            console.error(error);
             throw error;
         }
     }
@@ -23,15 +26,10 @@ export default class BlazeGaze {
             throw new Error('Model not loaded. Call loadModel() first.');
         }
 
-        // Use a tf.NamedTensorMap if your model expects named inputs
-        const inputs: tf.NamedTensorMap = {
-            image: image,
-            head_vector: head_vector,
-            face_origin_3d: face_origin_3d
-        };
+        const inputList: tf.Tensor[] = [image, head_vector, face_origin_3d];
 
         // Run inference
-        const output = this.model.predict(inputs) as tf.Tensor | tf.Tensor[];  // GraphModel always returns Tensor or Tensor[]
+        const output = this.model.predict(inputList) as tf.Tensor | tf.Tensor[];  // GraphModel always returns Tensor or Tensor[]
 
         if (Array.isArray(output)) {
             return output[0];  // Return the first tensor if multiple
