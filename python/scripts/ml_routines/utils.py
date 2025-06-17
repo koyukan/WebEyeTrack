@@ -1,4 +1,19 @@
+import os
+from typing import Dict
+import pathlib
+
 import tensorflow as tf
+import tensorflowjs as tfjs
+
+def save_model(models: Dict[str, tf.keras.Model], output_dir: pathlib.Path):
+    
+    for name, model in models.items():
+        model_path = output_dir / f"{name}.h5"
+        model.save(model_path, save_format='h5')
+        model_js_path = output_dir / f"tfjs_{name}"
+        os.makedirs(model_js_path, exist_ok=True)
+        tfjs.converters.save_keras_model(model, model_js_path)
+        print(f"Model '{name}' saved to {model_path}")
 
 def embedding_consistency_loss(embeddings, pog_labels, sample_weight=None):
     """

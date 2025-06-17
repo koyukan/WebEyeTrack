@@ -21,7 +21,8 @@ from utils import (
     mae_cm_loss,
     l2_loss,
     compute_batch_ssim,
-    embedding_consistency_loss
+    embedding_consistency_loss,
+    save_model
 )
 
 # Set the GPU memory growth to allow multiple processes to use the GPU without running out of memory
@@ -170,7 +171,7 @@ def train(args, config):
 
     # Keep track of the best validation loss and save the model
     best_val_loss = float('inf')
-    best_model_path = RUN_DIR / 'best_model.keras'
+    # best_model_path = RUN_DIR / 'best_model.keras'
 
     for epoch in tqdm(range(config['training']['epochs']), desc="Training Epochs"):
         
@@ -226,7 +227,16 @@ def train(args, config):
         # Check if the validation loss improved
         if np.mean(val_losses['loss']) < best_val_loss:
             best_val_loss = np.mean(val_losses['loss'])
-            model.model.save(best_model_path)
+            save_model(
+                {
+                    'full_model': model.model,
+                    'encoder': model.encoder,
+                    'gaze_mlp': model.gaze_mlp,
+                    'decoder': model.decoder
+                },
+                RUN_DIR
+            )
+            # model.model.save(best_model_path)
             print(f"New best model saved at epoch {epoch + 1} with validation loss: {best_val_loss:.4f}")
 
         print(f"Epoch {epoch + 1}/{config['training']['epochs']}, Val Loss: {np.mean(val_losses['loss'])}, Train Loss: {np.mean(train_losses['loss'])}")
