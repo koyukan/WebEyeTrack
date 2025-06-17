@@ -41,6 +41,7 @@ export default function App() {
 
             // Update debug data
             setDebugData({
+              gazeState: gaze_result.gazeState,
               normPog: gaze_result.normPog,
               headVector: gaze_result.headVector,
               faceOrigin3D: gaze_result.faceOrigin3D,

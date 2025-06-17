@@ -53,7 +53,6 @@ export default class WebEyeTrack {
     );
 
     // return faceOrigin3D;
-    // return [0, 0, 0]; // Placeholder, should be computed
     return faceOrigin3D;
   }
 
@@ -125,8 +124,9 @@ export default class WebEyeTrack {
 
     // Compute the EAR ratio to determine if the eyes are open or closed
     let gaze_state: 'open' | 'closed' = 'open';
-    if (computeEAR(result.faceLandmarks[0], 'left') < 0.2 || 
-        computeEAR(result.faceLandmarks[0], 'right') < 0.2) {
+    const leftEAR = computeEAR(result.faceLandmarks[0], 'left');
+    const rightEAR = computeEAR(result.faceLandmarks[0], 'right');
+    if ( leftEAR < 0.2 || rightEAR < 0.2) {
       gaze_state = 'closed';
     }
 
