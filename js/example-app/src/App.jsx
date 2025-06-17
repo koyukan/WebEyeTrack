@@ -1,26 +1,23 @@
-import React, { useEffect, useRef } from 'react';
-import { WebcamClient, FaceLandmarkerClient, WebEyeTrack, BlazeGaze } from 'webeyetrack';
+import React, { useState, useEffect, useRef } from 'react';
+import { WebcamClient, WebEyeTrack } from 'webeyetrack';
+
+import GazeDot from './GazeDot.jsx';
+import DebugOverlay from './DebugOverlay.tsx';
 
 export default function App() {
+  const [gaze, setGaze] = useState({ x: 0, y: 0 });
+  const [debugData, setDebugData] = useState({});
   const videoRef = useRef(null);
   const eyePatchRef = useRef(null);
   const canvasRef = useRef(null);
-  const faceLandmarkerRef = useRef(null);
-  const webEyeTrack = new WebEyeTrack();
-  const blazeGaze = new BlazeGaze();
   let canvasDimensionFlag = false;
 
   useEffect(() => {
     async function startWebcamAndLandmarker() {
       if (videoRef.current && canvasRef.current) {
         const webcamClient = new WebcamClient(videoRef.current.id);
-        const faceLandmarker = new FaceLandmarkerClient(videoRef.current, canvasRef.current);
-
-        // faceLandmarkerRef.current = faceLandmarker;
-        await faceLandmarker.initialize();
-
-        // Initialize Blazegaze as well
-        await blazeGaze.loadModel();
+        const webEyeTrack = new WebEyeTrack(videoRef.current, canvasRef.current);
+        await webEyeTrack.initialize();
 
         // Start the webcam
         webcamClient.startWebcam(async (frame) => {
@@ -32,10 +29,24 @@ export default function App() {
             canvasDimensionFlag = true;
           }
 
-          let results = await faceLandmarker.processFrame(frame);
-
           // Further process the results with the WebEyeTrack library
-          const gaze_result = webEyeTrack.step(results, frame);
+          const gaze_result = await webEyeTrack.step(frame);
+
+          // Set the gaze coordinates
+          if (gaze_result) {
+            setGaze({
+              x: (gaze_result.normPog[0]+0.5) * window.innerWidth,
+              y: (gaze_result.normPog[1]+0.5) * window.innerHeight,
+            });
+
+            // Update debug data
+            setDebugData({
+              gazeState: gaze_result.gazeState,
+              normPog: gaze_result.normPog,
+              headVector: gaze_result.headVector,
+              faceOrigin3D: gaze_result.faceOrigin3D,
+            });
+          }
 
           // Show the eye patch based on the gaze result
           // if (gaze_result && eyePatchRef.current instanceof HTMLCanvasElement) {
@@ -55,7 +66,6 @@ export default function App() {
         // Cleanup: stop the webcam and clear references when the component unmounts
         return () => {
           webcamClient.stopWebcam();
-          faceLandmarkerRef.current = null;
         };
       }
     }
@@ -64,22 +74,30 @@ export default function App() {
   }, []); // Empty dependency array to run only on mount/unmount
 
   return (
-    <div className="flex items-center justify-center h-screen bg-gray-100 relative">
-      <video
-        id='webcam'
-        ref={videoRef}
-        autoPlay
-        playsInline
-        className="absolute z-10 top-0 left-0 h-1/5"
-      />
-      <canvas
-        ref={eyePatchRef}
-        className="absolute z-10 top-0 right-0 h-1/5"
-      />
-      <canvas
-        ref={canvasRef}
-        className="absolute z-20 top-0 left-0 h-1/5"
-      />
-    </div>
+    <>
+      <div className="absolute left-0 right-0 w-full h-full z-100 pointer-events-none">
+        <GazeDot x={gaze.x} y={gaze.y} />
+      </div>
+      <div className="flex items-center justify-center h-screen w-full bg-black relative">
+        <video
+          id='webcam'
+          ref={videoRef}
+          autoPlay
+          playsInline
+          className="absolute z-10 top-0 left-0 h-1/5"
+        />
+        <canvas
+          ref={eyePatchRef}
+          className="absolute z-10 top-0 right-0 h-1/8"
+        />
+        <canvas
+          ref={canvasRef}
+          className="absolute z-20 top-0 left-0 h-1/5"
+        />
+      </div>
+
+      {/* ✅ Show the debug data overlay */}
+      <DebugOverlay data={debugData} />
+    </>
   );
 }

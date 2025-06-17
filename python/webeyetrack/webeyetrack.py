@@ -82,7 +82,6 @@ def list_to_concat_tensor(input_list: list, dtype=tf.float32, dim=0):
     """
     return tf.concat([tf.convert_to_tensor(x, dtype=dtype) for x in input_list], axis=dim)
 
-
 def generate_support_and_query_samples(
         eye_patches, 
         head_vectors, 

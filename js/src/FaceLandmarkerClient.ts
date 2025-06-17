@@ -24,6 +24,7 @@ export default class FaceLandmarkerClient {
         delegate: "GPU",
       },
       outputFaceBlendshapes: true,
+      outputFacialTransformationMatrixes: true,
       runningMode: "IMAGE", // VIDEO
       numFaces: 1,
     });
