@@ -11,7 +11,6 @@ export default class FaceLandmarkerClient {
     this.videoElement = videoElement;
     this.canvasElement = canvasElement;
     this.canvasCtx = canvasElement.getContext("2d");
-    globalThis.console.log("YAYA")
   }
 
   async initialize() {

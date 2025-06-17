@@ -7,12 +7,16 @@ import DebugOverlay from './DebugOverlay.tsx';
 export default function App() {
   const [gaze, setGaze] = useState({ x: 0, y: 0 });
   const [debugData, setDebugData] = useState({});
+  const hasInitializedRef = useRef(false);
   const videoRef = useRef(null);
   const eyePatchRef = useRef(null);
   const canvasRef = useRef(null);
   let canvasDimensionFlag = false;
 
   useEffect(() => {
+    if (hasInitializedRef.current) return;
+    hasInitializedRef.current = true;
+
     async function startWebcamAndLandmarker() {
       if (videoRef.current && canvasRef.current) {
         const webcamClient = new WebcamClient(videoRef.current.id);
