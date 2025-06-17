@@ -35,8 +35,8 @@ export default function App() {
           // Set the gaze coordinates
           if (gaze_result) {
             setGaze({
-              x: (gaze_result.normPog[0]+0.5) * canvasRef.current.width,
-              y: (gaze_result.normPog[1]+0.5) * canvasRef.current.height,
+              x: (gaze_result.normPog[0]+0.5) * window.innerWidth,
+              y: (gaze_result.normPog[1]+0.5) * window.innerHeight,
             });
 
             // Update debug data

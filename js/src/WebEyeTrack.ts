@@ -7,8 +7,18 @@ import { Point, GazeResult } from "./types";
 import BlazeGaze from "./BlazeGaze";
 import FaceLandmarkerClient from "./FaceLandmarkerClient";
 
+function generateSupport(
+  eyePatches: ImageData[],
+  headVectors: number[][],
+  faceOrigins3D: number[][],
+  normPogs: number[][]
+) {
+  // Implementation for generating support samples
+}
+
 export default class WebEyeTrack {
-    
+  
+  // Instance variables
   private blazeGaze: BlazeGaze;
   private faceLandmarkerClient: FaceLandmarkerClient;
   private faceWidthComputed: boolean = false;
@@ -18,14 +28,25 @@ export default class WebEyeTrack {
   private intrinsicsMatrixSet: boolean = false;
   private intrinsicsMatrix: Matrix = new Matrix(3, 3);
 
+  // Public variables
+  public loaded: boolean = false;
+  public latestGazeResult: GazeResult | null = null;
+
   constructor(videoRef: HTMLVideoElement, canvasRef: HTMLCanvasElement) {
     this.blazeGaze = new BlazeGaze();
     this.faceLandmarkerClient = new FaceLandmarkerClient(videoRef, canvasRef);
+
+    window.addEventListener('click', async (event: MouseEvent) => {
+      const x = event.clientX;
+      const y = event.clientY;
+      console.log(`🖱️ Global click at: (${x}, ${y}), ${this.loaded}`);
+    });
   }
 
   async initialize(): Promise<void> {
     await this.faceLandmarkerClient.initialize();
     await this.blazeGaze.loadModel();
+    this.loaded = true;
   }
 
   computeFaceOrigin3D(frame: HTMLVideoElement, normFaceLandmarks: Point[], faceLandmarks: Point[], faceRT: Matrix): number[] {
@@ -110,6 +131,36 @@ export default class WebEyeTrack {
       head_vector,
       face_origin_3d
     ];
+  }
+
+  async adapt(
+    eyePatches: ImageData[],
+    headVectors: number[][],
+    faceOrigins3D: number[][],
+    normPogs: number[][],
+    stepsInner: number = 5,
+    innerLR: number = 1e-5,
+    ptType: 'calib' | 'click' = 'calib'
+  ) {
+    const opt = tf.train.adam(innerLR, 0.85, 0.9, 1e-8);
+
+    // const { support_x, support_y } = generateSupport(
+    //   eyePatches,
+    //   headVectors,
+    //   faceOrigins3D,
+    //   normPogs
+    // );
+
+    // // Merge with prior calibration data
+    // if (calibData.support_x.length > 0) {
+    //   for (const key of ['image', 'head_vector', 'face_origin_3d', 'screen_info'] as (keyof SupportX)[]) {
+    //     const prior = listToConcatTensor(calibData.support_x.map(s => s[key]), tf.float32, 0);
+    //     support_x[key] = tf.concat([support_x[key], prior], 0);
+    //   }
+    //   const priorY = listToConcatTensor(calibData.support_y, tf.float32, 0);
+    //   support_y = tf.concat([support_y, priorY], 0);
+    // }
+
   }
 
   async step(frame: HTMLVideoElement): Promise<GazeResult> {
