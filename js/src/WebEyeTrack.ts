@@ -341,6 +341,22 @@ export default class WebEyeTrack {
       gaze_state = 'closed';
     }
 
+    // If 'closed' return (0, 0) 
+    if (gaze_state === 'closed') {
+      return {
+        facialLandmarks: result.faceLandmarks[0],
+        faceRt: result.facialTransformationMatrixes[0],
+        faceBlendshapes: result.faceBlendshapes,
+        eyePatch: eyePatch,
+        headVector: headVector,
+        faceOrigin3D: faceOrigin3D,
+        metric_transform: {rows: 3, columns: 3, data: [1, 0, 0, 1, 0, 0, 1, 0, 0]}, // Placeholder, should be computed
+        gazeState: gaze_state,
+        normPog: [0, 0],
+        durations: {}
+      };
+    }
+
     // Perform the gaze estimation via BlazeGaze Model (tensorflow.js)
     const inputTensor = tf.browser.fromPixels(eyePatch).toFloat().expandDims(0);
 

@@ -5,7 +5,7 @@ import GazeDot from './GazeDot.jsx';
 import DebugOverlay from './DebugOverlay.tsx';
 
 export default function App() {
-  const [gaze, setGaze] = useState({ x: 0, y: 0 });
+  const [gaze, setGaze] = useState({ x: 0, y: 0, gazeState: 'closed'});
   const [debugData, setDebugData] = useState({});
   const hasInitializedRef = useRef(false);
   const videoRef = useRef(null);
@@ -41,6 +41,7 @@ export default function App() {
             setGaze({
               x: (gaze_result.normPog[0]+0.5) * window.innerWidth,
               y: (gaze_result.normPog[1]+0.5) * window.innerHeight,
+              gazeState: gaze_result.gazeState,
             });
 
             // Update debug data
@@ -80,7 +81,7 @@ export default function App() {
   return (
     <>
       <div className="absolute left-0 right-0 w-full h-full z-100 pointer-events-none">
-        <GazeDot x={gaze.x} y={gaze.y} />
+        <GazeDot x={gaze.x} y={gaze.y} gazeState={gaze.gazeState}/>
       </div>
       <div className="flex items-center justify-center h-screen w-full bg-black relative">
         <video

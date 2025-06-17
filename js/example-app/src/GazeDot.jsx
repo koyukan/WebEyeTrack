@@ -1,6 +1,7 @@
 
 export default function GazeDot(props){
   
+  // Hide the dot is props.gazeState is 'closed'
   const style = {
     position: 'fixed',
     zIndex: 100,
@@ -11,6 +12,7 @@ export default function GazeDot(props){
     opacity: 0.7,
     width: 30,
     height: 30,
+    display: props.gazeState === 'closed' ? 'none' : 'block',
     transform: `translate(${props.x}px, ${props.y}px)`,
   };
 
