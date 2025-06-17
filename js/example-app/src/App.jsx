@@ -2,9 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { WebcamClient, WebEyeTrack } from 'webeyetrack';
 
 import GazeDot from './GazeDot.jsx';
+import DebugOverlay from './DebugOverlay.tsx';
 
 export default function App() {
   const [gaze, setGaze] = useState({ x: 0, y: 0 });
+  const [debugData, setDebugData] = useState({});
   const videoRef = useRef(null);
   const eyePatchRef = useRef(null);
   const canvasRef = useRef(null);
@@ -36,6 +38,13 @@ export default function App() {
               x: (gaze_result.normPog[0]+0.5) * canvasRef.current.width,
               y: (gaze_result.normPog[1]+0.5) * canvasRef.current.height,
             });
+
+            // Update debug data
+            setDebugData({
+              normPog: gaze_result.normPog,
+              headVector: gaze_result.headVector,
+              faceOrigin3D: gaze_result.faceOrigin3D,
+            });
           }
 
           // Show the eye patch based on the gaze result
@@ -65,10 +74,10 @@ export default function App() {
 
   return (
     <>
-      <div className="absolute left-0 right-0 w-full h-full z-10 pointer-events-none">
+      <div className="absolute left-0 right-0 w-full h-full z-100 pointer-events-none">
         <GazeDot x={gaze.x} y={gaze.y} />
       </div>
-      <div className="flex items-center justify-center h-screen bg-gray-100 relative">
+      <div className="flex items-center justify-center h-screen w-full bg-black relative">
         <video
           id='webcam'
           ref={videoRef}
@@ -78,13 +87,16 @@ export default function App() {
         />
         <canvas
           ref={eyePatchRef}
-          className="absolute z-10 top-0 right-0 h-1/5"
+          className="absolute z-10 top-0 right-0 h-1/8"
         />
         <canvas
           ref={canvasRef}
           className="absolute z-20 top-0 left-0 h-1/5"
         />
       </div>
+
+      {/* ✅ Show the debug data overlay */}
+      <DebugOverlay data={debugData} />
     </>
   );
 }

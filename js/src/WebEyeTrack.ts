@@ -2,7 +2,7 @@ import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-visio
 import * as tf from '@tensorflow/tfjs';
 import { Matrix } from 'ml-matrix';
 
-import { createIntrinsicsMatrix, createPerspectiveMatrix, translateMatrix, faceReconstruction, estimateFaceWidth, getHeadVector, obtainEyePatch, computeEAR } from "./mathUtils";
+import { computeFaceOrigin3D, createIntrinsicsMatrix, createPerspectiveMatrix, translateMatrix, faceReconstruction, estimateFaceWidth, getHeadVector, obtainEyePatch, computeEAR } from "./mathUtils";
 import { Point, GazeResult } from "./types";
 import BlazeGaze from "./BlazeGaze";
 import FaceLandmarkerClient from "./FaceLandmarkerClient";
@@ -32,7 +32,7 @@ export default class WebEyeTrack {
 
     // Estimate the face width in centimeters if not set
     if (this.faceWidthComputed === false) {
-      this.faceWidthCm = estimateFaceWidth(faceLandmarks, faceRT);
+      this.faceWidthCm = estimateFaceWidth(faceLandmarks);
       this.faceWidthComputed = true;
     }
 
@@ -46,8 +46,13 @@ export default class WebEyeTrack {
       frame.videoWidth,
       frame.videoHeight
     );
-    
-    return [0, 0, 0]; // Placeholder for face origin computation
+
+    // Lastly, compute the gaze origins in 3D space using the metric face
+    const faceOrigin3D = computeFaceOrigin3D(
+      metricFace
+    );
+
+    return faceOrigin3D;
   }
 
   prepareInput(frame: HTMLVideoElement, result: FaceLandmarkerResult):  [ImageData, number[], number[]] {

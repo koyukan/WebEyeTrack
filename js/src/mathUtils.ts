@@ -6,6 +6,11 @@ import { safeSVD } from './safeSVD';
 // Used to determine the width of the face
 const LEFTMOST_LANDMARK = 356
 const RIGHTMOST_LANDMARK = 127
+const RIGHT_IRIS_LANDMARKS = [468, 470, 469, 472, 471] // center, top, right, bottom, left
+const LEFT_IRIS_LANDMARKS = [473, 475, 474, 477, 476] // center, top, right, bottom, left
+const AVERAGE_IRIS_SIZE_CM = 1.2;
+const LEFT_EYE_HORIZONTAL_LANDMARKS = [362, 263]
+const RIGHT_EYE_HORIZONTAL_LANDMARKS = [33, 133]
 
 // Depth radial parameters
 const MAX_STEP_CM = 5
@@ -297,11 +302,36 @@ export function createIntrinsicsMatrix(
     return K;
 }
 
+function distance2D(p1: number[], p2: number[]): number {
+  const dx = p1[0] - p2[0];
+  const dy = p1[1] - p2[1];
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 export function estimateFaceWidth(
     faceLandmarks: Point[],
-    faceRT: Matrix,
 ): number {
-  return 15;
+
+  const irisDist: number[] = [];
+
+  for (const side of ['left', 'right']) {
+    const eyeIrisLandmarks = side === 'left' ? LEFT_IRIS_LANDMARKS : RIGHT_IRIS_LANDMARKS;
+    const leftmost = faceLandmarks[eyeIrisLandmarks[4]].slice(0, 2);
+    const rightmost = faceLandmarks[eyeIrisLandmarks[2]].slice(0, 2);
+    const horizontalDist = distance2D(leftmost, rightmost);
+    irisDist.push(horizontalDist);
+  }
+
+  const avgIrisDist = irisDist.reduce((a, b) => a + b, 0) / irisDist.length;
+
+  const leftmostFace = faceLandmarks[LEFTMOST_LANDMARK];
+  const rightmostFace = faceLandmarks[RIGHTMOST_LANDMARK];
+  const faceWidthPx = distance2D(leftmostFace, rightmostFace);
+
+  const faceIrisRatio = avgIrisDist / faceWidthPx;
+  const faceWidthCm = AVERAGE_IRIS_SIZE_CM / faceIrisRatio;
+
+  return faceWidthCm;
 }
 
 export function convertUvToXyz(
@@ -498,10 +528,34 @@ export function faceReconstruction(
     return [finalTransform, finalFacePts];
 }
 
+export function computeFaceOrigin3D(
+  metricFace: [number, number, number][],
+): [number, number, number] {
+  const computeMean = (indices: number[]): [number, number, number] => {
+    const points = indices.map(idx => metricFace[idx]);
+    const sum = points.reduce(
+      (acc, [x, y, z]) => [acc[0] + x, acc[1] + y, acc[2] + z],
+      [0, 0, 0]
+    );
+    return [sum[0] / points.length, sum[1] / points.length, sum[2] / points.length];
+  };
+
+  const leftEyeCenter = computeMean(LEFT_EYE_HORIZONTAL_LANDMARKS);
+  const rightEyeCenter = computeMean(RIGHT_EYE_HORIZONTAL_LANDMARKS);
+
+  const face_origin_3d: [number, number, number] = [
+    (leftEyeCenter[0] + rightEyeCenter[0]) / 2,
+    (leftEyeCenter[1] + rightEyeCenter[1]) / 2,
+    (leftEyeCenter[2] + rightEyeCenter[2]) / 2
+  ];
+
+  return face_origin_3d;
+}
+
 function multiplyVecByMat(v: [number, number, number], m: Matrix): [number, number, number] {
-    const [x, y, z] = v;
-    const res = m.mmul(Matrix.columnVector([x, y, z])).to1DArray();
-    return [res[0], res[1], res[2]];
+  const [x, y, z] = v;
+  const res = m.mmul(Matrix.columnVector([x, y, z])).to1DArray();
+  return [res[0], res[1], res[2]];
 }
 
 export function matrixToEuler(matrix: Matrix, degrees: boolean = true): [number, number, number] {

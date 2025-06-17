@@ -14,5 +14,5 @@ export default function GazeDot(props){
     transform: `translate(${props.x}px, ${props.y}px)`,
   };
 
-  return <div id="GazeDot" style={style}></div>;
+  return <div className="z-100" id="GazeDot" style={style}></div>;
 };
