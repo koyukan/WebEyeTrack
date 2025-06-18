@@ -3,16 +3,6 @@ import { WebcamClient, WebWorkerLibTs, GazeResult } from 'webeyetrack';
 import GazeDot from './GazeDot.jsx';
 import DebugOverlay from './DebugOverlay';
 
-// import Worker from "worker?worker"
-// const worker = new Worker();
-// const url = new URL('./worker.js', import.meta.url);
-// const worker = new Worker(url);
-// const WebEyeTrack = new WebEyeTrackProxy();
-
-// worker.onmessage = function (e) {
-//   console.log(e.data)
-// }
-
 export default function App() {
   const [gaze, setGaze] = useState({ x: 0, y: 0, gazeState: 'closed'});
   const [debugData, setDebugData] = useState({});
