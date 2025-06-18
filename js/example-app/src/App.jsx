@@ -7,6 +7,7 @@ import DebugOverlay from './DebugOverlay.tsx';
 export default function App() {
   const [gaze, setGaze] = useState({ x: 0, y: 0, gazeState: 'closed'});
   const [debugData, setDebugData] = useState({});
+  const [perfData, setPerfData] = useState({});
   const hasInitializedRef = useRef(false);
   const videoRef = useRef(null);
   const eyePatchRef = useRef(null);
@@ -43,6 +44,9 @@ export default function App() {
               y: (gaze_result.normPog[1]+0.5) * window.innerHeight,
               gazeState: gaze_result.gazeState,
             });
+
+            // Update performance data
+            setPerfData(gaze_result.durations);
 
             // Update debug data
             setDebugData({
@@ -102,7 +106,8 @@ export default function App() {
       </div>
 
       {/* ✅ Show the debug data overlay */}
-      <DebugOverlay data={debugData} />
+      <DebugOverlay data={debugData} position="bottom-2 right-2"/>
+      <DebugOverlay data={perfData} position="bottom-2 left-2"/>
     </>
   );
 }

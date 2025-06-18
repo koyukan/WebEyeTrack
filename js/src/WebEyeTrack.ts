@@ -325,13 +325,16 @@ export default class WebEyeTrack {
 
   async step(frame: HTMLVideoElement): Promise<GazeResult> {
 
+    const tic1 = performance.now();
     let result = await this.faceLandmarkerClient.processFrame(frame);
     if (!result || !result.faceLandmarks || result.faceLandmarks.length === 0) {
       throw new Error("No face landmarks detected");
     }
+    const tic2 = performance.now();
 
     // Perform preprocessing to obtain the eye patch, head_vector, and face_origin_3d
     const [eyePatch, headVector, faceOrigin3D] = this.prepareInput(frame, result);
+    const tic3 = performance.now();
 
     // Compute the EAR ratio to determine if the eyes are open or closed
     let gaze_state: 'open' | 'closed' = 'open';
@@ -366,6 +369,7 @@ export default class WebEyeTrack {
     const headVectorTensor = tf.tensor2d(headVector, [1, 3]);
     const faceOriginTensor = tf.tensor2d(faceOrigin3D, [1, 3]);
     let outputTensor = this.blazeGaze.predict(normalizedInputTensor, headVectorTensor, faceOriginTensor);
+    const tic4 = performance.now();
 
     // If affine transformation is available, apply it
     if (this.affineMatrix) {
@@ -385,6 +389,15 @@ export default class WebEyeTrack {
 
     // Apply Kalman filter to smooth the gaze point
     const kalmanOutput = this.kalmanFilter.step(normPog[0]);
+    const tic5 = performance.now();
+
+    // Log the timings
+    const durations = {
+      faceLandmarker: tic2 - tic1,
+      prepareInput: tic3 - tic2,
+      blazeGaze: tic4 - tic3,
+      kalmanFilter: tic5 - tic4
+    };
 
     // Return GazeResult
     let gaze_result: GazeResult = {
@@ -397,7 +410,7 @@ export default class WebEyeTrack {
       metric_transform: {rows: 3, columns: 3, data: [1, 0, 0, 1, 0, 0, 1, 0, 0]}, // Placeholder, should be computed
       gazeState: gaze_state,
       normPog: kalmanOutput,
-      durations: {}
+      durations: durations
     };
 
     // Update the latest gaze result
