@@ -5,11 +5,9 @@ export default class FaceLandmarkerClient {
   private drawingUtils: any;
   private canvasCtx: CanvasRenderingContext2D | null = null;
   private videoElement: HTMLVideoElement;
-  private canvasElement: HTMLCanvasElement | null = null;
 
   constructor(videoElement: HTMLVideoElement, canvasElement: HTMLCanvasElement) {
     this.videoElement = videoElement;
-    this.canvasElement = canvasElement;
     this.canvasCtx = canvasElement.getContext("2d");
   }
 
@@ -24,7 +22,8 @@ export default class FaceLandmarkerClient {
       },
       outputFaceBlendshapes: true,
       outputFacialTransformationMatrixes: true,
-      runningMode: "IMAGE", // VIDEO
+      // runningMode: "IMAGE", // VIDEO
+      runningMode: "VIDEO",
       numFaces: 1,
     });
 
@@ -50,15 +49,15 @@ export default class FaceLandmarkerClient {
     }
 
     // Clear the canvas before drawing
-    if (this.canvasCtx) {
-      this.canvasCtx.clearRect(0, 0, this.canvasCtx.canvas.width, this.canvasCtx.canvas.height);
-    }
+    // if (this.canvasCtx) {
+    //   this.canvasCtx.clearRect(0, 0, this.canvasCtx.canvas.width, this.canvasCtx.canvas.height);
+    // }
 
-    if (result.faceLandmarks) {
-      for (const landmarks of result.faceLandmarks) {
-        this.drawLandmarks(landmarks);
-      }
-    }
+    // if (result.faceLandmarks) {
+    //   for (const landmarks of result.faceLandmarks) {
+    //     this.drawLandmarks(landmarks);
+    //   }
+    // }
 
     return result;
   }

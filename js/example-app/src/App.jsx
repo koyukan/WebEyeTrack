@@ -27,6 +27,8 @@ export default function App() {
         // Start the webcam
         webcamClient.startWebcam(async (frame) => {
 
+          // return null;
+
           // Update the canvas dimensions to match the video dimensions
           if (!canvasDimensionFlag) {
             canvasRef.current.width = videoRef.current.videoWidth;

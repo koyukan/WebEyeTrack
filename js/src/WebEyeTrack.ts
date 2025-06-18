@@ -19,6 +19,9 @@ import {
 } from "./mathUtils";
 import { KalmanFilter2D } from "./filter";
 
+// Reference
+// https://mediapipe-studio.webapps.google.com/demo/face_landmarker
+
 interface SupportX {
   eyePatches: tf.Tensor;
   headVectors: tf.Tensor;
@@ -326,7 +329,8 @@ export default class WebEyeTrack {
   async step(frame: HTMLVideoElement): Promise<GazeResult> {
 
     const tic1 = performance.now();
-    let result = await this.faceLandmarkerClient.processFrame(frame);
+    // let result = await this.faceLandmarkerClient.processFrame(frame);
+    let result = await this.faceLandmarkerClient.processFrame(null);
     if (!result || !result.faceLandmarks || result.faceLandmarks.length === 0) {
       throw new Error("No face landmarks detected");
     }
@@ -343,6 +347,7 @@ export default class WebEyeTrack {
     if ( leftEAR < 0.2 || rightEAR < 0.2) {
       gaze_state = 'closed';
     }
+    gaze_state = 'closed';
 
     // If 'closed' return (0, 0) 
     if (gaze_state === 'closed') {
@@ -356,7 +361,13 @@ export default class WebEyeTrack {
         metric_transform: {rows: 3, columns: 3, data: [1, 0, 0, 1, 0, 0, 1, 0, 0]}, // Placeholder, should be computed
         gazeState: gaze_state,
         normPog: [0, 0],
-        durations: {}
+        durations: {
+          faceLandmarker: tic2 - tic1,
+          prepareInput: tic3 - tic2,
+          blazeGaze: 0, // No BlazeGaze inference if eyes are closed
+          kalmanFilter: 0, // No Kalman filter step if eyes are closed
+          total: tic3 - tic1
+        }
       };
     }
 
@@ -396,7 +407,8 @@ export default class WebEyeTrack {
       faceLandmarker: tic2 - tic1,
       prepareInput: tic3 - tic2,
       blazeGaze: tic4 - tic3,
-      kalmanFilter: tic5 - tic4
+      kalmanFilter: tic5 - tic4,
+      total: tic5 - tic1
     };
 
     // Return GazeResult
