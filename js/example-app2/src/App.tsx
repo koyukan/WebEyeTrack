@@ -1,4 +1,3 @@
-import './App.css';
 // import { WebWorkerLibJs } from 'webworker-lib'
 // import { WebWorkerLibTs } from 'webworker-lib-ts'
 import { WebWorkerLibTs } from 'webeyetrack';

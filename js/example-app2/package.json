@@ -1,6 +1,6 @@
 {
-  "name": "bundle-webworker-react",
-  "version": "0.1.0",
+  "name": "webeyetrack-demo",
+  "version": "0.0.1",
   "private": true,
   "homepage": "./",
   "dependencies": {
