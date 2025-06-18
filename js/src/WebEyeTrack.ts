@@ -1,4 +1,4 @@
-import { FaceLandmarkerResult, NormalizedLandmark } from "@mediapipe/tasks-vision";
+import { FaceLandmarkerResult, NormalizedLandmark, Matrix as MediaPipeMatrix } from "@mediapipe/tasks-vision";
 import * as tf from '@tensorflow/tfjs';
 import { Matrix } from 'ml-matrix';
 
@@ -15,7 +15,8 @@ import {
   getHeadVector, 
   obtainEyePatch, 
   computeEAR,
-  computeAffineMatrixML
+  computeAffineMatrixML,
+  applyAffineMatrix
 } from "./mathUtils";
 import { KalmanFilter2D } from "./filter";
 
@@ -79,19 +80,19 @@ export default class WebEyeTrack {
   };
 
   // Configuration
-  public maxPoints: number = 100;
+  public maxPoints: number = 10;
   public clickTTL: number = 60; // Time-to-live for click points in seconds
 
   constructor(
       videoRef: HTMLVideoElement, 
-      canvasRef: HTMLCanvasElement,
-      maxPoints: number = 100,
+      // canvasRef: HTMLCanvasElement,
+      maxPoints: number = 10,
       clickTTL: number = 60 // Time-to-live for click points in seconds
     ) {
 
     // Initialize services
     this.blazeGaze = new BlazeGaze();
-    this.faceLandmarkerClient = new FaceLandmarkerClient(videoRef, canvasRef);
+    this.faceLandmarkerClient = new FaceLandmarkerClient(videoRef);
     this.kalmanFilter = new KalmanFilter2D();
     
     // Storing configs
@@ -183,7 +184,8 @@ export default class WebEyeTrack {
       this.intrinsicsMatrix,
       this.faceWidthCm,
       frame.videoWidth,
-      frame.videoHeight
+      frame.videoHeight,
+      this.latestGazeResult?.faceOrigin3D?.[2] ?? 60
     );
 
     // Lastly, compute the gaze origins in 3D space using the metric face
@@ -350,9 +352,27 @@ export default class WebEyeTrack {
 
     const tic1 = performance.now();
     // let result = await this.faceLandmarkerClient.processFrame(frame);
-    let result = await this.faceLandmarkerClient.processFrame(null);
+    let result = await this.faceLandmarkerClient.processFrame(null) as FaceLandmarkerResult | null;
     if (!result || !result.faceLandmarks || result.faceLandmarks.length === 0) {
-      throw new Error("No face landmarks detected");
+      // throw new Error("No face landmarks detected");
+      return {
+        facialLandmarks: [],
+        faceRt: {rows: 0, columns: 0, data: []}, // Placeholder for face transformation matrix
+        faceBlendshapes: [],
+        eyePatch: new ImageData(1, 1), // Placeholder for eye patch
+        headVector: [0, 0, 0], // Placeholder for head vector
+        faceOrigin3D: [0, 0, 0], // Placeholder for face
+        metric_transform: {rows: 3, columns: 3, data: [1, 0, 0, 1, 0, 0, 1, 0, 0]}, // Placeholder for metric transform
+        gazeState: 'closed', // Default to closed state if no landmarks
+        normPog: [0, 0], // Placeholder for normalized point of gaze
+        durations: {
+          faceLandmarker: 0,
+          prepareInput: 0,
+          blazeGaze: 0,
+          kalmanFilter: 0,
+          total: 0
+        }
+      };
     }
     const tic2 = performance.now();
 
@@ -396,20 +416,15 @@ export default class WebEyeTrack {
 
     // Divide the inputTensor by 255 to normalize pixel values
     const normalizedInputTensor = inputTensor.div(tf.scalar(255.0));
-
     const headVectorTensor = tf.tensor2d(headVector, [1, 3]);
     const faceOriginTensor = tf.tensor2d(faceOrigin3D, [1, 3]);
     let outputTensor = this.blazeGaze.predict(normalizedInputTensor, headVectorTensor, faceOriginTensor);
+    tf.dispose([inputTensor, normalizedInputTensor, headVectorTensor, faceOriginTensor]);
     const tic4 = performance.now();
 
     // If affine transformation is available, apply it
     if (this.affineMatrix) {
-      const reshapedOutput = outputTensor.reshape([-1, 2]);        // [B, 2]
-      const ones = tf.ones([reshapedOutput.shape[0], 1]);          // [B, 1]
-      const homog = tf.concat([reshapedOutput, ones], 1);          // [B, 3]
-      const affineT = this.affineMatrix.transpose();                // [3, 2]
-      const transformed = tf.matMul(homog, affineT);                // [B, 2]
-      outputTensor = transformed.reshape(outputTensor.shape);       // reshape back
+      outputTensor = applyAffineMatrix(this.affineMatrix, outputTensor);
     }
 
     // Extract the 2D gaze point data from the output tensor
@@ -417,6 +432,7 @@ export default class WebEyeTrack {
       throw new Error("BlazeGaze model did not return valid output");
     }
     const normPog = outputTensor.arraySync() as number[][];
+    tf.dispose(outputTensor);
 
     // Apply Kalman filter to smooth the gaze point
     const kalmanOutput = this.kalmanFilter.step(normPog[0]);

@@ -1,8 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { WebcamClient, WebEyeTrack } from 'webeyetrack';
+import { WebcamClient, WebEyeTrackProxy } from 'webeyetrack';
 
 import GazeDot from './GazeDot.jsx';
 import DebugOverlay from './DebugOverlay.tsx';
+
+// import Worker from "worker?worker"
+// const worker = new Worker();
+// const url = new URL('./worker.js', import.meta.url);
+// const worker = new Worker(url);
+const WebEyeTrack = new WebEyeTrackProxy();
+
+// worker.onmessage = function (e) {
+//   console.log(e.data)
+// }
 
 export default function App() {
   const [gaze, setGaze] = useState({ x: 0, y: 0, gazeState: 'closed'});
@@ -21,8 +31,7 @@ export default function App() {
     async function startWebcamAndLandmarker() {
       if (videoRef.current && canvasRef.current) {
         const webcamClient = new WebcamClient(videoRef.current.id);
-        const webEyeTrack = new WebEyeTrack(videoRef.current, canvasRef.current);
-        await webEyeTrack.initialize();
+        // await webEyeTrack.initialize();
 
         // Start the webcam
         webcamClient.startWebcam(async (frame) => {
@@ -35,7 +44,8 @@ export default function App() {
           }
 
           // Further process the results with the WebEyeTrack library
-          const gaze_result = await webEyeTrack.step(frame);
+          // const gaze_result = await webEyeTrack.step(frame);
+          const gaze_result = null;
 
           // Set the gaze coordinates
           if (gaze_result) {
