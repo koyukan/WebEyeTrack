@@ -49,15 +49,15 @@ export default class FaceLandmarkerClient {
     }
 
     // Clear the canvas before drawing
-    // if (this.canvasCtx) {
-    //   this.canvasCtx.clearRect(0, 0, this.canvasCtx.canvas.width, this.canvasCtx.canvas.height);
-    // }
+    if (this.canvasCtx) {
+      this.canvasCtx.clearRect(0, 0, this.canvasCtx.canvas.width, this.canvasCtx.canvas.height);
+    }
 
-    // if (result.faceLandmarks) {
-    //   for (const landmarks of result.faceLandmarks) {
-    //     this.drawLandmarks(landmarks);
-    //   }
-    // }
+    if (result.faceLandmarks) {
+      for (const landmarks of result.faceLandmarks) {
+        this.drawLandmarks(landmarks);
+      }
+    }
 
     return result;
   }

@@ -64,6 +64,7 @@ export default class WebEyeTrack {
 
   // Public variables
   public loaded: boolean = false;
+  public latestMouseClick: { x: number, y: number, timestamp: number } | null = null;
   public latestGazeResult: GazeResult | null = null;
   public calibData: {
     supportX: SupportX[],
@@ -136,6 +137,24 @@ export default class WebEyeTrack {
     const x = event.clientX;
     const y = event.clientY;
     console.log(`🖱️ Global click at: (${x}, ${y}), ${this.loaded}`);
+
+    // Debounce clicks based on the latest click timestamp
+    if (this.latestMouseClick && (Date.now() - this.latestMouseClick.timestamp < 1000)) {
+      console.log("🖱️ Click ignored due to debounce");
+      this.latestMouseClick = { x, y, timestamp: Date.now() };
+      return;
+    }
+
+    // Avoid pts that are too close to the last click
+    if (this.latestMouseClick && 
+        Math.abs(x - this.latestMouseClick.x) < 50 && 
+        Math.abs(y - this.latestMouseClick.y) < 50) {
+      console.log("🖱️ Click ignored due to proximity to last click");
+      this.latestMouseClick = { x, y, timestamp: Date.now() };
+      return;
+    }
+
+    this.latestMouseClick = { x, y, timestamp: Date.now() };
 
     if (this.loaded && this.latestGazeResult) {
       // Adapt the model based on the click position
@@ -294,36 +313,37 @@ export default class WebEyeTrack {
       this.affineMatrix = tf.tensor2d(affineMatrixML, [2, 3], 'float32');
     }
 
-    for (let i = 0; i < stepsInner; i++) {
-      opt.minimize(() => {
-        let supportPreds = this.blazeGaze.predict(
-          tfEyePatches,
-          tfHeadVectors,
-          tfFaceOrigins3D
-        );
-        if (!supportPreds) {
-          throw new Error("BlazeGaze model did not return valid predictions");
-        }
+    // for (let i = 0; i < stepsInner; i++) {
+    //   opt.minimize(() => {
+    //     let supportPreds = this.blazeGaze.predict(
+    //       tfEyePatches,
+    //       tfHeadVectors,
+    //       tfFaceOrigins3D
+    //     );
+    //     if (!supportPreds) {
+    //       throw new Error("BlazeGaze model did not return valid predictions");
+    //     }
 
-        // Apply the affine transformation if available
-        if (this.affineMatrix) {
-          const reshapedPreds = supportPreds.reshape([-1, 2]);        // [B, 2]
-          const ones = tf.ones([reshapedPreds.shape[0], 1]);          // [B, 1]
-          const homog = tf.concat([reshapedPreds, ones], 1);          // [B, 3]
-          const affineT = this.affineMatrix.transpose();              // [3, 2]
-          const transformed = tf.matMul(homog, affineT);              // [B, 2]
-          supportPreds = transformed.reshape(supportPreds.shape);     // reshape back
-        }
+    //     // Apply the affine transformation if available
+    //     if (this.affineMatrix) {
+    //       const reshapedPreds = supportPreds.reshape([-1, 2]);        // [B, 2]
+    //       const ones = tf.ones([reshapedPreds.shape[0], 1]);          // [B, 1]
+    //       const homog = tf.concat([reshapedPreds, ones], 1);          // [B, 3]
+    //       const affineT = this.affineMatrix.transpose();              // [3, 2]
+    //       const transformed = tf.matMul(homog, affineT);              // [B, 2]
+    //       supportPreds = transformed.reshape(supportPreds.shape);     // reshape back
+    //     }
 
-        const loss = tf.losses.meanSquaredError(
-          tfSupportY,
-          supportPreds
-        );
-        loss.data().then(l => console.log(`Support loss (${i}), innerLR=${innerLR}: ${l[0].toFixed(4)}`));
+    //     const loss = tf.losses.meanSquaredError(
+    //       tfSupportY,
+    //       supportPreds
+    //     );
+    //     loss.data().then(l => console.log(`Support loss (${i}), innerLR=${innerLR}: ${l[0].toFixed(4)}`));
 
-        return loss.asScalar();
-      });
-    }
+    //     return loss.asScalar();
+    //   });
+    // }
+
   }
 
   async step(frame: HTMLVideoElement): Promise<GazeResult> {
@@ -347,7 +367,7 @@ export default class WebEyeTrack {
     if ( leftEAR < 0.2 || rightEAR < 0.2) {
       gaze_state = 'closed';
     }
-    gaze_state = 'closed';
+    // gaze_state = 'closed';
 
     // If 'closed' return (0, 0) 
     if (gaze_state === 'closed') {
