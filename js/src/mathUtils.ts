@@ -89,7 +89,7 @@ export function computeHomography(src: Point[], dst: Point[]): number[][] {
 /**
  * Apply a homography matrix to a point.
  */
-export function applyHomography(H, pt) {
+export function applyHomography(H: number[][], pt: number[]): number[] {
   const [x, y] = pt;
   const denom = H[2][0] * x + H[2][1] * y + H[2][2];
   const xPrime = (H[0][0] * x + H[0][1] * y + H[0][2]) / denom;

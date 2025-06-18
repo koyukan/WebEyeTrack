@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { WebcamClient, WebEyeTrackProxy } from 'webeyetrack';
+// import { WebcamClient } from 'webeyetrack';
+console.log('WebEyeTrack loaded');
+import { WebWorkerLibTs } from 'webworker-lib-ts';
+console.log('WebWorkerLibTs loaded');
 
 import GazeDot from './GazeDot.jsx';
 import DebugOverlay from './DebugOverlay.tsx';
@@ -8,7 +11,7 @@ import DebugOverlay from './DebugOverlay.tsx';
 // const worker = new Worker();
 // const url = new URL('./worker.js', import.meta.url);
 // const worker = new Worker(url);
-const WebEyeTrack = new WebEyeTrackProxy();
+// const WebEyeTrack = new WebEyeTrackProxy();
 
 // worker.onmessage = function (e) {
 //   console.log(e.data)
@@ -24,76 +27,88 @@ export default function App() {
   const canvasRef = useRef(null);
   let canvasDimensionFlag = false;
 
-  useEffect(() => {
-    if (hasInitializedRef.current) return;
-    hasInitializedRef.current = true;
+  // const libTs = useMemo(()=>{
+  //     return new WebWorkerLibTs()
+  // },[])
 
-    async function startWebcamAndLandmarker() {
-      if (videoRef.current && canvasRef.current) {
-        const webcamClient = new WebcamClient(videoRef.current.id);
-        // await webEyeTrack.initialize();
+  // useEffect(() => {
+  //   if (hasInitializedRef.current) return;
+  //   hasInitializedRef.current = true;
 
-        // Start the webcam
-        webcamClient.startWebcam(async (frame) => {
+  //   async function startWebcamAndLandmarker() {
+  //     if (videoRef.current && canvasRef.current) {
+  //       const webcamClient = new WebcamClient(videoRef.current.id);
+  //       // await webEyeTrack.initialize();
 
-          // Update the canvas dimensions to match the video dimensions
-          if (!canvasDimensionFlag) {
-            canvasRef.current.width = videoRef.current.videoWidth;
-            canvasRef.current.height = videoRef.current.videoHeight;
-            canvasDimensionFlag = true;
-          }
+  //       // Start the webcam
+  //       webcamClient.startWebcam(async (frame) => {
 
-          // Further process the results with the WebEyeTrack library
-          // const gaze_result = await webEyeTrack.step(frame);
-          const gaze_result = null;
+  //         // Update the canvas dimensions to match the video dimensions
+  //         if (!canvasDimensionFlag) {
+  //           canvasRef.current.width = videoRef.current.videoWidth;
+  //           canvasRef.current.height = videoRef.current.videoHeight;
+  //           canvasDimensionFlag = true;
+  //         }
 
-          // Set the gaze coordinates
-          if (gaze_result) {
-            setGaze({
-              x: (gaze_result.normPog[0]+0.5) * window.innerWidth,
-              y: (gaze_result.normPog[1]+0.5) * window.innerHeight,
-              gazeState: gaze_result.gazeState,
-            });
+  //         // Further process the results with the WebEyeTrack library
+  //         // const gaze_result = await webEyeTrack.step(frame);
+  //         const gaze_result = null;
 
-            // Update performance data
-            setPerfData(gaze_result.durations);
+  //         // Set the gaze coordinates
+  //         if (gaze_result) {
+  //           setGaze({
+  //             x: (gaze_result.normPog[0]+0.5) * window.innerWidth,
+  //             y: (gaze_result.normPog[1]+0.5) * window.innerHeight,
+  //             gazeState: gaze_result.gazeState,
+  //           });
 
-            // Update debug data
-            setDebugData({
-              gazeState: gaze_result.gazeState,
-              normPog: gaze_result.normPog,
-              headVector: gaze_result.headVector,
-              faceOrigin3D: gaze_result.faceOrigin3D,
-            });
-          }
+  //           // Update performance data
+  //           setPerfData(gaze_result.durations);
 
-          // Show the eye patch based on the gaze result
-          // if (gaze_result && eyePatchRef.current instanceof HTMLCanvasElement) {
-          if (gaze_result && eyePatchRef.current) {
-            const ctx = eyePatchRef.current.getContext('2d');
-            eyePatchRef.current.width = gaze_result.eyePatch.width;
-            eyePatchRef.current.height = gaze_result.eyePatch.height;
+  //           // Update debug data
+  //           setDebugData({
+  //             gazeState: gaze_result.gazeState,
+  //             normPog: gaze_result.normPog,
+  //             headVector: gaze_result.headVector,
+  //             faceOrigin3D: gaze_result.faceOrigin3D,
+  //           });
+  //         }
 
-            if (ctx) {
-              // Draw the eye patch canvas onto the display canvas
-              ctx.clearRect(0, 0, eyePatchRef.current.width, eyePatchRef.current.height);
-              ctx.putImageData(gaze_result.eyePatch, 0, 0);
-            }
-          }
-        });
+  //         // Show the eye patch based on the gaze result
+  //         // if (gaze_result && eyePatchRef.current instanceof HTMLCanvasElement) {
+  //         if (gaze_result && eyePatchRef.current) {
+  //           const ctx = eyePatchRef.current.getContext('2d');
+  //           eyePatchRef.current.width = gaze_result.eyePatch.width;
+  //           eyePatchRef.current.height = gaze_result.eyePatch.height;
 
-        // Cleanup: stop the webcam and clear references when the component unmounts
-        return () => {
-          webcamClient.stopWebcam();
-        };
-      }
-    }
+  //           if (ctx) {
+  //             // Draw the eye patch canvas onto the display canvas
+  //             ctx.clearRect(0, 0, eyePatchRef.current.width, eyePatchRef.current.height);
+  //             ctx.putImageData(gaze_result.eyePatch, 0, 0);
+  //           }
+  //         }
+  //       });
 
-    startWebcamAndLandmarker();
-  }, []); // Empty dependency array to run only on mount/unmount
+  //       // Cleanup: stop the webcam and clear references when the component unmounts
+  //       return () => {
+  //         webcamClient.stopWebcam();
+  //       };
+  //     }
+  //   }
+
+  //   startWebcamAndLandmarker();
+  // }, []); // Empty dependency array to run only on mount/unmount
+
+  const handleClick = () => {
+    libJs.sendMessage()
+    libTs.sendMessage()
+  }
 
   return (
     <>
+      <div className="App">
+        <button onClick={handleClick}>Send Message</button>
+      </div>
       <div className="absolute left-0 right-0 w-full h-full z-100 pointer-events-none">
         <GazeDot x={gaze.x} y={gaze.y} gazeState={gaze.gazeState}/>
       </div>

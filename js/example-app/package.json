@@ -2,7 +2,6 @@
   "name": "example-app",
   "private": true,
   "version": "0.0.0",
-  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -24,7 +23,8 @@
     "suspend-react": "^0.1.3",
     "three": "^0.166.1",
     "use-suspense-fetch": "^1.7.0",
-    "webeyetrack": "file:.."
+    "webeyetrack": "file:..",
+    "webworker-lib-ts": "file:../../../../external/bundle-webworker/webworker-lib-ts"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",
