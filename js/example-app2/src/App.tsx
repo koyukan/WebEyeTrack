@@ -16,7 +16,7 @@ export default function App() {
     if (hasInitializedRef.current) return;
     hasInitializedRef.current = true;
 
-    async function startWebcamAndLandmarker() {
+    async function startWebEyeTrack() {
       if (videoRef.current && canvasRef.current) {
         const webcamClient = new WebcamClient(videoRef.current.id);
         const webEyeTrackProxy = new WebEyeTrackProxy(webcamClient);
@@ -39,7 +39,7 @@ export default function App() {
       }
     }
 
-    startWebcamAndLandmarker();
+    startWebEyeTrack();
   }, []); // Empty dependency array to run only on mount/unmount
 
   return (

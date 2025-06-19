@@ -293,11 +293,13 @@ export default class WebEyeTrack {
 
     // Perform a single forward pass to compute an affine transformation
     if (tfEyePatches.shape[0] > 3) {
-      const supportPreds = this.blazeGaze.predict(
-        tfEyePatches,
-        tfHeadVectors,
-        tfFaceOrigins3D
-      );
+      const supportPreds = tf.tidy(() => {
+        return this.blazeGaze.predict(
+          tfEyePatches,
+          tfHeadVectors,
+          tfFaceOrigins3D
+        );
+      })
       const supportPredsNumber = supportPreds.arraySync() as number[][];
       const supportYNumber = tfSupportY.arraySync() as number[][];
       const affineMatrixML = computeAffineMatrixML(
@@ -307,39 +309,36 @@ export default class WebEyeTrack {
       this.affineMatrix = tf.tensor2d(affineMatrixML, [2, 3], 'float32');
     }
 
-    for (let i = 0; i < stepsInner; i++) {
-      opt.minimize(() => {
-        let supportPreds = this.blazeGaze.predict(
-          tfEyePatches,
-          tfHeadVectors,
-          tfFaceOrigins3D
-        );
-        if (!supportPreds) {
-          throw new Error("BlazeGaze model did not return valid predictions");
-        }
+    tf.tidy(() => {
+      for (let i = 0; i < stepsInner; i++) {
+        opt.minimize(() => {
+          let supportPreds = this.blazeGaze.predict(
+            tfEyePatches,
+            tfHeadVectors,
+            tfFaceOrigins3D
+          );
+          if (!supportPreds) {
+            throw new Error("BlazeGaze model did not return valid predictions");
+          }
 
-        // Apply the affine transformation if available
-        if (this.affineMatrix) {
-          const reshapedPreds = supportPreds.reshape([-1, 2]);        // [B, 2]
-          const ones = tf.ones([reshapedPreds.shape[0], 1]);          // [B, 1]
-          const homog = tf.concat([reshapedPreds, ones], 1);          // [B, 3]
-          const affineT = this.affineMatrix.transpose();              // [3, 2]
-          const transformed = tf.matMul(homog, affineT);              // [B, 2]
-          supportPreds = transformed.reshape(supportPreds.shape);     // reshape back
-        }
+          // Apply the affine transformation if available
+          if (this.affineMatrix) {
+            supportPreds = applyAffineMatrix(this.affineMatrix, supportPreds);
+          }
 
-        const loss = tf.losses.meanSquaredError(
-          tfSupportY,
-          supportPreds
-        );
-        loss.data().then(l => console.log(`Support loss (${i}), innerLR=${innerLR}: ${l[0].toFixed(4)}`));
+          const loss = tf.losses.meanSquaredError(
+            tfSupportY,
+            supportPreds
+          );
+          loss.data().then(l => console.log(`Support loss (${i}), innerLR=${innerLR}: ${l[0].toFixed(4)}`));
 
-        return loss.asScalar();
-      });
-    }
+          return loss.asScalar();
+        });
+      }
+    });
   }
 
-  async step(frame: ImageData): Promise<GazeResult> {
+  async step(frame: ImageData, timestamp: number): Promise<GazeResult> {
     const tic1 = performance.now();
     let result = await this.faceLandmarkerClient.processFrame(frame) as FaceLandmarkerResult | null;
     if (!result || !result.faceLandmarks || result.faceLandmarks.length === 0) {
@@ -359,7 +358,8 @@ export default class WebEyeTrack {
           blazeGaze: 0,
           kalmanFilter: 0,
           total: 0
-        }
+        },
+        timestamp: timestamp // Include the timestamp
       };
     }
     const tic2 = performance.now();
@@ -395,32 +395,38 @@ export default class WebEyeTrack {
           blazeGaze: 0, // No BlazeGaze inference if eyes are closed
           kalmanFilter: 0, // No Kalman filter step if eyes are closed
           total: tic3 - tic1
-        }
+        },
+        timestamp: timestamp // Include the timestamp
       };
     }
 
-    // Perform the gaze estimation via BlazeGaze Model (tensorflow.js)
-    const inputTensor = tf.browser.fromPixels(eyePatch).toFloat().expandDims(0);
+    const [predNormPog, tic4] = tf.tidy(() => {
 
-    // Divide the inputTensor by 255 to normalize pixel values
-    const normalizedInputTensor = inputTensor.div(tf.scalar(255.0));
-    const headVectorTensor = tf.tensor2d(headVector, [1, 3]);
-    const faceOriginTensor = tf.tensor2d(faceOrigin3D, [1, 3]);
-    let outputTensor = this.blazeGaze.predict(normalizedInputTensor, headVectorTensor, faceOriginTensor);
-    tf.dispose([inputTensor, normalizedInputTensor, headVectorTensor, faceOriginTensor]);
-    const tic4 = performance.now();
+      // Perform the gaze estimation via BlazeGaze Model (tensorflow.js)
+      const inputTensor = tf.browser.fromPixels(eyePatch).toFloat().expandDims(0);
 
-    // If affine transformation is available, apply it
-    if (this.affineMatrix) {
-      outputTensor = applyAffineMatrix(this.affineMatrix, outputTensor);
-    }
+      // Divide the inputTensor by 255 to normalize pixel values
+      const normalizedInputTensor = inputTensor.div(tf.scalar(255.0));
+      const headVectorTensor = tf.tensor2d(headVector, [1, 3]);
+      const faceOriginTensor = tf.tensor2d(faceOrigin3D, [1, 3]);
+      let outputTensor = this.blazeGaze.predict(normalizedInputTensor, headVectorTensor, faceOriginTensor);
+      tf.dispose([inputTensor, normalizedInputTensor, headVectorTensor, faceOriginTensor]);
+      const tic4 = performance.now();
 
-    // Extract the 2D gaze point data from the output tensor
-    if (!outputTensor || outputTensor.shape.length === 0) {
-      throw new Error("BlazeGaze model did not return valid output");
-    }
-    const normPog = outputTensor.arraySync() as number[][];
-    tf.dispose(outputTensor);
+      // If affine transformation is available, apply it
+      if (this.affineMatrix) {
+        outputTensor = applyAffineMatrix(this.affineMatrix, outputTensor);
+      }
+
+      // Extract the 2D gaze point data from the output tensor
+      if (!outputTensor || outputTensor.shape.length === 0) {
+        throw new Error("BlazeGaze model did not return valid output");
+      }
+      return [outputTensor, tic4];
+    });
+
+    const normPog = predNormPog.arraySync() as number[][];
+    tf.dispose(predNormPog);
 
     // Apply Kalman filter to smooth the gaze point
     const kalmanOutput = this.kalmanFilter.step(normPog[0]);
@@ -446,8 +452,12 @@ export default class WebEyeTrack {
       metric_transform: {rows: 3, columns: 3, data: [1, 0, 0, 1, 0, 0, 1, 0, 0]}, // Placeholder, should be computed
       gazeState: gaze_state,
       normPog: kalmanOutput,
-      durations: durations
+      durations: durations,
+      timestamp: timestamp
     };
+
+    // Debug: Printout the tf.Memory
+    // console.log(`[WebEyeTrack] tf.Memory: ${JSON.stringify(tf.memory().numTensors)} tensors, ${JSON.stringify(tf.memory().unreliable)} unreliable, ${JSON.stringify(tf.memory().numBytes)} bytes`);
 
     // Update the latest gaze result
     this.latestGazeResult = gaze_result;

@@ -6,6 +6,8 @@ import WebEyeTrackWorker from "worker-loader?inline=no-fallback!./WebEyeTrackWor
 export default class WebEyeTrackProxy {
   private worker: Worker;
 
+  public status: 'idle' | 'inference' | 'calib' = 'idle';
+
   constructor(webcamClient: WebcamClient) {
 
     // Initialize the WebEyeTrackWorker
@@ -13,7 +15,7 @@ export default class WebEyeTrackProxy {
     console.log('WebEyeTrackProxy worker initialized');
 
     this.worker.onmessage = (mess) =>{
-      console.log(`[WebEyeTrackWorker] ${mess.data}`)
+      // console.log(`[WebEyeTrackWorker] ${mess.data}`)
       // console.log('[WebEyeTrackProxy] received message', mess);
 
       // Switch state based on message type
@@ -24,18 +26,25 @@ export default class WebEyeTrackProxy {
           // Start the webcam client and set up the frame callback
           webcamClient.startWebcam(async (frame: ImageData, timestamp: number) => {
             // Send the frame to the worker for processing
-            this.worker.postMessage({
-              type: 'step',
-              payload: { frame, timestamp }
-            })
+            if (this.status === 'idle') {
+              this.worker.postMessage({
+                type: 'step',
+                payload: { frame, timestamp }
+              })
+            }
           });
-
           break;
+
         case 'stepResult':
           // Handle gaze results
           const gazeResult: GazeResult = mess.data.result;
           this.onGazeResults(gazeResult);
           break;
+
+        case 'statusUpdate':
+          this.status = mess.data.status;
+          break;
+
         default:
           console.warn(`[WebEyeTrackProxy] Unknown message type: ${mess.data.type}`);
           break;
