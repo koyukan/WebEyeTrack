@@ -1,14 +1,11 @@
 import { FaceLandmarker, FilesetResolver, DrawingUtils, FaceLandmarkerResult } from "@mediapipe/tasks-vision";
 
+// References
+// https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker/web_js#video
 export default class FaceLandmarkerClient {
   private faceLandmarker: any;
-  private drawingUtils: any;
-  private canvasCtx: CanvasRenderingContext2D | null = null;
-  private videoElement: HTMLVideoElement;
 
-  constructor(videoElement: HTMLVideoElement) {
-    this.videoElement = videoElement;
-    // this.canvasCtx = canvasElement.getContext("2d");
+  constructor() {
   }
 
   async initialize() {
@@ -22,83 +19,19 @@ export default class FaceLandmarkerClient {
       },
       outputFaceBlendshapes: true,
       outputFacialTransformationMatrixes: true,
-      // runningMode: "IMAGE", // VIDEO
-      runningMode: "VIDEO",
+      runningMode: "IMAGE",
       numFaces: 1,
     });
-
-    // Initialize DrawingUtils
-    // if (this.canvasCtx) {
-    //   this.drawingUtils = new DrawingUtils(this.canvasCtx);
-    // }
   }
 
-  async processFrame(frame: HTMLVideoElement | null): Promise<any> {
+  async processFrame(frame: ImageData): Promise<FaceLandmarkerResult | null> {
     if (!this.faceLandmarker) {
       console.error("FaceLandmarker is not loaded yet.");
-      return;
+      return null;
     }
 
-    const startTimeMs = performance.now();
     let result: FaceLandmarkerResult;
-    if (!frame) {
-      result = await this.faceLandmarker.detectForVideo(this.videoElement, startTimeMs);
-    } else {
-      // result = await this.faceLandmarker.process(frame, startTimeMs);
-      result = await this.faceLandmarker.detect(frame);
-    }
-
-    // Clear the canvas before drawing
-    // if (this.canvasCtx) {
-    //   this.canvasCtx.clearRect(0, 0, this.canvasCtx.canvas.width, this.canvasCtx.canvas.height);
-    // }
-
-    // if (result.faceLandmarks) {
-    //   for (const landmarks of result.faceLandmarks) {
-    //     this.drawLandmarks(landmarks);
-    //   }
-    // }
-
+    result = await this.faceLandmarker.detect(frame);
     return result;
-  }
-
-  drawLandmarks(landmarks: any) {
-    if (this.drawingUtils) {
-      this.drawingUtils.drawConnectors(
-        landmarks,
-        FaceLandmarker.FACE_LANDMARKS_TESSELATION,
-        { color: "#C0C0C070", lineWidth: 0.5 }
-      );
-      this.drawingUtils.drawConnectors(
-        landmarks,
-        FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE,
-        { color: "#FF3030" }
-      );
-      this.drawingUtils.drawConnectors(
-        landmarks,
-        FaceLandmarker.FACE_LANDMARKS_LEFT_EYE,
-        { color: "#30FF30" }
-      );
-      this.drawingUtils.drawConnectors(
-        landmarks,
-        FaceLandmarker.FACE_LANDMARKS_FACE_OVAL,
-        { color: "#E0E0E0" }
-      );
-      this.drawingUtils.drawConnectors(
-        landmarks,
-        FaceLandmarker.FACE_LANDMARKS_LIPS,
-        { color: "#E0E0E0" }
-      );
-      this.drawingUtils.drawConnectors(
-        landmarks,
-        FaceLandmarker.FACE_LANDMARKS_RIGHT_IRIS,
-        { color: "#FF3030" }
-      );
-      this.drawingUtils.drawConnectors(
-        landmarks,
-        FaceLandmarker.FACE_LANDMARKS_LEFT_IRIS,
-        { color: "#30FF30" }
-      );
-    }
   }
 }

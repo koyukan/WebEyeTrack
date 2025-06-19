@@ -2,7 +2,7 @@ import { ImageData } from 'canvas';
 global.ImageData = ImageData as any;
 
 import { computeHomography, applyHomography, warpImageData } from './mathUtils';
-import { Point } from "./types";
+import { Point } from "../types";
 
 function pointsAlmostEqual(p1: Point, p2: Point, epsilon: number = 1e-3) {
   return (

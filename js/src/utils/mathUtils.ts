@@ -1,7 +1,7 @@
 import { Matrix, inverse, pseudoInverse, solve} from 'ml-matrix';
 import { Matrix as MediaPipeMatrix, NormalizedLandmark } from '@mediapipe/tasks-vision';
 import * as tf from '@tensorflow/tfjs';
-import { Point } from './types';
+import { Point } from '../types';
 import { safeSVD } from './safeSVD';
 
 // Used to determine the width of the face
@@ -172,23 +172,13 @@ export function cropImageData(
 }
 
 export function obtainEyePatch(
-    frame: HTMLVideoElement,
+    frame: ImageData,
     faceLandmarks: Point[],
     facePaddingCoefs: [number, number] = [0.4, 0.2],
     faceCropSize: number = 512,
     dstImgSize: [number, number] = [512, 128]
 ): ImageData {
 
-    // Step 1: Convert HTMLVideoElement to HTMLImageElement
-    const videoCanvas = document.createElement('canvas');
-    videoCanvas.width = frame.videoWidth;
-    videoCanvas.height = frame.videoHeight;
-    const ctx = videoCanvas.getContext('2d')!;
-    ctx.drawImage(frame, 0, 0);
-
-    // Step 2: Extract ImageData from canvas
-    const imageData = ctx.getImageData(0, 0, videoCanvas.width, videoCanvas.height);
-   
     // Step 3: Prepare src and dst
     const center = faceLandmarks[4];
     const leftTop = faceLandmarks[103];
@@ -219,7 +209,7 @@ export function obtainEyePatch(
     const H = computeHomography(srcPts, dstPts);
 
     // Step 5: Warp the image
-    const warped = warpImageData(imageData, H, faceCropSize, faceCropSize);
+    const warped = warpImageData(frame, H, faceCropSize, faceCropSize);
 
     // Step 6: Apply the homography matrix to the facial landmarks
     const warpedLandmarks = faceLandmarks.map(pt => applyHomography(H, pt));

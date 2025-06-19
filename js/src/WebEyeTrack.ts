@@ -17,8 +17,8 @@ import {
   computeEAR,
   computeAffineMatrixML,
   applyAffineMatrix
-} from "./mathUtils";
-import { KalmanFilter2D } from "./filter";
+} from "./utils/mathUtils";
+import { KalmanFilter2D } from "./utils/filter";
 
 // Reference
 // https://mediapipe-studio.webapps.google.com/demo/face_landmarker
@@ -84,15 +84,13 @@ export default class WebEyeTrack {
   public clickTTL: number = 60; // Time-to-live for click points in seconds
 
   constructor(
-      videoRef: HTMLVideoElement, 
-      // canvasRef: HTMLCanvasElement,
       maxPoints: number = 10,
       clickTTL: number = 60 // Time-to-live for click points in seconds
     ) {
 
     // Initialize services
     this.blazeGaze = new BlazeGaze();
-    this.faceLandmarkerClient = new FaceLandmarkerClient(videoRef);
+    this.faceLandmarkerClient = new FaceLandmarkerClient();
     this.kalmanFilter = new KalmanFilter2D();
     
     // Storing configs
@@ -100,8 +98,8 @@ export default class WebEyeTrack {
     this.clickTTL = clickTTL;
 
     // Handling mouse clicks for calibration
-    window.addEventListener('click', this.handleClick.bind(this), false);
-    console.log('👁️ WebEyeTrack initialized');
+    // window.addEventListener('click', this.handleClick.bind(this), false);
+    // console.log('👁️ WebEyeTrack initialized');
   }
 
   async initialize(): Promise<void> {
@@ -168,7 +166,7 @@ export default class WebEyeTrack {
     }
   }
 
-  computeFaceOrigin3D(frame: HTMLVideoElement, normFaceLandmarks: Point[], faceLandmarks: Point[], faceRT: Matrix): number[] {
+  computeFaceOrigin3D(frame: ImageData, normFaceLandmarks: Point[], faceLandmarks: Point[], faceRT: Matrix): number[] {
 
     // Estimate the face width in centimeters if not set
     if (this.faceWidthComputed === false) {
@@ -183,8 +181,8 @@ export default class WebEyeTrack {
       faceRT,
       this.intrinsicsMatrix,
       this.faceWidthCm,
-      frame.videoWidth,
-      frame.videoHeight,
+      frame.width,
+      frame.height,
       this.latestGazeResult?.faceOrigin3D?.[2] ?? 60
     );
 
@@ -197,11 +195,11 @@ export default class WebEyeTrack {
     return faceOrigin3D;
   }
 
-  prepareInput(frame: HTMLVideoElement, result: FaceLandmarkerResult):  [ImageData, number[], number[]] {
+  prepareInput(frame: ImageData, result: FaceLandmarkerResult):  [ImageData, number[], number[]] {
 
     // Get the dimensions of the video frame
-    const width = frame.videoWidth;
-    const height = frame.videoHeight;
+    const width = frame.width;
+    const height = frame.height;
 
     // If perspective matrix is not set, initialize it
     if (!this.perspectiveMatrixSet) {
@@ -348,11 +346,12 @@ export default class WebEyeTrack {
 
   }
 
-  async step(frame: HTMLVideoElement): Promise<GazeResult> {
+  async step(frame: ImageData): Promise<GazeResult> {
 
     const tic1 = performance.now();
     // let result = await this.faceLandmarkerClient.processFrame(frame);
-    let result = await this.faceLandmarkerClient.processFrame(null) as FaceLandmarkerResult | null;
+    let result = await this.faceLandmarkerClient.processFrame(frame) as FaceLandmarkerResult | null;
+    result = null;
     if (!result || !result.faceLandmarks || result.faceLandmarks.length === 0) {
       // throw new Error("No face landmarks detected");
       return {

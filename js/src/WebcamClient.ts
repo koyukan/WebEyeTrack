@@ -1,7 +1,8 @@
+import { convertVideoFrameToImageData } from './utils/misc';
 export default class WebcamClient {
     private videoElement: HTMLVideoElement;
     private stream?: MediaStream;
-    private frameCallback?: (frame: HTMLVideoElement) => void;
+    private frameCallback?: (frame: ImageData, timestamp: number) => Promise<void>;
 
     constructor(videoElementId: string) {
         const videoElement = document.getElementById(videoElementId) as HTMLVideoElement;
@@ -11,7 +12,7 @@ export default class WebcamClient {
         this.videoElement = videoElement;
     }
 
-    async startWebcam(frameCallback?: (frame: HTMLVideoElement) => Promise<void>): Promise<void> {
+    async startWebcam(frameCallback?: (frame: ImageData, timestamp: number) => Promise<void>): Promise<void> {
         try {
             const constraints: MediaStreamConstraints = {
                 video: {
@@ -55,11 +56,13 @@ export default class WebcamClient {
     private _processFrames(): void {
         const process = async () => {
             if (!this.videoElement || this.videoElement.paused || this.videoElement.ended) return;
-            // console.log("Processing frame...", performance.now());
+
+            // Convert the current video frame to ImageData
+            const imageData = convertVideoFrameToImageData(this.videoElement);
 
             // Call the frame callback if provided
             if (this.frameCallback) {
-                await this.frameCallback(this.videoElement);
+                await this.frameCallback(imageData, this.videoElement.currentTime);
             }
 
             // Request the next frame

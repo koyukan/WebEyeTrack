@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { WebcamClient, WebWorkerLibTs, GazeResult } from 'webeyetrack';
+import { WebcamClient, WebEyeTrackProxy, GazeResult } from 'webeyetrack';
 import GazeDot from './GazeDot.jsx';
 import DebugOverlay from './DebugOverlay';
 
@@ -13,10 +13,6 @@ export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   let canvasDimensionFlag = false;
 
-  const libTs = useMemo(()=>{
-      return new WebWorkerLibTs()
-  },[])
-
   useEffect(() => {
     if (hasInitializedRef.current) return;
     hasInitializedRef.current = true;
@@ -24,24 +20,31 @@ export default function App() {
     async function startWebcamAndLandmarker() {
       if (videoRef.current && canvasRef.current) {
         const webcamClient = new WebcamClient(videoRef.current.id);
+        const webEyeTrackProxy = new WebEyeTrackProxy(webcamClient);
 
-        // Start the webcam
-        webcamClient.startWebcam(async (frame: HTMLVideoElement) => {});
+        // Define callback for gaze results
+        webEyeTrackProxy.onGazeResults = (gazeResult: GazeResult) => {
+          setGaze({
+            x: (gazeResult.normPog[0]/window.innerWidth) + 0.5,
+            y: (gazeResult.normPog[1]/window.innerHeight) + 0.5,
+            gazeState: gazeResult.gazeState
+          });
+          setDebugData({
+            gazeState: gazeResult.gazeState,
+            normPog: gazeResult.normPog,
+            headVector: gazeResult.headVector,
+            faceOrigin3D: gazeResult.faceOrigin3D,
+          });
+          setPerfData(gazeResult.durations);
+        }
       }
     }
 
     startWebcamAndLandmarker();
   }, []); // Empty dependency array to run only on mount/unmount
 
-  const handleClick = () => {
-    libTs.sendMessage()
-  }
-
   return (
     <>
-      <div className="App">
-        <button onClick={handleClick}>Send Message</button>
-      </div>
       <div className="absolute left-0 right-0 w-full h-full z-100 pointer-events-none">
         <GazeDot x={gaze.x} y={gaze.y} gazeState={gaze.gazeState}/>
       </div>
