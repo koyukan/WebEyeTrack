@@ -80,11 +80,11 @@ export default class WebEyeTrack {
   };
 
   // Configuration
-  public maxPoints: number = 10;
+  public maxPoints: number = 5;
   public clickTTL: number = 60; // Time-to-live for click points in seconds
 
   constructor(
-      maxPoints: number = 10,
+      maxPoints: number = 5,
       clickTTL: number = 60 // Time-to-live for click points in seconds
     ) {
 
@@ -107,25 +107,27 @@ export default class WebEyeTrack {
   pruneCalibData() {
     
     // Prune the calibration data to keep only the last maxPoints points
-    if (this.calibData.supportX.length > this.maxPoints) {
-      this.calibData.supportX = this.calibData.supportX.slice(-this.maxPoints);
-      this.calibData.supportY = this.calibData.supportY.slice(-this.maxPoints);
-      this.calibData.timestamps = this.calibData.timestamps.slice(-this.maxPoints);
-      this.calibData.ptType = this.calibData.ptType.slice(-this.maxPoints);
-    }
+    tf.tidy(() => {
+      if (this.calibData.supportX.length > this.maxPoints) {
+        this.calibData.supportX = this.calibData.supportX.slice(-this.maxPoints);
+        this.calibData.supportY = this.calibData.supportY.slice(-this.maxPoints);
+        this.calibData.timestamps = this.calibData.timestamps.slice(-this.maxPoints);
+        this.calibData.ptType = this.calibData.ptType.slice(-this.maxPoints);
+      }
 
-    // Apply time-to-live pruning for 'click' points
-    const currentTime = Date.now();
-    const ttl = this.clickTTL * 1000; // Convert seconds to milliseconds
+      // Apply time-to-live pruning for 'click' points
+      const currentTime = Date.now();
+      const ttl = this.clickTTL * 1000; // Convert seconds to milliseconds
 
-    // Filter all together
-    const filteredIndices = this.calibData.timestamps.map((timestamp, index) => {
-      return (currentTime - timestamp <= ttl || this.calibData.ptType[index] !== 'click') ? index : -1;
-    }).filter(index => index !== -1);
-    this.calibData.supportX = filteredIndices.map(index => this.calibData.supportX[index]);
-    this.calibData.supportY = filteredIndices.map(index => this.calibData.supportY[index]);
-    this.calibData.timestamps = filteredIndices.map(index => this.calibData.timestamps[index]);
-    this.calibData.ptType = filteredIndices.map(index => this.calibData.ptType[index]);
+      // Filter all together
+      const filteredIndices = this.calibData.timestamps.map((timestamp, index) => {
+        return (currentTime - timestamp <= ttl || this.calibData.ptType[index] !== 'click') ? index : -1;
+      }).filter(index => index !== -1);
+      this.calibData.supportX = filteredIndices.map(index => this.calibData.supportX[index]);
+      this.calibData.supportY = filteredIndices.map(index => this.calibData.supportY[index]);
+      this.calibData.timestamps = filteredIndices.map(index => this.calibData.timestamps[index]);
+      this.calibData.ptType = filteredIndices.map(index => this.calibData.ptType[index]);
+    })
   }
 
   handleClick(x: number, y: number) {
@@ -311,29 +313,19 @@ export default class WebEyeTrack {
 
     tf.tidy(() => {
       for (let i = 0; i < stepsInner; i++) {
-        opt.minimize(() => {
-          let supportPreds = this.blazeGaze.predict(
-            tfEyePatches,
-            tfHeadVectors,
-            tfFaceOrigins3D
-          );
-          if (!supportPreds) {
-            throw new Error("BlazeGaze model did not return valid predictions");
-          }
-
-          // Apply the affine transformation if available
-          if (this.affineMatrix) {
-            supportPreds = applyAffineMatrix(this.affineMatrix, supportPreds);
-          }
-
-          const loss = tf.losses.meanSquaredError(
-            tfSupportY,
-            supportPreds
-          );
-          loss.data().then(l => console.log(`Support loss (${i}), innerLR=${innerLR}: ${l[0].toFixed(4)}`));
-
+        const { grads, value: loss } = tf.variableGrads(() => {
+          const preds = this.blazeGaze.predict(tfEyePatches, tfHeadVectors, tfFaceOrigins3D);
+          const predsTransformed = this.affineMatrix ? applyAffineMatrix(this.affineMatrix, preds) : preds;
+          const loss = tf.losses.meanSquaredError(tfSupportY, predsTransformed);
           return loss.asScalar();
         });
+
+        // Apply grads manually
+        // @ts-ignore
+        opt.applyGradients(grads);
+
+        // Optionally log
+        loss.data().then(val => console.log(`Loss = ${val[0].toFixed(4)}`));
       }
     });
   }
