@@ -11,7 +11,6 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const eyePatchRef = useRef<HTMLCanvasElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  let canvasDimensionFlag = false;
 
   useEffect(() => {
     if (hasInitializedRef.current) return;
@@ -25,8 +24,8 @@ export default function App() {
         // Define callback for gaze results
         webEyeTrackProxy.onGazeResults = (gazeResult: GazeResult) => {
           setGaze({
-            x: (gazeResult.normPog[0]/window.innerWidth) + 0.5,
-            y: (gazeResult.normPog[1]/window.innerHeight) + 0.5,
+            x: (gazeResult.normPog[0] + 0.5) * window.innerWidth,
+            y: (gazeResult.normPog[1] + 0.5) * window.innerHeight,
             gazeState: gazeResult.gazeState
           });
           setDebugData({

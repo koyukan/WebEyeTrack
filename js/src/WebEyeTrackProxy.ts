@@ -7,8 +7,11 @@ export default class WebEyeTrackProxy {
   private worker: Worker;
 
   constructor(webcamClient: WebcamClient) {
+
+    // Initialize the WebEyeTrackWorker
     this.worker = new WebEyeTrackWorker();
     console.log('WebEyeTrackProxy worker initialized');
+
     this.worker.onmessage = (mess) =>{
       console.log(`[WebEyeTrackWorker] ${mess.data}`)
       // console.log('[WebEyeTrackProxy] received message', mess);
@@ -17,6 +20,16 @@ export default class WebEyeTrackProxy {
       switch (mess.data.type) {
         case 'ready':
           console.log('[WebEyeTrackProxy] Worker is ready');
+
+          // Start the webcam client and set up the frame callback
+          webcamClient.startWebcam(async (frame: ImageData, timestamp: number) => {
+            // Send the frame to the worker for processing
+            this.worker.postMessage({
+              type: 'step',
+              payload: { frame, timestamp }
+            })
+          });
+
           break;
         case 'stepResult':
           // Handle gaze results
@@ -32,14 +45,14 @@ export default class WebEyeTrackProxy {
     // Initialize the worker
     this.worker.postMessage({ type: 'init' });
 
-    // Start the webcam client and set up the frame callback
-    webcamClient.startWebcam(async (frame: ImageData, timestamp: number) => {
-      // Send the frame to the worker for processing
-      this.worker.postMessage({
-        type: 'step',
-        payload: { frame, timestamp }
-      })
-    });
+    // Add mouse handler for re-calibration
+    window.addEventListener('click', (e: MouseEvent) => {
+      // Convert px to normalized coordinates
+      const normX = (e.clientX / window.innerWidth) - 0.5;
+      const normY = (e.clientY / window.innerHeight) - 0.5;
+      console.log(`[WebEyeTrackProxy] Click at (${normX}, ${normY})`);
+      this.worker.postMessage({ type: 'click', payload: { x: normX, y: normY }});
+    })
   }
 
   // Callback for gaze results

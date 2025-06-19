@@ -1,11 +1,3 @@
-// import WebEyeTrack from './WebEyeTrack';
-
-// // @ts-ignore
-// const ctx: Worker = self as any;
-
-// onmessage = async (event) => {
-//     ctx.postMessage(`[WORKER_TS] ping`)
-// }
 import WebEyeTrack from './WebEyeTrack';
 
 let tracker: WebEyeTrack;
@@ -15,15 +7,26 @@ const ctx: Worker = self as any;
 self.onmessage = async (e) => {
   const { type, payload } = e.data;
 
-  if (type === 'init') {
-    tracker = new WebEyeTrack(null, null);
-    await tracker.initialize();
-    self.postMessage({ type: 'ready' });
-  }
+  switch (type) {
+    case 'init':
+      tracker = new WebEyeTrack();
+      await tracker.initialize();
+      self.postMessage({ type: 'ready' });
+      break;
 
-  if (type === 'step') {
-    const result = await tracker.step(payload.frame as ImageData);
-    self.postMessage({ type: 'stepResult', result });
+    case 'step':
+      const result = await tracker.step(payload.frame as ImageData);
+      self.postMessage({ type: 'stepResult', result });
+      break;
+    
+    case 'click':
+      // Handle click event for re-calibration
+      tracker.handleClick(payload.x, payload.y);
+      break;
+
+    default:
+      console.warn(`[WebEyeTrackWorker] Unknown message type: ${type}`);
+      break;
   }
 };
 
