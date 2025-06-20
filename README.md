@@ -21,8 +21,8 @@ Deciding which version of WebEyeTrack depends on your purpose and target platfor
 
 Go to the README (links below) to the corresponding Python/JS version to get stared using these packages.
 
-* [Python ``webeyetrack`` PYPI package](./python/README.md)
-* [JavaScript ``webeyetrack`` NPM package](./js/README.md)
+* [Python ``webeyetrack`` PYPI package](./python)
+* [JavaScript ``webeyetrack`` NPM package](./js)
 
 # Acknowledgements
 

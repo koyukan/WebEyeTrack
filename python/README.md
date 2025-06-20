@@ -6,7 +6,7 @@ As detailed in our paper, the Python version of WebEyeTrack performs the two-ste
 
 For the following repo, make sure to use Tensorflow/Keras 2.x and not the latest Tensorflow/Keras 3.x since the latest version of Keras isn't fully support in TensorflowJS and results in issues when trying to use the required ``LayersModel`` for on-device model adaptation.
 
-Tested setup: 
+Tested setup:
 * Ubuntu 24.04
 * Python 3.10
 * Tensorflow 2.11.1
@@ -14,7 +14,7 @@ Tested setup:
 
 Aside from this warning, run the following command to install the ``webeyetrack`` package
 
-```
+```bash
 git clone https://github.com/redforestai/webeyetrack
 cd python
 pip install .
@@ -22,9 +22,9 @@ pip install .
 
 # Demo
 
-The demo can be located within the ``demo`` directory. Make sure to install the ``webeyetrack`` package first. To run the demo, run the following command
+The demo can be located within the ``demo`` directory. Make sure to install the ``webeyetrack`` package first. To run the demo, run the following command:
 
-```
+```bash
 cd demo
 pip install requirements.txt
 python main.py
@@ -34,13 +34,13 @@ python main.py
 
 To use the ``webeyetrack`` package, you need to create a ``WebEyeTrack`` tracker instance.
 
-```
+```python
 from webeyetrack import WebEyeTrack, WebEyeTrackConfig
 wet = WebEyeTrack(
     WebEyeTrackConfig(
-        // Add your screen's meta information here
-        // You can use ``screeninfo`` (Windows/Linux) 
-        // or ``Quartz`` for MacOS
+        # Add your screen's meta information here
+        # You can use ``screeninfo`` (Windows/Linux) 
+        # or ``Quartz`` for MacOS
         screen_px_dimensions=(1920, 1080),
         screen_cm_dimensions=(32, 18),
     )
@@ -49,7 +49,7 @@ wet = WebEyeTrack(
 
 Below is a simple example of reading from the webcam via OpenCV and processing the frame.
 
-```
+```python
 from webeyetrack import TrackingStatus
 cap = cv2.VideoCapture(0)
 while True:
@@ -65,7 +65,7 @@ while True:
 
 Perform new person adaptation, use the one of the ``adapt`` methods, such as ``adapt_from_gaze_results``. Simply provide a list of prior ``gaze_results`` with their ground truth normalized PoG. 
 
-```
+```python
 gaze_results = [...] # list of prior gaze results
 norm_pogs = [...] # list of matching groudn truth PoG
 wet.adapt_from_gaze_results(gaze_results, norm_pogs)
@@ -104,12 +104,14 @@ For the training, we download the original datasets provided by MPIIFaceGaze, Ey
 
 ## Datasets
 
-Before starting to download the datasets, please make sure to have more than 1.25 TB available to account for all datasets. Download the following original datasets using the links below:
+Before starting to download the datasets, please make sure to have more than 1.25 TB available to account for all datasets. Account that you will be downloading a zip and unzipping will increase memory twice over.
+
+Download the following original datasets using the links below:
 
 * [GazeCapture](https://gazecapture.csail.mit.edu/download.php): ~200 GB
 * [MPIIFaceGaze](https://www.collaborative-ai.org/research/datasets/MPIIFaceGaze/):
 * [EyeDiap](https://www.idiap.ch/en/scientific-research/data/eyediap):
-* [Eye of the Typer](https://webgazer.cs.brown.edu/data/)
+* [Eye of the Typer](https://webgazer.cs.brown.edu/data/):
 
 For GazeCapture, MPIIFaceGaze, and EyeDiap, place these datasets within the ``data`` directory at the root of the GitHub repository. 
 
@@ -121,7 +123,7 @@ Similar to other gaze estimation methods, we perform a data normalization step t
 
 To perform the preprocessing for GazeCapture, MPIIFaceGaze, and EyeDiap, run the following commands:
 
-```
+```bash
 cd python/scripts/preprocessing
 python preprocess.py --dataset MPIIFaceGaze
 python output_space.py --dataset MPIIFaceGaze
@@ -133,14 +135,14 @@ python output_space.py --dataset EyeDiap
 
 Beware that this preprocessing routines can take up to hours and will consume more memory. The resulting preprocessing datasets will be stored in the ``data/generated`` directory.
 
-For Eye of the Typer dataset preprocessing, following the [instructions provided in the dataset webpage](https://webgazer.cs.brown.edu/data/#:~:text=Instructions).
+For Eye of the Typer dataset preprocessing, following the [instructions provided in the dataset webpage](https://webgazer.cs.brown.edu/data/#:~:text=Using%20the%20Dataset%20Extractor).
 
 ## Training Routines
 
 For training, we use configuration files to specify the runs parameters and keep record of the config of prior runs, as this is stored with the logs. The training losses, metrics, and resulting trained models will be stored within the ``logs`` directory inside the ``ml_routines`` via Tensorboard format. Below is how to run the training for all image datasets:
 
 #### autoencoder
-```
+```bash
 cd python/scripts/ml_routines
 python train_autoencoder.py --config configs/train/autoencoder_mpiifacegaze_config.yml
 python train_autoencoder.py --config configs/train/autoencoder_gazecapture_config.yml
@@ -148,7 +150,7 @@ python train_autoencoder.py --config configs/train/autoencoder_eyediap_config.ym
 ```
 #### maml
 For maml training, make sure to change the ``weight_fp`` parameter to point to your autoencoder checkpoint. To make this work, place the generated log directory inside the ``saved_models`` directory inside ``ml_routines`` allow prior checkpoint loading.
-```
+```bash
 cd python/scripts/ml_routines
 python train_maml.py --config configs/train/maml_mpiifacegaze_config.yml
 python train_maml.py --config configs/train/maml_gazecapture_config.yml
@@ -157,7 +159,7 @@ python train_maml.py --config configs/train/maml_eyediap_config.yml
 
 To observe the training logs, run tensorboard with the following command:
 
-```
+```bash
 cd python/scripts/ml_routines
 python tensorboard --logdir logs
 ```
@@ -166,7 +168,7 @@ python tensorboard --logdir logs
 
 Similar to training, the evaluation uses configuration files to help explore parameters. Make sure to move the trained model directories inside the ``saved_model`` directory and modify the config files ``weight_fp`` to properly load the trained model checkpoint for the purposes of evaluation. To run the evaluations, use the following commands:
 
-```
+```bash
 # Image Datasets
 cd python/scripts/ml_routines
 python eval_maml.py --config configs/eval/maml_mpiifacegaze_config.yml
