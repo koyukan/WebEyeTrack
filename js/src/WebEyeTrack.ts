@@ -424,6 +424,10 @@ export default class WebEyeTrack {
     const kalmanOutput = this.kalmanFilter.step(normPog[0]);
     const tic5 = performance.now();
 
+    // Clip the output to the range of [-0.5, 0.5]
+    kalmanOutput[0] = Math.max(-0.5, Math.min(0.5, kalmanOutput[0]));
+    kalmanOutput[1] = Math.max(-0.5, Math.min(0.5, kalmanOutput[1]));
+
     // Log the timings
     const durations = {
       faceLandmarker: tic2 - tic1,

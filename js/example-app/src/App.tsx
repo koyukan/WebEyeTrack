@@ -47,7 +47,7 @@ export default function App() {
       <div className="absolute left-0 right-0 w-full h-full z-100 pointer-events-none">
         <GazeDot x={gaze.x} y={gaze.y} gazeState={gaze.gazeState}/>
       </div>
-      <div className="flex items-center justify-center h-screen w-full bg-black relative">
+      <div className="flex flex-col justify-end h-screen w-full bg-black relative">
         <video
           id='webcam'
           ref={videoRef}
@@ -63,11 +63,13 @@ export default function App() {
           ref={canvasRef}
           className="absolute z-20 top-0 left-0 h-1/5"
         />
-      </div>
 
-      {/* ✅ Show the debug data overlay */}
-      <DebugOverlay data={debugData} position="bottom-2 right-2"/>
-      <DebugOverlay data={perfData} position="bottom-2 left-2"/>
+        {/* ✅ Show the debug data overlay */}
+        <div className="flex flex-col items-center md:flex-row md:justify-between m-8 mb-16">
+          <DebugOverlay data={debugData}/>
+          <DebugOverlay data={perfData}/>
+        </div>
+      </div>
     </>
   );
 }
