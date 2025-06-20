@@ -3,7 +3,7 @@ Created by <a href="https://edavalosanaya.github.io" target="_blank">Eduardo Dav
 
 ### [Project](https://) | [Paper](https://) | [Demo](https://)
 
-WebEyeTrack is a framework that uses a lightweight CNN-based neural network to predict the (x,y) gaze point on the screen. The framework provides both a Python and JavaScript/TypeScipt (clientside) versions to support research/testing and deployment via TSJS. It performs few-shot gaze estimation by collecting samples on-device to adapt the model to account for unseen persons.
+WebEyeTrack is a framework that uses a lightweight CNN-based neural network to predict the ``(x,y)`` gaze point on the screen. The framework provides both a Python and JavaScript/TypeScript (client-side) versions to support research/testing and deployment via TS/JS. It performs few-shot gaze estimation by collecting samples on-device to adapt the model to account for unseen persons.
 
 # Getting Started
 
@@ -23,10 +23,6 @@ Go to the README (links below) to the corresponding Python/JS version to get sta
 
 * [Python ``webeyetrack`` PYPI package](./python/README.md)
 * [JavaScript ``webeyetrack`` NPM package](./js/README.md)
-
-# Publications
-
-
 
 # Acknowledgements
 

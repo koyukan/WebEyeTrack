@@ -16,6 +16,5 @@
   },
   "exclude": [
     "example-app",
-    "example-app2",
   ]
 }
