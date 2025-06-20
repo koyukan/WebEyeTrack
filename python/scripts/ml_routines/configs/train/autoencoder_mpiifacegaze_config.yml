@@ -27,8 +27,8 @@ training:
 
   losses:
     RECONT_COEF: 1.0
-    CONSISTENCY_COEF: 1.0
-    GAZE_COEF: 0.1
+    CONSISTENCY_COEF: 0.2
+    GAZE_COEF: 1.0
 
 # Configuration for the model.
 model:

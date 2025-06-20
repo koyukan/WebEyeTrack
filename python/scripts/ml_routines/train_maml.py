@@ -29,7 +29,8 @@ from data import (
 )
 from utils import (
     mae_cm_loss,
-    l2_loss
+    l2_loss,
+    save_model
 )
 
 CWD = pathlib.Path(__file__).parent
@@ -189,8 +190,6 @@ def maml_train(
 
     # Track best validation loss
     best_val_query_loss = float("inf")
-    best_model_path = RUN_DIR / 'maml_gaze_mlp_best.keras'
-    best_full_model_path = RUN_DIR / 'full_model_best.keras'
 
     for step in tqdm(range(steps_outer), desc="Meta Training Steps"):
 
@@ -292,11 +291,17 @@ def maml_train(
             # Save best model
             if avg_val_query_loss < best_val_query_loss:
                 best_val_query_loss = avg_val_query_loss
-                gaze_mlp.save(best_model_path)
 
-                # Also save thAdame entire model for inference use later
+                # Also save the entire model for inference use later
                 full_model = build_full_inference_model(encoder_model, gaze_mlp, model_config)
-                full_model.save(best_full_model_path)
+                save_model(
+                    {
+                        'full_model': full_model,
+                        'encoder': encoder_model,
+                        'gaze_mlp': gaze_mlp,
+                    },
+                    RUN_DIR
+                )
 
                 print(f"New best model saved at step {step} with val query loss {avg_val_query_loss:.4f}")
 
@@ -324,8 +329,8 @@ def maml_train(
     print("MAML Training completed.")
 
     # Return the best model
-    gaze_mlp.load_weights(best_model_path)
-    print(f"Best model loaded from {best_model_path}")
+    gaze_mlp.load_weights(RUN_DIR / 'gaze_mlp.h5')
+    print(f"Best model loaded from {RUN_DIR / 'gaze_mlp.h5'}")
     return gaze_mlp
 
 def maml_test(
@@ -463,14 +468,11 @@ def train(args, config):
     # Modify the weights_fp
     if config['model']['weights_fp'] is not None:
         dir = SAVED_MODELS_DIR / config['model']['weights_fp']
-        model_path = dir / 'best_model.keras'
+        model_path = dir / 'full_model.h5'
         if model_path.exists():
-            print(f"Using 'autoencoder' prior checkpoint")
-        if not model_path.exists():
-            model_path = dir / 'full_model_best.keras'
-            if not model_path.exists():
-                raise FileNotFoundError(f"Model weights not found at {model_path}. Please check the path.")
-            print(f"Using 'maml' prior checkpoint")
+            print(f"Using prior checkpoint at {model_path}")
+        else:
+            raise FileNotFoundError(f"Model weights not found at {model_path}. Please check the path.")
         config['model']['weights_fp'] = model_path
     else:
         print("WARNING: No model weights path provided, using default.")
