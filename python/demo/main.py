@@ -133,11 +133,26 @@ class App(QtWidgets.QMainWindow):
         self.latest_gaze_result = None
         self.latest_click_calib = None
 
+        # History of gaze speed metrics for smoothing
+        self.gaze_speed_history = defaultdict(list)
+        self.smoothing_window = 50  # You can make this configurable
+
     def handle_gaze_speed_update(self, durations):
-        # Convert seconds to ms
+        # Convert seconds to milliseconds
         durations = {key: value * 1000 for key, value in durations.items()}
-        # Format the dict to have each key-value pair on a new line
-        speed_text = "\n".join([f"{key}: {value:.2f} ms" for key, value in durations.items()])
+
+        smoothed_durations = {}
+
+        for key, value in durations.items():
+            history = self.gaze_speed_history[key]
+            history.append(value)
+            if len(history) > self.smoothing_window:
+                history.pop(0)
+            avg = sum(history) / len(history)
+            smoothed_durations[key] = avg
+
+        # Format the dict to display smoothed durations
+        speed_text = "\n".join([f"{key}: {value:.2f} ms" for key, value in smoothed_durations.items()])
         self.gaze_speed_label.setText(f"Speed:\n{speed_text}")
 
     def handle_mouse_click(self, event):

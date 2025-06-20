@@ -32,4 +32,5 @@ export interface GazeResult {
 
   // Meta data
   durations: Record<string, number>; // seconds
+  timestamp: number; // milliseconds
 }

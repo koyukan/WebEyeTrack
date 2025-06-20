@@ -1,7 +1,8 @@
+import { convertVideoFrameToImageData } from './utils/misc';
 export default class WebcamClient {
     private videoElement: HTMLVideoElement;
     private stream?: MediaStream;
-    private frameCallback?: (frame: HTMLVideoElement) => void;
+    private frameCallback?: (frame: ImageData, timestamp: number) => Promise<void>;
 
     constructor(videoElementId: string) {
         const videoElement = document.getElementById(videoElementId) as HTMLVideoElement;
@@ -11,7 +12,7 @@ export default class WebcamClient {
         this.videoElement = videoElement;
     }
 
-    async startWebcam(frameCallback?: (frame: HTMLVideoElement) => void): Promise<void> {
+    async startWebcam(frameCallback?: (frame: ImageData, timestamp: number) => Promise<void>): Promise<void> {
         try {
             const constraints: MediaStreamConstraints = {
                 video: {
@@ -34,8 +35,12 @@ export default class WebcamClient {
             // Start video playback
             this.videoElement.onloadedmetadata = () => {
                 this.videoElement.play();
-                this._processFrames();
             };
+
+            this.videoElement.addEventListener('loadeddata', () => {
+                this._processFrames();
+            });
+
         } catch (error) {
             console.error("Error accessing the webcam:", error);
         }
@@ -48,25 +53,22 @@ export default class WebcamClient {
         }
     }
 
-    // This method can be overridden in a subclass or passed as a callback
-    onFrame(frame: HTMLVideoElement): void {
-        // Default implementation: simply log that a frame is being processed
-        console.log("Processing frame...");
-    }
+    private _processFrames(): void {
+        const process = async () => {
+            if (!this.videoElement || this.videoElement.paused || this.videoElement.ended) return;
 
-    private async _processFrames(): Promise<void> {
-        if (!this.videoElement) return;
+            // Convert the current video frame to ImageData
+            const imageData = convertVideoFrameToImageData(this.videoElement);
 
-        // Process frames at a set interval (e.g., every 100ms)
-        const processInterval = 100;
-        setInterval(() => {
+            // Call the frame callback if provided
             if (this.frameCallback) {
-                // If a frame callback is provided, call it with the video element
-                this.frameCallback(this.videoElement);
-            } else {
-                // Otherwise, use the default onFrame method
-                this.onFrame(this.videoElement);
+                await this.frameCallback(imageData, this.videoElement.currentTime);
             }
-        }, processInterval);
+
+            // Request the next frame
+            requestAnimationFrame(process);
+        };
+
+        requestAnimationFrame(process);
     }
 }
