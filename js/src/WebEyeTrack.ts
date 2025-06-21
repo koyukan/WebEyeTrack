@@ -333,6 +333,8 @@ export default class WebEyeTrack {
   async step(frame: ImageData, timestamp: number): Promise<GazeResult> {
     const tic1 = performance.now();
     let result = await this.faceLandmarkerClient.processFrame(frame) as FaceLandmarkerResult | null;
+    const tic2 = performance.now();
+    // result = null; // For testing purposes, we can set result to null to simulate no face detected
     if (!result || !result.faceLandmarks || result.faceLandmarks.length === 0) {
       return {
         facialLandmarks: [],
@@ -345,7 +347,7 @@ export default class WebEyeTrack {
         gazeState: 'closed', // Default to closed state if no landmarks
         normPog: [0, 0], // Placeholder for normalized point of gaze
         durations: {
-          faceLandmarker: 0,
+          faceLandmarker: tic2 - tic1,
           prepareInput: 0,
           blazeGaze: 0,
           kalmanFilter: 0,
@@ -354,7 +356,6 @@ export default class WebEyeTrack {
         timestamp: timestamp // Include the timestamp
       };
     }
-    const tic2 = performance.now();
 
     // Perform preprocessing to obtain the eye patch, head_vector, and face_origin_3d
     const [eyePatch, headVector, faceOrigin3D] = this.prepareInput(frame, result);
