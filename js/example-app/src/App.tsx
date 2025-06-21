@@ -31,11 +31,18 @@ export default function App() {
     async function startWebEyeTrack() {
       if (videoRef.current && canvasRef.current) {
 
-        // Set canvas size based on video dimensions
-        if (!hasCanvasSizeRef.current && canvasRef.current) {
-          hasCanvasSizeRef.current = true;
-          canvasRef.current.width = 480;
-          canvasRef.current.height = 360;
+        videoRef.current.onloadedmetadata = () => {
+          if (!hasCanvasSizeRef.current && videoRef.current) {
+            hasCanvasSizeRef.current = true;
+
+            // Set canvas size based on actual video dimensions
+            const width = videoRef.current.videoWidth;
+            const height = videoRef.current.videoHeight;
+            canvasRef.current!.width = width;
+            canvasRef.current!.height = height;
+
+            console.log(`Canvas size set to: ${width}x${height}`);
+          }
         }
 
         const webcamClient = new WebcamClient(videoRef.current.id);
@@ -149,7 +156,7 @@ export default function App() {
           <div className="w-full relative md:w-1/5">
             <canvas
               ref={canvasRef}
-              className="w-full absolute z-20"
+              className="w-full h-full absolute z-20"
               hidden={!showFaceMesh}
             />
             <video
