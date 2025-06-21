@@ -252,7 +252,7 @@ export default class WebEyeTrack {
     headVectors: number[][],
     faceOrigins3D: number[][],
     normPogs: number[][],
-    stepsInner: number = 5,
+    stepsInner: number = 1,
     innerLR: number = 1e-5,
     ptType: 'calib' | 'click' = 'calib'
   ) {

@@ -150,26 +150,39 @@ export default function App() {
             <canvas
               ref={canvasRef}
               className="w-full absolute z-20"
+              hidden={!showFaceMesh}
             />
             <video
               id='webcam'
               ref={videoRef}
               autoPlay
               playsInline
-              className="w-full z-10"
+              // hidden={!showCamera}
+              // className="w-full z-10"
+              className={`w-full z-10 ${showCamera ? '' : 'opacity-0'}`}
+              
             />
           </div>
 
-          <canvas
-            ref={eyePatchRef}
-            className="md:max-width-[480px] w-full md:w-1/5 z-20"
-          />
+          <div>
+            <canvas
+              ref={eyePatchRef}
+              className="md:max-width-[480px] w-full md:h-full z-20"
+              hidden={!showEyePatch}
+            />
+          </div>
+
         </div>
 
         {/* ✅ Show the debug data overlay */}
         <div className="flex flex-col items-center md:flex-row md:justify-between m-8 mb-16">
-          <DebugOverlay data={debugData}/>
-          <DebugOverlay data={perfData}/>
+          { showDebug && (
+            <>
+              <DebugOverlay data={debugData}/>
+              <DebugOverlay data={perfData}/>
+            </>
+          )
+          }
         </div>
       </div>
     </>
