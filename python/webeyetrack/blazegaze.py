@@ -21,6 +21,8 @@ from tensorflow.keras.layers import (
     Reshape,
     Lambda
 )
+from tensorflow.python.profiler.model_analyzer import profile
+from tensorflow.python.profiler.option_builder import ProfileOptionBuilder
 
 # Optional: Enable XLA for optimization
 tf.config.optimizer.set_jit(True)
@@ -56,6 +58,12 @@ class BlazeGazeConfig:
     encoder: EncoderConfig = field(default_factory=lambda: EncoderConfig())
     decoder: DecoderConfig = field(default_factory=lambda: DecoderConfig())
     gaze: GazeConfig = field(default_factory=lambda: GazeConfig())
+
+def get_flops(model):
+  forward_pass = tf.function(model.call, input_signature=[tf.TensorSpec(shape=(1,) + model.input_shape[1:])])
+  graph_info = profile(forward_pass.get_concrete_function().graph, options=ProfileOptionBuilder.float_operation())
+  flops = (graph_info.total_float_ops / 1e6) / 2
+  return flops
 
 # ------------------------------------------------------------------------
 # Encoder
@@ -344,7 +352,7 @@ class BlazeGaze():
 
 if __name__ == "__main__":
 
-    TESTING = 'autoencoder'
+    TESTING = 'maml'
     print("Testing mode:", TESTING)
 
     if TESTING == 'maml':
@@ -413,6 +421,18 @@ if __name__ == "__main__":
 
         print("Average time taken for inference:", np.mean(run_times))
         print("FPS:", 1 / np.mean(run_times))
+
+        inference_model.compile()
+        # print(get_flops_v2(inference_model, dummy_inputs))  # e.g., 299391650
+        print(get_flops(inference_model)) # 299391650
+
+        trainable_params = np.sum([np.prod(v._shape) for v in inference_model.trainable_weights])
+        non_trainable_params = np.sum([np.prod(v._shape) for v in inference_model.non_trainable_weights])
+        total_params = trainable_params + non_trainable_params
+            
+        print(trainable_params)
+        print(non_trainable_params)
+        print(total_params)
 
     elif TESTING == 'autoencoder':
         # Test both models
