@@ -16,8 +16,10 @@ export default class WebcamClient {
         try {
             const constraints: MediaStreamConstraints = {
                 video: {
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
+                    // width: { ideal: 1280 },
+                    // height: { ideal: 720 },
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
                     facingMode: "user"
                 },
                 audio: false

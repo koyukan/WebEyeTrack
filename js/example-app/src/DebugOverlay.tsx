@@ -2,7 +2,6 @@ import React, { useRef } from 'react';
 
 interface DebugOverlayProps {
   data: Record<string, string | number | boolean | (number | string)[]>;
-  position: 'bottom-2 left-2' | 'bottom-2 right-2';
   smoothingWindow?: number; // Optional prop to define N
 }
 
@@ -13,7 +12,7 @@ const formatValue = (value: string | number | boolean): string => {
   return String(value);
 };
 
-const DebugOverlay: React.FC<DebugOverlayProps> = ({ data, position, smoothingWindow = 50 }) => {
+const DebugOverlay: React.FC<DebugOverlayProps> = ({ data, smoothingWindow = 50 }) => {
   const valueHistoryRef = useRef<Record<string, number[]>>({});
 
   const smoothData: typeof data = {};
@@ -52,7 +51,7 @@ const DebugOverlay: React.FC<DebugOverlayProps> = ({ data, position, smoothingWi
   });
 
   return (
-    <div className={`fixed ${position} bg-black bg-opacity-70 text-white text-xs p-2 rounded shadow-md max-w-xs z-50 font-mono whitespace-pre`}>
+    <div className={`bg-black bg-opacity-70 text-white text-xs p-2 rounded shadow-md max-w-xs z-50 font-mono whitespace-pre`}>
       {Object.entries(smoothData).map(([key, value]) => (
         <div key={key}>
           <strong>{key}:</strong>{' '}
