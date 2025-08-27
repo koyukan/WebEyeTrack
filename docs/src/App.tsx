@@ -1,5 +1,5 @@
 import React from "react";
-import { Menu, Github } from "lucide-react";
+import { Menu, Github, Code } from "lucide-react";
 import {
   NavigationMenu,
   NavigationMenuItem,
@@ -9,6 +9,11 @@ import {
 import { Button } from "./components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "./components/ui/sheet";
 import { Separator } from "./components/ui/separator";
+import { CodeBlock } from "./components/ui/code-block"
+import { InlineCode } from "./components/ui/inline-code"
+import { AvatarCard } from "./components/ui/avatar-card";
+
+// https://gist.github.com/SheldonWangRJT/8d3f44a35c8d1386a396b9b49b43c385
 
 // If you're using Vite/CRA asset imports, replace with your logo path or remove
 // import logo from "./logo.svg";
@@ -99,12 +104,12 @@ function Section({ id, title, children }: React.PropsWithChildren<{ id: string; 
   return (
     <section
       id={id}
-      className="scroll-mt-24 md:scroll-mt-28 min-h-[45vh] py-12 md:py-20"
+      className="scroll-mt-24 md:scroll-mt-28 py-6"
       aria-label={title}
     >
       <div className="container mx-auto max-w-5xl px-4">
         <h2 className="text-3xl md:text-4xl font-semibold tracking-tight">{title}</h2>
-        <Separator className="my-6" />
+        <Separator className="mb-6 mt-2" />
         <div className="prose prose-zinc dark:prose-invert max-w-none">
           {children}
         </div>
@@ -125,10 +130,10 @@ export default function App() {
               {/* Uncomment if you have a logo asset */}
               {/* <img src={logo} alt="WebEyeTrack logo" className="h-7 w-7" /> */}
               <a
-                href="#overview"
+                href="#hero"
                 onClick={(e) => {
                   e.preventDefault();
-                  scrollToId("overview");
+                  scrollToId("hero");
                 }}
                 className="text-lg md:text-xl font-bold"
               >
@@ -157,73 +162,263 @@ export default function App() {
 
       {/* Main content */}
       <main>
+        {/* Hero Banner with WebEyeTrack slogan*/}
+        <div id="hero" className="scroll-mt-24 bg-gradient-to-b from-blue-600 to-indigo-600 text-white">
+          <div className="container mx-auto max-w-6xl px-4 py-20 text-center">
+            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight">
+              WebEyeTrack
+            </h1>
+            <p className="mt-4 text-lg md:text-xl">
+              Real-time, web-native eye tracking toolkit
+            </p>
+          </div>
+        </div>
+
         <Section id="overview" title="Overview">
-          <p>
-            WebEyeTrack is a lightweight, web-native eye tracking toolkit. Use this
-            space to describe the motivation, core ideas, and a visual teaser.
-          </p>
+
+            <div className="mb-6">
+              <img src="/public/demo.gif" alt="WebEyeTrack demo screenshot" className="rounded-lg border w-full" />
+              <Button className="w-full mt-4" variant="outline" size="lg">
+                <a href="https://azure-olympie-5.tiiny.site" target="_blank" rel="noreferrer noopener" className="w-full">
+                Click to use live demo
+                </a>
+              </Button>
+            </div>
+
+            <div className="flex flex-col md:flex-row gap-4">
+
+              <div className="md:w-1/2">
+                <p>
+                <strong>WebEyeTrack</strong> brings deep‑learning gaze estimation to the web browser and
+                explicitly accounts for <em>head pose</em>. No plugins, no cloud. Our framework runs entirely
+                on‑device (TensorFlow.js), pairing a lightweight CNN gaze model (BlazeGaze) with a
+                novel metric head‑pose pipeline built from 3D face reconstruction and radial Procrustes
+                alignment. With as few as <strong>9 calibration points</strong>, it adapts to each user and stays robust
+                under natural head motion.
+                </p>
+                <p className="pt-4">
+                In evaluations on standard datasets, WebEyeTrack achieves state‑of‑the‑art‑level accuracy
+                while maintaining real‑time performance on commodity devices. The result is a private,
+                scalable, and portable eye‑tracking solution designed for researchers and developers who need
+                reliable, deployable gaze estimation in the browser.
+                </p>
+              </div>
+              <ul className="gap-2 md:w-1/2">
+              <li><strong>Browser‑native</strong>: deep learning gaze estimation running locally for privacy.</li>
+              <li><strong>Head‑pose aware</strong>: explicit metric head pose improves stability during movement.</li>
+              <li><strong>Few‑shot personalization</strong>: k ≤ 9 samples for fast per‑user adaptation.</li>
+              <li><strong>Lightweight</strong>: compact CNN designed for real‑time inference across devices.</li>
+              <li><strong>Open‑source</strong>: built for reproducibility and extensibility.</li>
+              </ul>
+            </div>
+            {/* WebEyeTrack is a lightweight, web-native eye tracking toolkit. Use this */}
+            {/* space to describe the motivation, core ideas, and a visual teaser. */}
         </Section>
 
         <Section id="installation" title="Installation">
-          <pre>
-          {`# via npm
-          npm install webeyetrack
-
-          # or yarn
-          yarn add webeyetrack`}
-          </pre>
-          <p>
-            Include any build/runtime prerequisites here.
-          </p>
+          <div className="space-y-4">
+            <p>Install the JavaScript package running the following command:</p>
+            <CodeBlock
+              language="bash"
+              code={`# npm
+  npm install webeyetrack`}
+            />
+            <p>Run the following command for yarn:</p>
+            <CodeBlock
+              language="bash"
+              code={`# yarn
+  yarn add webeyetrack`}
+            />
+            <p>Run the following command for pnpm:</p>
+            <CodeBlock
+              language="bash"
+              code={`# pnpm
+  pnpm add webeyetrack`}
+            />
+          </div>
         </Section>
 
         <Section id="usage" title="Usage">
-          <pre>
-          {`import { EyeTracker } from 'webeyetrack'
-
-          const tracker = new EyeTracker({ /* options */ })
-          tracker.start()`}
-          </pre>
+          <div className="space-y-4">
+            <p>
+            To use WebEyeTrack, we provide a webcam client solution to support the streaming of frames into the tracker.
+            </p>
+            <CodeBlock
+              language="javascript/typescript"
+              code={`import { WebcamClient, WebEyeTrackProxy } from 'webeyetrack'
+  const webcamClient = new WebcamClient('video'); // id of HTMLVideoElement
+  const webEyeTrackProxy = new WebEyeTrackProxy(webcamClient);
+  `}
+            />
+            <p>
+            Then you define the callback function once gaze estimation results are available:
+            </p>
+            <CodeBlock
+              language="javascript/typescript"
+              code={`webEyeTrackProxy.onGazeResults = (gazeResult: GazeResult) => {
+    console.log(gazeResult)
+  }`}
+            />
+          </div>
         </Section>
 
         <Section id="demo" title="Demo">
-          <p>
-            Embed a live demo, gifs, or screenshots. You can also link to a demo
-            route within your app.
-          </p>
+          <div className="flex flex-col gap-4">
+            <p>
+            You can try out the demo with the button provided above. To run the WebEyeTrack demo in your own computer, try out the demo located within the <InlineCode>example-app</InlineCode> directory by first building the <InlineCode>webeyetrack</InlineCode> bundle locally:
+            </p>
+            <CodeBlock
+              language="bash"
+              code={`npm install
+npm run build 
+`} />
+            <p>
+              Run the example React app after the installation
+            </p>
+            <CodeBlock
+              language="bash"
+              code={`cd example-app
+npm install
+npm run start
+`} />
+            <p>
+              Then you should be able to visit the React application at <a href="https://localhost:3000" className="text-blue-600 underline">https://localhost:3000</a>
+            </p>
+          </div>
         </Section>
 
         <Section id="publications" title="Publications">
-          <ul>
-            <li>
-              Doe, J., et al. <em>WebEyeTrack: Browser‑based Eye Tracking</em>, 2025.
-            </li>
-          </ul>
+          <div className="space-y-4">
+            <p> If you would like to cite this work, please use the following reference:</p>
+            <CodeBlock
+              language="bibtex"
+              code={`Add BibTeX citation here`} />
+          </div>
         </Section>
 
         <Section id="team" title="Our Team">
-          <p>
+          {/* <p>
             Introduce the authors and contributors. Add avatars/cards if you like.
-          </p>
+          </p> */}
+          {/* <AvatarCard
+            name="Ava Reyes"
+            href="https://example.com/ava"
+            subtitle="PhD Candidate, HCI"
+            imageSrc="/team/ava.jpg"
+            imageAlt="Portrait of Ava Reyes"
+            external
+          >
+            Works on calibration robustness and head-pose modeling.
+          </AvatarCard> */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <AvatarCard
+              name="Eduardo Davalos"
+              href="https://edavalosanaya.github.io"
+              subtitle="Assistant Professor, AIED | HCI | LLMs"
+              imageSrc="/public/profiles/eduardo_davalos.webp"
+              external
+            />
+            <AvatarCard
+              name="Yike Zhang"
+              href="https://yikezhang.me"
+              subtitle="Assistant Professor, Healthcare Ed | LLMs"
+              imageSrc="/public/profiles/yike_zhang.jpeg"
+              external
+            />
+            <AvatarCard
+              name="Namrata Srivastava"
+              href="https://sites.google.com/view/namrata-srivastava"
+              subtitle="Postdoc, HCI"
+              imageSrc="/public/profiles/namrata_srivastava.jpeg"
+              external
+            />
+            <AvatarCard
+              name="Yashvitha Thatigotla"
+              href="https://www.linkedin.com/in/yashvitha/"
+              subtitle="Software Dev @ Optum"
+              imageSrc="/public/profiles/yashvitha_thatigotla.jpeg"
+              external
+            />
+            <AvatarCard
+              name="Jorge A. Salas"
+              href="https://www.linkedin.com/in/jorgeasalas/"
+              subtitle="Research Analyst"
+              imageSrc="/public/profiles/jorge_a_salas.jpeg"
+              external
+            />
+            <AvatarCard
+              name="Sara McFadden"
+              href="https://www.linkedin.com/in/sara-mcfadden-93162a4/"
+              subtitle="Research Coordinator"
+              imageSrc="/public/profiles/sara_mcfadden.png"
+              external
+            />
+            <AvatarCard
+              name="Sun-Joo Cho"
+              href="https://scholar.google.com/citations?user=0SHxelgAAAAJ&hl=en"
+              subtitle="Professor | Psychology & Human Development"
+              imageSrc="/public/profiles/sunjoo_cho.jpg"
+              external
+            />
+            <AvatarCard
+              name="Amanda Goodwin"
+              href="https://peabody.vanderbilt.edu/bio/?pid=amanda-goodwin"
+              subtitle="Professor | Language & Literacy"
+              imageSrc="/public/profiles/amanda_goodwin.jpg"
+              external
+            />
+            <AvatarCard
+              name="Ashwin TS"
+              href="https://sites.google.com/view/ashwintudur/home"
+              subtitle="Research Scientist"
+              imageSrc="/public/profiles/ashwin_ts.png"
+              external
+            />
+            <AvatarCard
+              name="Gautam Biswas"
+              href="https://engineering.vanderbilt.edu/bio/?pid=gautam-biswas"
+              subtitle="Professor | Computer Science"
+              imageSrc="/public/profiles/gautam_biswas.jpg"
+            >
+              {/* Focus: on-device inference and eval tooling. */}
+            </AvatarCard>
+          </div>
         </Section>
 
         <Section id="acknowledgements" title="Acknowledgements">
           <p>
-            Credit funding sources, collaborators, and any third‑party libraries.
+            The research reported here was supported by the Institute of Education Sciences, U.S. Department of Education, through Grant R305A150199 and R305A210347 to Vanderbilt University. The opinions expressed are those of the authors and do not represent views of the Institute or the U.S. Department of Education.
           </p>
         </Section>
 
         <Section id="licensing" title="Licensing">
-          <p>
-            Released under the MIT License (or your license of choice).
-          </p>
+          <div className="space-y-4">
+            <p><strong>License:</strong> MIT.</p>
+            <p>
+              You are free to use, copy, modify, merge, publish, distribute, sublicense,
+              and/or sell copies of WebEyeTrack, provided that the copyright and permission
+              notices are included in all copies or substantial portions of the software.
+              The software is provided “as is,” without warranty of any kind.
+            </p>
+            <p>
+              <strong>Responsible use reminder:</strong> please use WebEyeTrack ethically and always
+              in ways that benefit end users. Obtain informed consent for any gaze data collection,
+              respect privacy (store the minimum necessary data and secure it), be transparent
+              about how data is used, and comply with applicable laws, institutional review board
+              requirements, and platform policies. Do not use the software to harm, surveil without
+              consent, or discriminate.
+            </p>
+            <p>
+              See the <code>LICENSE</code> file in the repository for the full text.
+            </p>
+          </div>
         </Section>
       </main>
 
       {/* Footer */}
       <footer className="border-t py-8">
         <div className="container mx-auto max-w-6xl px-4 text-sm text-muted-foreground">
-          © {new Date().getFullYear()} WebEyeTrack. All rights reserved.
+          © {new Date().getFullYear()} WebEyeTrack Team. All rights reserved.
         </div>
       </footer>
 
@@ -231,7 +426,7 @@ export default function App() {
       <div className="fixed bottom-5 right-5">
         <Button
           variant="secondary"
-          onClick={() => scrollToId("overview")}
+          onClick={() => scrollToId("hero")}
           className="shadow-lg"
         >
           Back to top
