@@ -177,7 +177,7 @@ export default function App() {
         <Section id="overview" title="Overview">
 
             <div className="mb-6">
-              <img src="/public/demo.gif" alt="WebEyeTrack demo screenshot" className="rounded-lg border w-full" />
+              <img src="/demo.gif" alt="WebEyeTrack demo screenshot" className="rounded-lg border w-full" />
               <Button className="w-full mt-4" variant="outline" size="lg">
                 <a href="https://azure-olympie-5.tiiny.site" target="_blank" rel="noreferrer noopener" className="w-full">
                 Click to use live demo
@@ -220,20 +220,17 @@ export default function App() {
             <p>Install the JavaScript package running the following command:</p>
             <CodeBlock
               language="bash"
-              code={`# npm
-  npm install webeyetrack`}
+              code={`# npm \nnpm install webeyetrack`}
             />
             <p>Run the following command for yarn:</p>
             <CodeBlock
               language="bash"
-              code={`# yarn
-  yarn add webeyetrack`}
+              code={`# yarn \nyarn add webeyetrack`}
             />
             <p>Run the following command for pnpm:</p>
             <CodeBlock
               language="bash"
-              code={`# pnpm
-  pnpm add webeyetrack`}
+              code={`# pnpm \npnpm add webeyetrack`}
             />
           </div>
         </Section>
@@ -245,19 +242,14 @@ export default function App() {
             </p>
             <CodeBlock
               language="javascript/typescript"
-              code={`import { WebcamClient, WebEyeTrackProxy } from 'webeyetrack'
-  const webcamClient = new WebcamClient('video'); // id of HTMLVideoElement
-  const webEyeTrackProxy = new WebEyeTrackProxy(webcamClient);
-  `}
+              code={`import { WebcamClient, WebEyeTrackProxy } from 'webeyetrack'\nconst webcamClient = new WebcamClient('video'); // id of HTMLVideoElement\nconst webEyeTrackProxy = new WebEyeTrackProxy(webcamClient);`}
             />
             <p>
             Then you define the callback function once gaze estimation results are available:
             </p>
             <CodeBlock
               language="javascript/typescript"
-              code={`webEyeTrackProxy.onGazeResults = (gazeResult: GazeResult) => {
-    console.log(gazeResult)
-  }`}
+              code={`webEyeTrackProxy.onGazeResults = (gazeResult: GazeResult) => {\n  console.log(gazeResult)\n}`}
             />
           </div>
         </Section>
@@ -315,70 +307,70 @@ npm run start
               name="Eduardo Davalos"
               href="https://edavalosanaya.github.io"
               subtitle="Assistant Professor, AIED | HCI | LLMs"
-              imageSrc="/public/profiles/eduardo_davalos.webp"
+              imageSrc="/profiles/eduardo_davalos.webp"
               external
             />
             <AvatarCard
               name="Yike Zhang"
               href="https://yikezhang.me"
               subtitle="Assistant Professor, Healthcare Ed | LLMs"
-              imageSrc="/public/profiles/yike_zhang.jpeg"
+              imageSrc="/profiles/yike_zhang.jpeg"
               external
             />
             <AvatarCard
               name="Namrata Srivastava"
               href="https://sites.google.com/view/namrata-srivastava"
               subtitle="Postdoc, HCI"
-              imageSrc="/public/profiles/namrata_srivastava.jpeg"
+              imageSrc="/profiles/namrata_srivastava.jpeg"
               external
             />
             <AvatarCard
               name="Yashvitha Thatigotla"
               href="https://www.linkedin.com/in/yashvitha/"
               subtitle="Software Dev @ Optum"
-              imageSrc="/public/profiles/yashvitha_thatigotla.jpeg"
+              imageSrc="/profiles/yashvitha_thatigotla.jpeg"
               external
             />
             <AvatarCard
               name="Jorge A. Salas"
               href="https://www.linkedin.com/in/jorgeasalas/"
               subtitle="Research Analyst"
-              imageSrc="/public/profiles/jorge_a_salas.jpeg"
+              imageSrc="/profiles/jorge_a_salas.jpeg"
               external
             />
             <AvatarCard
               name="Sara McFadden"
               href="https://www.linkedin.com/in/sara-mcfadden-93162a4/"
               subtitle="Research Coordinator"
-              imageSrc="/public/profiles/sara_mcfadden.png"
+              imageSrc="/profiles/sara_mcfadden.png"
               external
             />
             <AvatarCard
               name="Sun-Joo Cho"
               href="https://scholar.google.com/citations?user=0SHxelgAAAAJ&hl=en"
               subtitle="Professor | Psychology & Human Development"
-              imageSrc="/public/profiles/sunjoo_cho.jpg"
+              imageSrc="/profiles/sunjoo_cho.jpg"
               external
             />
             <AvatarCard
               name="Amanda Goodwin"
               href="https://peabody.vanderbilt.edu/bio/?pid=amanda-goodwin"
               subtitle="Professor | Language & Literacy"
-              imageSrc="/public/profiles/amanda_goodwin.jpg"
+              imageSrc="/profiles/amanda_goodwin.jpg"
               external
             />
             <AvatarCard
               name="Ashwin TS"
               href="https://sites.google.com/view/ashwintudur/home"
               subtitle="Research Scientist"
-              imageSrc="/public/profiles/ashwin_ts.png"
+              imageSrc="/profiles/ashwin_ts.png"
               external
             />
             <AvatarCard
               name="Gautam Biswas"
               href="https://engineering.vanderbilt.edu/bio/?pid=gautam-biswas"
               subtitle="Professor | Computer Science"
-              imageSrc="/public/profiles/gautam_biswas.jpg"
+              imageSrc="/profiles/gautam_biswas.jpg"
             >
               {/* Focus: on-device inference and eval tooling. */}
             </AvatarCard>
