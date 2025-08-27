@@ -1,5 +1,5 @@
 import React from "react";
-import { Menu, Github, Code } from "lucide-react";
+import { Menu, Github } from "lucide-react";
 import {
   NavigationMenu,
   NavigationMenuItem,

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { type JSX } from "react";
 import clsx from "clsx";
 
 export interface InlineCodeProps
@@ -14,6 +14,7 @@ export interface InlineCodeProps
 export function InlineCode({ as = "code", className, ...props }: InlineCodeProps) {
   const Tag = as as keyof JSX.IntrinsicElements;
   return (
+    // @ts-ignore
     <Tag
       {...props}
       className={clsx(
