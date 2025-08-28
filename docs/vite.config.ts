@@ -8,6 +8,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  base: "./WebEyeTrack/",
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
