@@ -12,6 +12,7 @@ import { Separator } from "./components/ui/separator";
 import { CodeBlock } from "./components/ui/code-block"
 import { InlineCode } from "./components/ui/inline-code"
 import { AvatarCard } from "./components/ui/avatar-card";
+import { YouTubeEmbed } from "./components/ui/youtube-embed";
 
 // https://gist.github.com/SheldonWangRJT/8d3f44a35c8d1386a396b9b49b43c385
 
@@ -177,7 +178,17 @@ export default function App() {
         <Section id="overview" title="Overview">
 
             <div className="mb-6">
-              <img src={`${import.meta.env.BASE_URL}/demo.gif`} alt="WebEyeTrack demo screenshot" className="rounded-lg border w-full" />
+
+              <YouTubeEmbed
+                src="https://www.youtube.com/watch?v=EhFJplhuQGY" // or just "YOUR_VIDEO_ID"
+                title="WebEyeTrack demo"
+                aspect="16/9"      // or "4/3" | "1/1" | "56.25%" custom
+                lite               // renders a thumbnail until clicked (performance)
+                autoplay           // start playback after click
+              />
+
+              {/* https://youtu.be/EhFJplhuQGY */}
+              {/* <img src={`${import.meta.env.BASE_URL}/demo.gif`} alt="WebEyeTrack demo screenshot" className="rounded-lg border w-full" /> */}
               <Button className="w-full mt-4" variant="outline" size="lg">
                 <a href="https://azure-olympie-5.tiiny.site" target="_blank" rel="noreferrer noopener" className="w-full">
                 Click to use live demo
@@ -284,7 +295,7 @@ npm run start
             <p> If you would like to cite this work, please use the following reference:</p>
             <CodeBlock
               language="bibtex"
-              code={`Add BibTeX citation here`} />
+              code={`@misc{davalos2025webeyetrackscalableeyetrackingbrowser,\ntitle={WEBEYETRACK: Scalable Eye-Tracking for the Browser via On-Device Few-Shot Personalization},\nauthor={Eduardo Davalos and Yike Zhang and Namrata Srivastava and Yashvitha Thatigotla and Jorge A. Salas and Sara McFadden and Sun-Joo Cho and Amanda Goodwin and Ashwin TS and Gautam Biswas},\nyear={2025},\neprint={2508.19544},\narchivePrefix={arXiv},\nprimaryClass={cs.CV},\nurl={https://arxiv.org/abs/2508.19544}}`} />
           </div>
         </Section>
 
