@@ -177,7 +177,7 @@ export default function App() {
         <Section id="overview" title="Overview">
 
             <div className="mb-6">
-              <img src="/demo.gif" alt="WebEyeTrack demo screenshot" className="rounded-lg border w-full" />
+              <img src={`${import.meta.env.BASE_URL}/demo.gif`} alt="WebEyeTrack demo screenshot" className="rounded-lg border w-full" />
               <Button className="w-full mt-4" variant="outline" size="lg">
                 <a href="https://azure-olympie-5.tiiny.site" target="_blank" rel="noreferrer noopener" className="w-full">
                 Click to use live demo
@@ -307,70 +307,70 @@ npm run start
               name="Eduardo Davalos"
               href="https://edavalosanaya.github.io"
               subtitle="Assistant Professor, AIED | HCI | LLMs"
-              imageSrc="/profiles/eduardo_davalos.webp"
+              imageSrc={`${import.meta.env.BASE_URL}/profiles/eduardo_davalos.webp`}
               external
             />
             <AvatarCard
               name="Yike Zhang"
               href="https://yikezhang.me"
               subtitle="Assistant Professor, Healthcare Ed | LLMs"
-              imageSrc="/profiles/yike_zhang.jpeg"
+              imageSrc={`${import.meta.env.BASE_URL}/profiles/yike_zhang.jpeg`}
               external
             />
             <AvatarCard
               name="Namrata Srivastava"
               href="https://sites.google.com/view/namrata-srivastava"
               subtitle="Postdoc, HCI"
-              imageSrc="/profiles/namrata_srivastava.jpeg"
+              imageSrc={`${import.meta.env.BASE_URL}/profiles/namrata_srivastava.jpeg`}
               external
             />
             <AvatarCard
               name="Yashvitha Thatigotla"
               href="https://www.linkedin.com/in/yashvitha/"
               subtitle="Software Dev @ Optum"
-              imageSrc="/profiles/yashvitha_thatigotla.jpeg"
+              imageSrc={`${import.meta.env.BASE_URL}/profiles/yashvitha_thatigotla.jpeg`}
               external
             />
             <AvatarCard
               name="Jorge A. Salas"
               href="https://www.linkedin.com/in/jorgeasalas/"
               subtitle="Research Analyst"
-              imageSrc="/profiles/jorge_a_salas.jpeg"
+              imageSrc={`${import.meta.env.BASE_URL}/profiles/jorge_a_salas.jpeg`}
               external
             />
             <AvatarCard
               name="Sara McFadden"
               href="https://www.linkedin.com/in/sara-mcfadden-93162a4/"
               subtitle="Research Coordinator"
-              imageSrc="/profiles/sara_mcfadden.png"
+              imageSrc={`${import.meta.env.BASE_URL}/profiles/sara_mcfadden.png`}
               external
             />
             <AvatarCard
               name="Sun-Joo Cho"
               href="https://scholar.google.com/citations?user=0SHxelgAAAAJ&hl=en"
               subtitle="Professor | Psychology & Human Development"
-              imageSrc="/profiles/sunjoo_cho.jpg"
+              imageSrc={`${import.meta.env.BASE_URL}/profiles/sunjoo_cho.jpg`}
               external
             />
             <AvatarCard
               name="Amanda Goodwin"
               href="https://peabody.vanderbilt.edu/bio/?pid=amanda-goodwin"
               subtitle="Professor | Language & Literacy"
-              imageSrc="/profiles/amanda_goodwin.jpg"
+              imageSrc={`${import.meta.env.BASE_URL}/profiles/amanda_goodwin.jpg`}
               external
             />
             <AvatarCard
               name="Ashwin TS"
               href="https://sites.google.com/view/ashwintudur/home"
               subtitle="Research Scientist"
-              imageSrc="/profiles/ashwin_ts.png"
+              imageSrc={`${import.meta.env.BASE_URL}/profiles/ashwin_ts.png`}
               external
             />
             <AvatarCard
               name="Gautam Biswas"
               href="https://engineering.vanderbilt.edu/bio/?pid=gautam-biswas"
               subtitle="Professor | Computer Science"
-              imageSrc="/profiles/gautam_biswas.jpg"
+              imageSrc={`${import.meta.env.BASE_URL}/profiles/gautam_biswas.jpg`}
             >
               {/* Focus: on-device inference and eval tooling. */}
             </AvatarCard>
