@@ -295,7 +295,7 @@ npm run start
             <p> If you would like to cite this work, please use the following reference:</p>
             <CodeBlock
               language="bibtex"
-              code={`@misc{davalos2025webeyetrackscalableeyetrackingbrowser,\ntitle={WEBEYETRACK: Scalable Eye-Tracking for the Browser via On-Device Few-Shot Personalization},\nauthor={Eduardo Davalos and Yike Zhang and Namrata Srivastava and Yashvitha Thatigotla and Jorge A. Salas and Sara McFadden and Sun-Joo Cho and Amanda Goodwin and Ashwin TS and Gautam Biswas},\nyear={2025},\neprint={2508.19544},\narchivePrefix={arXiv},\nprimaryClass={cs.CV},\nurl={https://arxiv.org/abs/2508.19544}}`} />
+              code={`@misc{davalos2025webeyetrack,\n\ttitle={WEBEYETRACK: Scalable Eye-Tracking for the Browser via On-Device Few-Shot Personalization},\n\tauthor={Eduardo Davalos and Yike Zhang and Namrata Srivastava and Yashvitha Thatigotla and Jorge A. Salas and Sara McFadden and Sun-Joo Cho and Amanda Goodwin and Ashwin TS and Gautam Biswas},\n\tyear={2025},\n\teprint={2508.19544},\n\tarchivePrefix={arXiv},\n\tprimaryClass={cs.CV},\n\turl={https://arxiv.org/abs/2508.19544}\n}`} />
           </div>
         </Section>
 
