@@ -29,7 +29,7 @@ threed = [
 ]
 
 [project.urls]
-homepath = "https://github.com/RedForestAI"
+homepath = "https://redforestai.github.io/WebEyeTrack/"
 repository = "https://github.com/RedForestAI/WebEyeTrack"
 
 [build-system]

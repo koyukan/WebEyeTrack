@@ -1,5 +1,7 @@
 # WebEyeTrack in Python
 
+### [Project](https://redforestai.github.io/WebEyeTrack) | [Paper](https://arxiv.org/abs/2508.19544) | [Demo](https://azure-olympie-5.tiiny.site)
+
 As detailed in our paper, the Python version of WebEyeTrack performs the two-step training process: (1) autoencoder and (2) MAML. For first step of training aims to formulate a feature extractor for the gaze embedding that is gaze-aware and effective at translating to PoG estimation. In the second training step performs Model Agnostic Meta-Learning (MAML) to help transform the gaze estimation model into a meta-learner that is more capable of adapting to new unseen persons.
 
 # Installation & Dependencies
@@ -109,7 +111,7 @@ Before starting to download the datasets, please make sure to have more than 1.2
 Download the following original datasets using the links below:
 
 * [GazeCapture](https://gazecapture.csail.mit.edu/download.php): ~200 GB
-* [MPIIFaceGaze](https://www.collaborative-ai.org/research/datasets/MPIIFaceGaze/):
+* [MPIIFaceGaze](https://www.collaborative-ai.org/research/datasets/MPIIFaceGaze/): ~6 GB
 * [EyeDiap](https://www.idiap.ch/en/scientific-research/data/eyediap):
 * [Eye of the Typer](https://webgazer.cs.brown.edu/data/):
 

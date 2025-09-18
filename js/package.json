@@ -19,7 +19,7 @@
     "browser"
   ],
   "author": "Eduardo Davalos",
-  "license": "GPL-3.0-or-later",
+  "license": "MIT",
   "devDependencies": {
     "@babel/preset-env": "^7.27.2",
     "@types/jest": "^29.5.12",
