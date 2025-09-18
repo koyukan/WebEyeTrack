@@ -1,8 +1,11 @@
 {
   "name": "webeyetrack",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A library for real-time eye tracking in the browser",
   "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "clean": "rm -rf dist",
     "webpack": "npx webpack --config webpack.config.js",
@@ -11,8 +14,9 @@
   },
   "repository": {
     "type": "git",
-    "url": "RedForest/WebEyeTrack"
+    "url": "https://github.com/RedForestAI/WebEyeTrack.git"
   },
+  "homepage": "https://redforestai.github.io/WebEyeTrack/",
   "keywords": [
     "eye-tracking",
     "real-time",
