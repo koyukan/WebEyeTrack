@@ -4,7 +4,9 @@ Created by <a href="https://edavalosanaya.github.io" target="_blank">Eduardo Dav
 
 ### [Project](https://redforestai.github.io/WebEyeTrack) | [Paper](https://arxiv.org/abs/2508.19544) | [Demo](https://azure-olympie-5.tiiny.site)
 
-![NPM Version](https://img.shields.io/npm/v/webeyetrack) ![PyPI - Version](https://img.shields.io/pypi/v/webeyetrack) ![GitHub License](https://img.shields.io/github/license/RedForestAI/webeyetrack)
+<p></p>
+
+[![NPM Version](https://img.shields.io/npm/v/webeyetrack)](https://www.npmjs.com/package/webeyetrack) [![PyPI - Version](https://img.shields.io/pypi/v/webeyetrack)](https://pypi.org/project/webeyetrack/) [![GitHub License](https://img.shields.io/github/license/RedForestAI/webeyetrack)](#license)
 
 The JS/TS implementation of WebEyeTrack uses a [Web Worker](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Using_web_workers) to offload the AI inference to an isolated worker thread, preventing the main UI thread to become unresponsive. Lastly, we made the ``webeyetrack`` independent of a UI framework such as React, Vue, or Angular.
 

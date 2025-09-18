@@ -4,7 +4,9 @@ Created by <a href="https://edavalosanaya.github.io" target="_blank">Eduardo Dav
 
 ### [Project](https://redforestai.github.io/WebEyeTrack) | [Paper](https://arxiv.org/abs/2508.19544) | [Demo](https://azure-olympie-5.tiiny.site)
 
-![NPM Version](https://img.shields.io/npm/v/webeyetrack) ![PyPI - Version](https://img.shields.io/pypi/v/webeyetrack) ![GitHub License](https://img.shields.io/github/license/RedForestAI/webeyetrack)
+<p></p>
+
+[![NPM Version](https://img.shields.io/npm/v/webeyetrack)](https://www.npmjs.com/package/webeyetrack) [![PyPI - Version](https://img.shields.io/pypi/v/webeyetrack)](https://pypi.org/project/webeyetrack/) [![GitHub License](https://img.shields.io/github/license/RedForestAI/webeyetrack)](#license)
 
 WebEyeTrack is a framework that uses a lightweight CNN-based neural network to predict the ``(x,y)`` gaze point on the screen. The framework provides both a Python and JavaScript/TypeScript (client-side) versions to support research/testing and deployment via TS/JS. It performs few-shot gaze estimation by collecting samples on-device to adapt the model to account for unseen persons.
 

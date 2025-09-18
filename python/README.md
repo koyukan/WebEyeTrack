@@ -4,7 +4,9 @@ Created by <a href="https://edavalosanaya.github.io" target="_blank">Eduardo Dav
 
 ### [Project](https://redforestai.github.io/WebEyeTrack) | [Paper](https://arxiv.org/abs/2508.19544) | [Demo](https://azure-olympie-5.tiiny.site)
 
-![NPM Version](https://img.shields.io/npm/v/webeyetrack) ![PyPI - Version](https://img.shields.io/pypi/v/webeyetrack) ![GitHub License](https://img.shields.io/github/license/RedForestAI/webeyetrack)
+<p></p>
+
+[![NPM Version](https://img.shields.io/npm/v/webeyetrack)](https://www.npmjs.com/package/webeyetrack) [![PyPI - Version](https://img.shields.io/pypi/v/webeyetrack)](https://pypi.org/project/webeyetrack/) [![GitHub License](https://img.shields.io/github/license/RedForestAI/webeyetrack)](#license)
 
 As detailed in our paper, the Python version of WebEyeTrack performs the two-step training process: (1) autoencoder and (2) MAML. For first step of training aims to formulate a feature extractor for the gaze embedding that is gaze-aware and effective at translating to PoG estimation. In the second training step performs Model Agnostic Meta-Learning (MAML) to help transform the gaze estimation model into a meta-learner that is more capable of adapting to new unseen persons.
 
