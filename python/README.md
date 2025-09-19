@@ -30,7 +30,7 @@ pip install .
 
 # Demo
 
-The demo can be located within the ``demo`` directory. Make sure to install the ``webeyetrack`` package first. To run the demo, run the following command:
+The demo can be located within the ``demo`` directory. This demo uses OpenCV to visualize the webcam and a 1:1 display of the screen location in an image. Make sure to install the ``webeyetrack`` package first. To run the demo, run the following command:
 
 ```bash
 cd demo

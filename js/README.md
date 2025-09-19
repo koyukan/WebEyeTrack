@@ -1,6 +1,6 @@
 # WebEyeTrack in JS/TS
 
-Created by <a href="https://edavalosanaya.github.io" target="_blank">Eduardo Davalos</a>, <a href="https://scholar.google.com/citations?user=_E0SGAkAAAAJ&hl=en" target="_blank">Yike Zhang</a>, <a href="https://scholar.google.com/citations?user=GWvdYIoAAAAJ&hl=en&oi=ao" target="_blank">Namrata Srivastava</a>, <a href="https://www.linkedin.com/in/yashvitha/" target="_blank">Yashvitha Thatigolta</a>, <a href="" target="_blank">Jorge A. Salas</a>, <a href="https://www.linkedin.com/in/sara-mcfadden-93162a4/" target="_blank">Sara McFadden</a>, <a href="https://scholar.google.com/citations?user=0SHxelgAAAAJ&hl=en" target="_blank">Cho Sun-Joo</a>, <a href="https://scholar.google.com/citations?user=dZ8X7mMAAAAJ&hl=en" target="_blank">Amanda Goodwin</a>, <a href="https://sites.google.com/view/ashwintudur/home" target="_blank">Ashwin TS</a>, and <a href="https://scholar.google.com/citations?user=-m5wrTkAAAAJ&hl=en" target="_blank">Guatam Biswas</a> from <a href="https://wp0.vanderbilt.edu/oele/" target="_blank">Vanderbilt University</a>, <a href="https://redforestai.github.io" target="_blank">Trinity University</a>, <a href="https://knotlab.github.io/KnotLab/" target="_blank">St. Mary's University</a>
+Created by <a href="https://edavalosanaya.github.io" target="_blank">Eduardo Davalos</a>, <a href="https://scholar.google.com/citations?user=_E0SGAkAAAAJ&hl=en" target="_blank">Yike Zhang</a>, <a href="https://scholar.google.com/citations?user=GWvdYIoAAAAJ&hl=en&oi=ao" target="_blank">Namrata Srivastava</a>, <a href="https://www.linkedin.com/in/yashvitha/" target="_blank">Yashvitha Thatigolta</a>, <a href="" target="_blank">Jorge A. Salas</a>, <a href="https://www.linkedin.com/in/sara-mcfadden-93162a4/" target="_blank">Sara McFadden</a>, <a href="https://scholar.google.com/citations?user=0SHxelgAAAAJ&hl=en" target="_blank">Cho Sun-Joo</a>, <a href="https://scholar.google.com/citations?user=dZ8X7mMAAAAJ&hl=en" target="_blank">Amanda Goodwin</a>, <a href="https://sites.google.com/view/ashwintudur/home" target="_blank">Ashwin TS</a>, and <a href="https://scholar.google.com/citations?user=-m5wrTkAAAAJ&hl=en" target="_blank">Guatam Biswas</a> from <a href="https://wp0.vanderbilt.edu/oele/" target="_blank">Vanderbilt University</a>, <a href="https://redforestai.github.io" target="_blank">Trinity University</a>, and <a href="https://knotlab.github.io/KnotLab/" target="_blank">St. Mary's University</a>
 
 ### [Project](https://redforestai.github.io/WebEyeTrack) | [Paper](https://arxiv.org/abs/2508.19544) | [Demo](https://azure-olympie-5.tiiny.site)
 
@@ -22,6 +22,8 @@ npm install webeyetrack
 
 # Usage
 
+We highly recommend that any developer interested in interested in using WebEyeTrack to take a look into our [minimal code example using React](./examples/minimal-example/). This should help understand how to incorporate WebEyeTrack into your codebase.
+
 To use WebEyeTrack, we provide a webcam client solution to support the streaming of frames into the tracker.
 
 ```ts
@@ -36,6 +38,8 @@ webEyeTrackProxy.onGazeResults = (gazeResult: GazeResult) => {
   console.log(gazeResult)
 }
 ```
+
+Then make sure to copy and paste the [``web``](./examples/minimal-example/public/web) folder into your ``public`` folder of your application. The ``web`` folder includes the trained TF.js model weights for the BlazeGaze gaze-estimation model.
 
 ### GazeResult Interface (TypeScript)
 
@@ -55,23 +59,12 @@ webEyeTrackProxy.onGazeResults = (gazeResult: GazeResult) => {
 
 The normalized PoG is from range ``[[-0.5, 0.5], [-0.5, 0.5]]`` where the origin ``(0,0)`` is located at the center of the screen. The positive Y axis is pointing downwards and the positive X axis is pointing toward the right.
 
-# Demo
+# Examples
 
-Try out the demo located within the ``example-app`` directory by running the following commands:
-
-```bash
-cd js
-# Build the ``webeyetrack`` bundle locally
-npm install
-npm run build 
-
-# Run the example React app
-cd example-app
-npm install
-npm run start
-```
-
-Then you should be able to visit the React application at [``https://localhost:3000``](https://localhost:3000)
+You can find implementation examples in the [Examples](./examples/) folder. These examples should provide further guidance in how to use and integrated WebEyeTrack into your application. Contributions are welcome for new examples -- especially illustrating how to incorporate WebEyeTrack to other frameworks. Missing examples for the following frameworks:
+1. VueJS/NuxtJS
+2. Svelte
+3. Angular
 
 # Acknowledgements
 
