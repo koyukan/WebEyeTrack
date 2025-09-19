@@ -31,7 +31,7 @@ const SECTIONS = [
   { id: "overview", label: "Overview" },
   { id: "installation", label: "Installation" },
   { id: "usage", label: "Usage" },
-  { id: "demo", label: "Demo" },
+  { id: "examples", label: "Examples" },
   { id: "publications", label: "Publications" },
   { id: "team", label: "Our Team" },
   { id: "acknowledgements", label: "Acknowledgements" },
@@ -231,18 +231,9 @@ export default function App() {
             <p>Install the JavaScript package running the following command:</p>
             <CodeBlock
               language="bash"
-              code={`# npm \nnpm install webeyetrack`}
+              code={`npm install webeyetrack`}
             />
-            <p>Run the following command for yarn:</p>
-            <CodeBlock
-              language="bash"
-              code={`# yarn \nyarn add webeyetrack`}
-            />
-            <p>Run the following command for pnpm:</p>
-            <CodeBlock
-              language="bash"
-              code={`# pnpm \npnpm add webeyetrack`}
-            />
+            <p>You can find our NPM package <InlineCode className="text-blue-600!"> <a href="https://www.npmjs.com/package/webeyetrack">here</a> </InlineCode>.</p>
           </div>
         </Section>
 
@@ -262,30 +253,27 @@ export default function App() {
               language="javascript/typescript"
               code={`webEyeTrackProxy.onGazeResults = (gazeResult: GazeResult) => {\n  console.log(gazeResult)\n}`}
             />
+            <p>
+            Then make sure to copy and paste the <InlineCode className="text-blue-600!"> <a href="https://github.com/RedForestAI/WebEyeTrack/tree/main/js/examples/minimal-example/public/web">web</a> </InlineCode> folder into your <InlineCode>public</InlineCode> folder of your application. The <InlineCode>web</InlineCode> folder includes the trained TF.js model weights for the BlazeGaze gaze-estimation model.
+            </p>
           </div>
         </Section>
 
-        <Section id="demo" title="Demo">
+        <Section id="examples" title="Examples">
           <div className="flex flex-col gap-4">
             <p>
-            You can try out the demo with the button provided above. To run the WebEyeTrack demo in your own computer, try out the demo located within the <InlineCode>example-app</InlineCode> directory by first building the <InlineCode>webeyetrack</InlineCode> bundle locally:
+              We provide two examples to get you started:
             </p>
-            <CodeBlock
-              language="bash"
-              code={`npm install
-npm run build 
-`} />
+            <ul className="list-disc pl-5">
+              <li>
+                <strong>Minimal Code Example:</strong> A minimal setup to demonstrate the core functionality of WebEyeTrack.
+              </li>
+              <li>
+                <strong>Full Demo:</strong> A more complex application visualizing the input and output of gaze estimation.
+              </li>
+            </ul>
             <p>
-              Run the example React app after the installation
-            </p>
-            <CodeBlock
-              language="bash"
-              code={`cd example-app
-npm install
-npm run start
-`} />
-            <p>
-              Then you should be able to visit the React application at <a href="https://localhost:3000" className="text-blue-600 underline">https://localhost:3000</a>
+              You can find the examples in the <InlineCode className="text-blue-600!"> <a href="https://github.com/RedForestAI/WebEyeTrack/tree/main/js/examples">examples</a> </InlineCode> directory of the repository.
             </p>
           </div>
         </Section>
