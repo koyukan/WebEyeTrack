@@ -6,6 +6,7 @@ import FaceLandmarkerClient from './FaceLandmarkerClient'
 import BlazeGaze from "./BlazeGaze"
 import { IDisposable, DisposableResource } from './IDisposable'
 import { MemoryMonitor, MemoryReport } from './utils/MemoryMonitor'
+import { WorkerConfig } from './WorkerFactory'
 
 export {
     WebEyeTrackProxy,
@@ -17,5 +18,6 @@ export {
     IDisposable,
     DisposableResource,
     MemoryMonitor,
-    MemoryReport
+    MemoryReport,
+    WorkerConfig
 }

@@ -25,3 +25,9 @@ declare module 'worker-loader!*' {
   }
   export default WebpackWorker;
 }
+
+/**
+ * Worker global scope declarations.
+ * Provides types for Worker-specific APIs like importScripts.
+ */
+declare function importScripts(...urls: string[]): void;

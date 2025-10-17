@@ -1,8 +1,8 @@
 import WebcamClient from "./WebcamClient";
 import { GazeResult } from "./types";
 import { IDisposable } from "./IDisposable";
+import { createWebEyeTrackWorker, WorkerConfig } from "./WorkerFactory";
 
-import WebEyeTrackWorker from "worker-loader?inline=no-fallback!./WebEyeTrackWorker.ts";
 export default class WebEyeTrackProxy implements IDisposable {
   private worker: Worker;
   private clickHandler: ((e: MouseEvent) => void) | null = null;
@@ -11,10 +11,10 @@ export default class WebEyeTrackProxy implements IDisposable {
 
   public status: 'idle' | 'inference' | 'calib' = 'idle';
 
-  constructor(webcamClient: WebcamClient) {
+  constructor(webcamClient: WebcamClient, workerConfig?: WorkerConfig) {
 
-    // Initialize the WebEyeTrackWorker
-    this.worker = new WebEyeTrackWorker();
+    // Initialize the WebEyeTrackWorker using the factory
+    this.worker = createWebEyeTrackWorker(workerConfig);
     console.log('WebEyeTrackProxy worker initialized');
 
     // Store message handler reference for cleanup
