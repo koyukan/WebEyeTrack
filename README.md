@@ -29,6 +29,120 @@ Go to the README (links below) to the corresponding Python/JS version to get sta
 * [Python ``webeyetrack`` PYPI package](./python)
 * [JavaScript ``webeyetrack`` NPM package](./js)
 
+# Memory Management
+
+WebEyeTrack uses TensorFlow.js for real-time gaze estimation, which requires careful memory management to prevent memory leaks during long-running sessions. All core classes implement the `IDisposable` interface for proper resource cleanup.
+
+## Key Principles
+
+### 1. Always Call `dispose()` When Done
+
+All WebEyeTrack components must be explicitly disposed to release GPU/CPU resources:
+
+```typescript
+import { WebcamClient, WebEyeTrackProxy } from 'webeyetrack';
+
+// Initialize
+const webcamClient = new WebcamClient('webcam');
+const eyeTrackProxy = new WebEyeTrackProxy(webcamClient);
+
+// ... use the tracker ...
+
+// Clean up when done
+eyeTrackProxy.dispose();  // Terminates worker, removes event listeners
+webcamClient.dispose();   // Stops webcam, cancels animation frames
+```
+
+### 2. React Integration Pattern
+
+For React applications, use the cleanup function in `useEffect`:
+
+```typescript
+useEffect(() => {
+  let webcamClient: WebcamClient | null = null;
+  let eyeTrackProxy: WebEyeTrackProxy | null = null;
+
+  const initialize = async () => {
+    webcamClient = new WebcamClient('webcam');
+    eyeTrackProxy = new WebEyeTrackProxy(webcamClient);
+    // ... setup callbacks ...
+  };
+
+  initialize();
+
+  // Cleanup on unmount
+  return () => {
+    eyeTrackProxy?.dispose();
+    webcamClient?.dispose();
+  };
+}, []);
+```
+
+### 3. Error Handling with Error Boundaries
+
+Wrap your application with `MemoryCleanupErrorBoundary` to ensure cleanup on errors:
+
+```typescript
+import { MemoryCleanupErrorBoundary } from 'webeyetrack';
+
+function App() {
+  return (
+    <MemoryCleanupErrorBoundary onCleanup={() => console.log('Cleaned up')}>
+      <YourApp />
+    </MemoryCleanupErrorBoundary>
+  );
+}
+```
+
+### 4. Memory Monitoring
+
+Use the `MemoryMonitor` utility to track TensorFlow.js memory usage:
+
+```typescript
+import { MemoryMonitor } from 'webeyetrack';
+
+const monitor = new MemoryMonitor();
+monitor.captureBaseline();
+
+// ... perform calibration ...
+
+const report = monitor.checkForLeaks();
+console.log(`Tensor leak: ${report.tensorLeak} tensors`);
+console.log(`Byte leak: ${report.byteLeak} bytes`);
+```
+
+## Best Practices
+
+- **Dispose in reverse order**: Dispose child components before parent components
+- **Check `isDisposed`**: Verify disposal state before operations
+- **Long sessions**: Monitor memory periodically during extended sessions
+- **Component unmounting**: Always dispose resources in React cleanup functions
+- **Worker threads**: Ensure workers receive disposal messages before termination
+
+## Common Issues
+
+### Memory Growing Over Time
+- Ensure `dispose()` is called on all instances
+- Check for circular references preventing garbage collection
+- Monitor calibration data accumulation
+
+### Tensors Not Released
+- Verify all TensorFlow.js operations use `tf.tidy()` where appropriate
+- Ensure custom tensor operations call `tf.dispose()`
+- Check that model predictions are properly disposed after use
+
+## Resources Managed
+
+The following resources are automatically managed through `dispose()`:
+
+- **TensorFlow.js tensors**: Model weights, calibration data, intermediate computations
+- **Event listeners**: Window events, mouse handlers, message handlers
+- **Animation frames**: RequestAnimationFrame loops for video processing
+- **Media streams**: Webcam tracks and video elements
+- **Worker threads**: Background processing threads
+
+For more details, see the [JavaScript package documentation](./js).
+
 # Acknowledgements
 
 The research reported here was supported by the Institute of Education Sciences, U.S. Department of Education, through Grant R305A150199 and R305A210347 to Vanderbilt University. The opinions expressed are those of the authors and do not represent views of the Institute or the U.S. Department of Education.
