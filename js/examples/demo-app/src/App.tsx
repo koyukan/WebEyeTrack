@@ -4,8 +4,9 @@ import GazeDot from './GazeDot.jsx';
 import DebugOverlay from './DebugOverlay';
 import { drawMesh } from './drawMesh';
 import { eye } from '@tensorflow/tfjs';
+import MemoryCleanupErrorBoundary from './MemoryCleanupErrorBoundary';
 
-export default function App() {
+function AppContent() {
   const [gaze, setGaze] = useState({ x: 0, y: 0, gazeState: 'closed'});
   const [debugData, setDebugData] = useState({});
   const [perfData, setPerfData] = useState({});
@@ -23,70 +24,95 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const eyePatchRef = useRef<HTMLCanvasElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const webcamClientRef = useRef<WebcamClient | null>(null);
+  const eyeTrackProxyRef = useRef<WebEyeTrackProxy | null>(null);
 
   useEffect(() => {
     if (hasInitializedRef.current) return;
     hasInitializedRef.current = true;
+    let mounted = true;
 
     async function startWebEyeTrack() {
-      if (videoRef.current && canvasRef.current) {
+      if (!mounted || !videoRef.current || !canvasRef.current) return;
 
-        videoRef.current.onloadedmetadata = () => {
-          if (!hasCanvasSizeRef.current && videoRef.current) {
-            hasCanvasSizeRef.current = true;
+      videoRef.current.onloadedmetadata = () => {
+        if (!hasCanvasSizeRef.current && videoRef.current) {
+          hasCanvasSizeRef.current = true;
 
-            // Set canvas size based on actual video dimensions
-            const width = videoRef.current.videoWidth;
-            const height = videoRef.current.videoHeight;
-            canvasRef.current!.width = width;
-            canvasRef.current!.height = height;
+          // Set canvas size based on actual video dimensions
+          const width = videoRef.current.videoWidth;
+          const height = videoRef.current.videoHeight;
+          canvasRef.current!.width = width;
+          canvasRef.current!.height = height;
 
-            console.log(`Canvas size set to: ${width}x${height}`);
-          }
+          console.log(`Canvas size set to: ${width}x${height}`);
+        }
+      }
+
+      const webcamClient = new WebcamClient(videoRef.current.id);
+      const webEyeTrackProxy = new WebEyeTrackProxy(webcamClient);
+
+      // Store refs for cleanup
+      webcamClientRef.current = webcamClient;
+      eyeTrackProxyRef.current = webEyeTrackProxy;
+
+      // Define callback for gaze results
+      webEyeTrackProxy.onGazeResults = (gazeResult: GazeResult) => {
+        if (!mounted) return;
+
+        // Ensure gazeResult is not null or undefined
+        if (!gazeResult) {
+          console.error("Gaze result is null or undefined");
+          return;
         }
 
-        const webcamClient = new WebcamClient(videoRef.current.id);
-        const webEyeTrackProxy = new WebEyeTrackProxy(webcamClient);
-
-        // Define callback for gaze results
-        webEyeTrackProxy.onGazeResults = (gazeResult: GazeResult) => {
-
-          // Ensure gazeResult is not null or undefined
-          if (!gazeResult) {
-            console.error("Gaze result is null or undefined");
-            return;
+        // Show EyePatch and Face Mesh
+        if (eyePatchRef.current && gazeResult.eyePatch) {
+          eyePatchRef.current!.width = gazeResult.eyePatch.width;
+          eyePatchRef.current!.height = gazeResult.eyePatch.height;
+          const eyePatchCtx = eyePatchRef.current!.getContext('2d');
+          if (eyePatchCtx) {
+            eyePatchCtx.clearRect(0, 0, eyePatchRef.current!.width, eyePatchRef.current!.height);
+            eyePatchCtx.putImageData(gazeResult.eyePatch, 0, 0);
           }
-
-          // Show EyePatch and Face Mesh
-          if (eyePatchRef.current && gazeResult.eyePatch) {
-            eyePatchRef.current!.width = gazeResult.eyePatch.width;
-            eyePatchRef.current!.height = gazeResult.eyePatch.height;
-            const eyePatchCtx = eyePatchRef.current!.getContext('2d');
-            if (eyePatchCtx) {
-              eyePatchCtx.clearRect(0, 0, eyePatchRef.current!.width, eyePatchRef.current!.height);
-              eyePatchCtx.putImageData(gazeResult.eyePatch, 0, 0);
-            }
-          }
-          drawMesh(gazeResult, canvasRef.current!)
-
-          // Update gaze position and state
-          setGaze({
-            x: (gazeResult.normPog[0] + 0.5) * window.innerWidth,
-            y: (gazeResult.normPog[1] + 0.5) * window.innerHeight,
-            gazeState: gazeResult.gazeState
-          });
-          setDebugData({
-            gazeState: gazeResult.gazeState,
-            normPog: gazeResult.normPog,
-            headVector: gazeResult.headVector,
-            faceOrigin3D: gazeResult.faceOrigin3D,
-          });
-          setPerfData(gazeResult.durations);
         }
+        drawMesh(gazeResult, canvasRef.current!)
+
+        // Update gaze position and state
+        setGaze({
+          x: (gazeResult.normPog[0] + 0.5) * window.innerWidth,
+          y: (gazeResult.normPog[1] + 0.5) * window.innerHeight,
+          gazeState: gazeResult.gazeState
+        });
+        setDebugData({
+          gazeState: gazeResult.gazeState,
+          normPog: gazeResult.normPog,
+          headVector: gazeResult.headVector,
+          faceOrigin3D: gazeResult.faceOrigin3D,
+        });
+        setPerfData(gazeResult.durations);
       }
     }
 
     startWebEyeTrack();
+
+    // Cleanup function
+    return () => {
+      mounted = false;
+
+      // Dispose resources
+      if (webcamClientRef.current) {
+        webcamClientRef.current.dispose();
+        webcamClientRef.current = null;
+      }
+
+      if (eyeTrackProxyRef.current) {
+        eyeTrackProxyRef.current.dispose();
+        eyeTrackProxyRef.current = null;
+      }
+
+      console.log('App cleanup completed');
+    };
   }, []); // Empty dependency array to run only on mount/unmount
 
   useEffect(() => {
@@ -193,5 +219,17 @@ export default function App() {
         </div>
       </div>
     </>
+  );
+}
+
+export default function App() {
+  const handleCleanup = () => {
+    console.log('Error boundary triggered cleanup');
+  };
+
+  return (
+    <MemoryCleanupErrorBoundary onCleanup={handleCleanup}>
+      <AppContent />
+    </MemoryCleanupErrorBoundary>
   );
 }

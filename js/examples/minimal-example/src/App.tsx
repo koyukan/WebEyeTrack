@@ -1,36 +1,63 @@
 import "./App.css";
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { WebcamClient, WebEyeTrackProxy, type GazeResult } from 'webeyetrack';
 import GazeDot from './GazeDot.tsx';
+import MemoryCleanupErrorBoundary from './MemoryCleanupErrorBoundary';
 
-export default function App() {
+function AppContent() {
   const [gaze, setGaze] = useState({ x: 0, y: 0, gazeState: 'closed'});
   const hasInitializedRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const webcamClientRef = useRef<WebcamClient | null>(null);
+  const eyeTrackProxyRef = useRef<WebEyeTrackProxy | null>(null);
 
   useEffect(() => {
     if (hasInitializedRef.current) return;
     hasInitializedRef.current = true;
+    let mounted = true;
 
     async function startWebEyeTrack() {
-      if (videoRef.current) {
+      if (!mounted || !videoRef.current) return;
 
-        const webcamClient = new WebcamClient(videoRef.current.id);
-        const webEyeTrackProxy = new WebEyeTrackProxy(webcamClient);
+      const webcamClient = new WebcamClient(videoRef.current.id);
+      const webEyeTrackProxy = new WebEyeTrackProxy(webcamClient);
 
-        // Define callback for gaze results
-        webEyeTrackProxy.onGazeResults = (gazeResult: GazeResult) => {
-          // Update gaze position and state
-          setGaze({
-            x: (gazeResult.normPog[0] + 0.5) * window.innerWidth,
-            y: (gazeResult.normPog[1] + 0.5) * window.innerHeight,
-            gazeState: gazeResult.gazeState
-          });
-        }
+      // Store refs for cleanup
+      webcamClientRef.current = webcamClient;
+      eyeTrackProxyRef.current = webEyeTrackProxy;
+
+      // Define callback for gaze results
+      webEyeTrackProxy.onGazeResults = (gazeResult: GazeResult) => {
+        if (!mounted) return;
+
+        // Update gaze position and state
+        setGaze({
+          x: (gazeResult.normPog[0] + 0.5) * window.innerWidth,
+          y: (gazeResult.normPog[1] + 0.5) * window.innerHeight,
+          gazeState: gazeResult.gazeState
+        });
       }
     }
 
     startWebEyeTrack();
+
+    // Cleanup function
+    return () => {
+      mounted = false;
+
+      // Dispose resources
+      if (webcamClientRef.current) {
+        webcamClientRef.current.dispose();
+        webcamClientRef.current = null;
+      }
+
+      if (eyeTrackProxyRef.current) {
+        eyeTrackProxyRef.current.dispose();
+        eyeTrackProxyRef.current = null;
+      }
+
+      console.log('App cleanup completed');
+    };
   }, []); // Empty dependency array to run only on mount/unmount
 
   return (
@@ -49,5 +76,17 @@ export default function App() {
         style={{ display: 'none' }}
       />
     </>
+  );
+}
+
+export default function App() {
+  const handleCleanup = () => {
+    console.log('Error boundary triggered cleanup');
+  };
+
+  return (
+    <MemoryCleanupErrorBoundary onCleanup={handleCleanup}>
+      <AppContent />
+    </MemoryCleanupErrorBoundary>
   );
 }
