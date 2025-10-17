@@ -1,7 +1,6 @@
 import WebcamClient from "./WebcamClient";
 import { GazeResult } from "./types";
 
-// @ts-ignore
 import WebEyeTrackWorker from "worker-loader?inline=no-fallback!./WebEyeTrackWorker.ts";
 export default class WebEyeTrackProxy {
   private worker: Worker;
