@@ -1,12 +1,10 @@
 {
   "compilerOptions": {
-    "target": "es2020",
-    "module": "esnext",
+    "target": "es2015",
+    "module": "commonjs",
     "lib": ["es2020", "dom"],
-    "declaration": true,
-    "declarationMap": true,
+    "declaration": false,
     "sourceMap": true,
-    "outDir": "./dist/types",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,
