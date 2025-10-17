@@ -3,7 +3,7 @@ import { FaceLandmarker, FilesetResolver, DrawingUtils, FaceLandmarkerResult } f
 // References
 // https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker/web_js#video
 export default class FaceLandmarkerClient {
-  private faceLandmarker: any;
+  private faceLandmarker: FaceLandmarker | null = null;
 
   constructor() {
   }
