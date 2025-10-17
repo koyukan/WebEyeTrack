@@ -50,7 +50,9 @@ function AppContent() {
       }
 
       const webcamClient = new WebcamClient(videoRef.current.id);
-      const webEyeTrackProxy = new WebEyeTrackProxy(webcamClient);
+      const webEyeTrackProxy = new WebEyeTrackProxy(webcamClient, {
+        workerUrl: '/webeyetrack.worker.js'
+      });
 
       // Store refs for cleanup
       webcamClientRef.current = webcamClient;
@@ -99,6 +101,7 @@ function AppContent() {
     // Cleanup function
     return () => {
       mounted = false;
+      hasInitializedRef.current = false; // Reset for StrictMode remounting
 
       // Dispose resources
       if (webcamClientRef.current) {
