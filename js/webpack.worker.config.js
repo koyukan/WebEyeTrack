@@ -1,8 +1,9 @@
 const path = require('path');
 
-const umdBrowserConfig = {
+const workerConfig = {
     mode: 'production',
-    entry: './src/index.ts',
+    entry: './src/WebEyeTrackWorker.ts',
+    target: 'webworker',
     resolve: {
         extensions: [".ts", ".js"],
         fallback: {
@@ -21,16 +22,14 @@ const umdBrowserConfig = {
         ],
     },
     output: {
-        filename: 'index.umd.js',
+        filename: 'webeyetrack.worker.js',
         path: path.resolve(__dirname, 'dist'),
-        library: {
-            name: 'WebEyeTrack',
-            type: 'umd'
-        },
-        globalObject: 'typeof self !== \'undefined\' ? self : this'
+        globalObject: 'self'
     },
-    devtool: 'source-map'
+    devtool: 'source-map',
+    optimization: {
+        minimize: true
+    }
 };
 
-module.exports = [umdBrowserConfig];
-
+module.exports = workerConfig;
