@@ -4,6 +4,8 @@ import { GazeResult } from './types'
 import WebcamClient from './WebcamClient'
 import FaceLandmarkerClient from './FaceLandmarkerClient'
 import BlazeGaze from "./BlazeGaze"
+import { IDisposable, DisposableResource } from './IDisposable'
+import { MemoryMonitor, MemoryReport } from './utils/MemoryMonitor'
 
 export {
     WebEyeTrackProxy,
@@ -11,5 +13,9 @@ export {
     WebcamClient,
     FaceLandmarkerClient,
     BlazeGaze,
-    GazeResult
+    GazeResult,
+    IDisposable,
+    DisposableResource,
+    MemoryMonitor,
+    MemoryReport
 }
