@@ -143,6 +143,118 @@ The following resources are automatically managed through `dispose()`:
 
 For more details, see the [JavaScript package documentation](./js).
 
+# Worker Configuration
+
+WebEyeTrack runs the eye-tracking model in a Web Worker for better performance. The worker is automatically managed, but you can customize its loading behavior for advanced use cases.
+
+## Default Behavior
+
+By default, WebEyeTrackProxy automatically loads the worker:
+
+```typescript
+const webcamClient = new WebcamClient('webcam');
+const eyeTrackProxy = new WebEyeTrackProxy(webcamClient);
+// Worker is loaded automatically
+```
+
+## Custom Worker URL
+
+For production deployments or CDN hosting, specify a custom worker URL:
+
+```typescript
+const eyeTrackProxy = new WebEyeTrackProxy(webcamClient, {
+  workerUrl: '/static/webeyetrack.worker.js'
+});
+```
+
+## Vite Configuration
+
+When using Vite, you need to:
+1. Exclude webeyetrack from dependency optimization (to avoid webpack-specific code)
+2. Copy the worker to your public directory
+
+```typescript
+// vite.config.ts
+import { defineConfig } from 'vite'
+import { copyFileSync } from 'fs'
+import { resolve } from 'path'
+
+export default defineConfig({
+  plugins: [
+    {
+      name: 'copy-worker',
+      buildStart() {
+        const src = resolve(__dirname, 'node_modules/webeyetrack/dist/webeyetrack.worker.js')
+        const dest = resolve(__dirname, 'public/webeyetrack.worker.js')
+        copyFileSync(src, dest)
+      }
+    }
+  ],
+  optimizeDeps: {
+    exclude: ['webeyetrack']  // Important: prevents Vite from pre-bundling
+  }
+})
+```
+
+Then specify the worker URL in your application:
+
+```typescript
+const eyeTrackProxy = new WebEyeTrackProxy(webcamClient, {
+  workerUrl: '/webeyetrack.worker.js'
+});
+```
+
+## Webpack / Create React App
+
+Webpack-based projects (including Create React App) automatically bundle the worker. No configuration needed:
+
+```typescript
+const eyeTrackProxy = new WebEyeTrackProxy(webcamClient);
+// Worker is bundled inline automatically
+```
+
+## CDN Deployment
+
+When serving from a CDN, ensure `webeyetrack.worker.js` is accessible:
+
+```typescript
+const eyeTrackProxy = new WebEyeTrackProxy(webcamClient, {
+  workerUrl: 'https://cdn.example.com/webeyetrack.worker.js'
+});
+```
+
+## Worker Bundle Details
+
+- **Size**: ~961KB (minified)
+- **Dependencies**: TensorFlow.js (bundled), MediaPipe (loaded from CDN)
+- **Format**: UMD (works in all environments)
+- **Source Maps**: Available for debugging
+
+## Troubleshooting
+
+### Worker fails to load
+
+If you see worker loading errors:
+
+1. Check that `webeyetrack.worker.js` is accessible from your application
+2. Verify the worker URL path is correct (absolute or relative to your HTML)
+3. Check browser console for CORS errors
+4. Ensure the worker file is served with correct MIME type (`application/javascript`)
+
+### Example error and fix:
+
+```
+Error: Failed to create WebEyeTrack worker
+```
+
+**Solution**: Provide explicit worker URL:
+
+```typescript
+const eyeTrackProxy = new WebEyeTrackProxy(webcamClient, {
+  workerUrl: window.location.origin + '/webeyetrack.worker.js'
+});
+```
+
 # Acknowledgements
 
 The research reported here was supported by the Institute of Education Sciences, U.S. Department of Education, through Grant R305A150199 and R305A210347 to Vanderbilt University. The opinions expressed are those of the authors and do not represent views of the Institute or the U.S. Department of Education.
