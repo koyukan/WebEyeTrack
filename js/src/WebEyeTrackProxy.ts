@@ -1,9 +1,13 @@
 import WebcamClient from "./WebcamClient";
 import { GazeResult } from "./types";
+import { IDisposable } from "./IDisposable";
 
 import WebEyeTrackWorker from "worker-loader?inline=no-fallback!./WebEyeTrackWorker.ts";
-export default class WebEyeTrackProxy {
+export default class WebEyeTrackProxy implements IDisposable {
   private worker: Worker;
+  private clickHandler: ((e: MouseEvent) => void) | null = null;
+  private messageHandler: ((e: MessageEvent) => void) | null = null;
+  private _disposed: boolean = false;
 
   public status: 'idle' | 'inference' | 'calib' = 'idle';
 
@@ -13,7 +17,8 @@ export default class WebEyeTrackProxy {
     this.worker = new WebEyeTrackWorker();
     console.log('WebEyeTrackProxy worker initialized');
 
-    this.worker.onmessage = (mess) =>{
+    // Store message handler reference for cleanup
+    this.messageHandler = (mess) =>{
       // console.log(`[WebEyeTrackWorker] ${mess.data}`)
       // console.log('[WebEyeTrackProxy] received message', mess);
 
@@ -48,23 +53,64 @@ export default class WebEyeTrackProxy {
           console.warn(`[WebEyeTrackProxy] Unknown message type: ${mess.data.type}`);
           break;
       }
-    }
+    };
+
+    this.worker.onmessage = this.messageHandler;
 
     // Initialize the worker
     this.worker.postMessage({ type: 'init' });
 
-    // Add mouse handler for re-calibration
-    window.addEventListener('click', (e: MouseEvent) => {
+    // Store click handler reference for cleanup
+    this.clickHandler = (e: MouseEvent) => {
       // Convert px to normalized coordinates
       const normX = (e.clientX / window.innerWidth) - 0.5;
       const normY = (e.clientY / window.innerHeight) - 0.5;
       console.log(`[WebEyeTrackProxy] Click at (${normX}, ${normY})`);
       this.worker.postMessage({ type: 'click', payload: { x: normX, y: normY }});
-    })
+    };
+
+    // Add mouse handler for re-calibration
+    window.addEventListener('click', this.clickHandler);
   }
 
   // Callback for gaze results
-  onGazeResults: (gazeResult: GazeResult) => void = () => { 
+  onGazeResults: (gazeResult: GazeResult) => void = () => {
     console.warn('onGazeResults callback not set');
+  }
+
+  /**
+   * Disposes the proxy, terminating the worker and removing all event listeners.
+   */
+  dispose(): void {
+    if (this._disposed) {
+      return;
+    }
+
+    // Remove window click listener
+    if (this.clickHandler) {
+      window.removeEventListener('click', this.clickHandler);
+      this.clickHandler = null;
+    }
+
+    // Remove message handler
+    if (this.messageHandler) {
+      this.worker.onmessage = null;
+      this.messageHandler = null;
+    }
+
+    // Send disposal message to worker before terminating
+    if (this.worker) {
+      this.worker.postMessage({ type: 'dispose' });
+      this.worker.terminate();
+    }
+
+    this._disposed = true;
+  }
+
+  /**
+   * Returns true if dispose() has been called.
+   */
+  get isDisposed(): boolean {
+    return this._disposed;
   }
 }

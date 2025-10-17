@@ -31,16 +31,23 @@ self.onmessage = async (e) => {
         self.postMessage({ type: 'statusUpdate', status: status});
       }
       break;
-    
+
     case 'click':
       // Handle click event for re-calibration
       status = 'calib';
       self.postMessage({ type: 'statusUpdate', status: status});
 
       tracker.handleClick(payload.x, payload.y);
-      
+
       status = 'idle';
       self.postMessage({ type: 'statusUpdate', status: status});
+      break;
+
+    case 'dispose':
+      // Clean up tracker resources before worker termination
+      if (tracker) {
+        tracker.dispose();
+      }
       break;
 
     default:
