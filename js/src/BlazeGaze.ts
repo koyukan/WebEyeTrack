@@ -1,11 +1,13 @@
 import * as tf from '@tensorflow/tfjs';
+import { IDisposable } from './IDisposable';
 
 // References
 // https://js.tensorflow.org/api/latest/#class:LayersModel
 
-export default class BlazeGaze {
+export default class BlazeGaze implements IDisposable {
     // private model: tf.GraphModel | null = null;
     private model: tf.LayersModel | null = null;  // Use LayersModel for tf.loadLayersModel
+    private _disposed: boolean = false;
 
     constructor() {
         // Optionally trigger model load in constructor
@@ -42,5 +44,28 @@ export default class BlazeGaze {
         }
 
         return output;
+    }
+
+    /**
+     * Disposes the TensorFlow.js model and releases GPU/CPU memory.
+     */
+    dispose(): void {
+        if (this._disposed) {
+            return;
+        }
+
+        if (this.model) {
+            this.model.dispose();
+            this.model = null;
+        }
+
+        this._disposed = true;
+    }
+
+    /**
+     * Returns true if dispose() has been called.
+     */
+    get isDisposed(): boolean {
+        return this._disposed;
     }
 }
