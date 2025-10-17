@@ -320,9 +320,9 @@ export default class WebEyeTrack {
           return loss.asScalar();
         });
 
-        // Apply grads manually
-        // @ts-ignore
-        opt.applyGradients(grads);
+        // variableGrads returns NamedTensorMap where values are gradients of Variables
+        // Type assertion is safe because variableGrads computes gradients w.r.t. Variables
+        opt.applyGradients(grads as Record<string, tf.Variable>);
 
         // Optionally log
         loss.data().then(val => console.log(`Loss = ${val[0].toFixed(4)}`));
