@@ -5,6 +5,7 @@ import { Matrix } from 'ml-matrix';
 import { Point, GazeResult } from "./types";
 import BlazeGaze from "./BlazeGaze";
 import FaceLandmarkerClient from "./FaceLandmarkerClient";
+import { IDisposable } from "./IDisposable";
 import { 
   computeFaceOrigin3D, 
   createIntrinsicsMatrix, 
@@ -49,8 +50,8 @@ function generateSupport(
   return { supportX, supportY };
 }
 
-export default class WebEyeTrack {
-  
+export default class WebEyeTrack implements IDisposable {
+
   // Instance variables
   private blazeGaze: BlazeGaze;
   private faceLandmarkerClient: FaceLandmarkerClient;
@@ -62,6 +63,7 @@ export default class WebEyeTrack {
   private intrinsicsMatrix: Matrix = new Matrix(3, 3);
   private affineMatrix: tf.Tensor | null = null;
   private kalmanFilter: KalmanFilter2D;
+  private _disposed: boolean = false;
 
   // Public variables
   public loaded: boolean = false;
@@ -105,29 +107,55 @@ export default class WebEyeTrack {
   }
 
   pruneCalibData() {
-    
+
     // Prune the calibration data to keep only the last maxPoints points
-    tf.tidy(() => {
-      if (this.calibData.supportX.length > this.maxPoints) {
-        this.calibData.supportX = this.calibData.supportX.slice(-this.maxPoints);
-        this.calibData.supportY = this.calibData.supportY.slice(-this.maxPoints);
-        this.calibData.timestamps = this.calibData.timestamps.slice(-this.maxPoints);
-        this.calibData.ptType = this.calibData.ptType.slice(-this.maxPoints);
+    if (this.calibData.supportX.length > this.maxPoints) {
+      // Dispose tensors that will be removed
+      const itemsToRemove = this.calibData.supportX.slice(0, -this.maxPoints);
+      itemsToRemove.forEach(item => {
+        tf.dispose([item.eyePatches, item.headVectors, item.faceOrigins3D]);
+      });
+
+      const tensorsToRemove = this.calibData.supportY.slice(0, -this.maxPoints);
+      tensorsToRemove.forEach(tensor => {
+        tf.dispose(tensor);
+      });
+
+      // Now slice the arrays
+      this.calibData.supportX = this.calibData.supportX.slice(-this.maxPoints);
+      this.calibData.supportY = this.calibData.supportY.slice(-this.maxPoints);
+      this.calibData.timestamps = this.calibData.timestamps.slice(-this.maxPoints);
+      this.calibData.ptType = this.calibData.ptType.slice(-this.maxPoints);
+    }
+
+    // Apply time-to-live pruning for 'click' points
+    const currentTime = Date.now();
+    const ttl = this.clickTTL * 1000;
+
+    // Identify indices to keep and remove
+    const indicesToKeep: number[] = [];
+    const indicesToRemove: number[] = [];
+
+    this.calibData.timestamps.forEach((timestamp, index) => {
+      if (currentTime - timestamp <= ttl || this.calibData.ptType[index] !== 'click') {
+        indicesToKeep.push(index);
+      } else {
+        indicesToRemove.push(index);
       }
+    });
 
-      // Apply time-to-live pruning for 'click' points
-      const currentTime = Date.now();
-      const ttl = this.clickTTL * 1000; // Convert seconds to milliseconds
+    // Dispose tensors at indices to remove
+    indicesToRemove.forEach(index => {
+      const item = this.calibData.supportX[index];
+      tf.dispose([item.eyePatches, item.headVectors, item.faceOrigins3D]);
+      tf.dispose(this.calibData.supportY[index]);
+    });
 
-      // Filter all together
-      const filteredIndices = this.calibData.timestamps.map((timestamp, index) => {
-        return (currentTime - timestamp <= ttl || this.calibData.ptType[index] !== 'click') ? index : -1;
-      }).filter(index => index !== -1);
-      this.calibData.supportX = filteredIndices.map(index => this.calibData.supportX[index]);
-      this.calibData.supportY = filteredIndices.map(index => this.calibData.supportY[index]);
-      this.calibData.timestamps = filteredIndices.map(index => this.calibData.timestamps[index]);
-      this.calibData.ptType = filteredIndices.map(index => this.calibData.ptType[index]);
-    })
+    // Filter arrays to keep only valid indices
+    this.calibData.supportX = indicesToKeep.map(index => this.calibData.supportX[index]);
+    this.calibData.supportY = indicesToKeep.map(index => this.calibData.supportY[index]);
+    this.calibData.timestamps = indicesToKeep.map(index => this.calibData.timestamps[index]);
+    this.calibData.ptType = indicesToKeep.map(index => this.calibData.ptType[index]);
   }
 
   handleClick(x: number, y: number) {
@@ -304,10 +332,19 @@ export default class WebEyeTrack {
       })
       const supportPredsNumber = supportPreds.arraySync() as number[][];
       const supportYNumber = tfSupportY.arraySync() as number[][];
+
+      // Dispose the prediction tensor after extracting values
+      tf.dispose(supportPreds);
+
       const affineMatrixML = computeAffineMatrixML(
         supportPredsNumber,
         supportYNumber
       )
+
+      // Dispose old affine matrix before creating new one
+      if (this.affineMatrix) {
+        tf.dispose(this.affineMatrix);
+      }
       this.affineMatrix = tf.tensor2d(affineMatrixML, [2, 3], 'float32');
     }
 
@@ -328,6 +365,13 @@ export default class WebEyeTrack {
         loss.data().then(val => console.log(`Loss = ${val[0].toFixed(4)}`));
       }
     });
+
+    // Dispose concatenated tensors after training
+    // Note: If we only have one calibration point, these reference the supportX/supportY tensors
+    // which are stored in calibData, so we only dispose the concatenated versions
+    if (this.calibData.supportX.length > 1) {
+      tf.dispose([tfEyePatches, tfHeadVectors, tfFaceOrigins3D, tfSupportY]);
+    }
   }
 
   async step(frame: ImageData, timestamp: number): Promise<GazeResult> {
@@ -459,5 +503,54 @@ export default class WebEyeTrack {
     // Update the latest gaze result
     this.latestGazeResult = gaze_result;
     return gaze_result;
+  }
+
+  /**
+   * Disposes all TensorFlow.js tensors and resources held by this tracker.
+   * After calling dispose(), this object should not be used.
+   */
+  dispose(): void {
+    if (this._disposed) {
+      return;
+    }
+
+    // Dispose all calibration data tensors
+    this.calibData.supportX.forEach(item => {
+      tf.dispose([item.eyePatches, item.headVectors, item.faceOrigins3D]);
+    });
+
+    this.calibData.supportY.forEach(tensor => {
+      tf.dispose(tensor);
+    });
+
+    // Clear calibration arrays
+    this.calibData.supportX = [];
+    this.calibData.supportY = [];
+    this.calibData.timestamps = [];
+    this.calibData.ptType = [];
+
+    // Dispose affine matrix
+    if (this.affineMatrix) {
+      tf.dispose(this.affineMatrix);
+      this.affineMatrix = null;
+    }
+
+    // Dispose child components if they have dispose methods
+    if ('dispose' in this.blazeGaze && typeof this.blazeGaze.dispose === 'function') {
+      this.blazeGaze.dispose();
+    }
+
+    if ('dispose' in this.faceLandmarkerClient && typeof this.faceLandmarkerClient.dispose === 'function') {
+      this.faceLandmarkerClient.dispose();
+    }
+
+    this._disposed = true;
+  }
+
+  /**
+   * Returns true if dispose() has been called on this tracker.
+   */
+  get isDisposed(): boolean {
+    return this._disposed;
   }
 }
