@@ -103,7 +103,77 @@ export default class WebEyeTrack implements IDisposable {
   async initialize(): Promise<void> {
     await this.faceLandmarkerClient.initialize();
     await this.blazeGaze.loadModel();
+    await this.warmup();
     this.loaded = true;
+  }
+
+  /**
+   * Pre-warms TensorFlow.js execution pipeline by running dummy forward/backward passes.
+   * This compiles WebGL shaders and optimizes computation graphs before first real usage.
+   */
+  async warmup(): Promise<void> {
+    console.log('🔥 Starting TensorFlow.js warmup...');
+    const warmupStart = performance.now();
+
+    // Warmup iterations match maxPoints to exercise all code paths
+    const numWarmupIterations = this.maxPoints;
+
+    for (let iteration = 1; iteration <= numWarmupIterations; iteration++) {
+      await tf.nextFrame(); // Yield to prevent blocking
+
+      const iterationStart = performance.now();
+
+      // Create dummy tensors matching expected shapes
+      // Eye patch: ImageData(width=512, height=128) -> tensor [batch, height, width, channels]
+      const dummyEyePatch = tf.randomUniform([1, 128, 512, 3], 0, 1); // [batch, H=128, W=512, channels]
+      const dummyHeadVector = tf.randomUniform([1, 3], -1, 1);
+      const dummyFaceOrigin3D = tf.randomUniform([1, 3], -100, 100);
+      const dummyTarget = tf.randomUniform([1, 2], -0.5, 0.5);
+
+      // Warmup forward pass
+      tf.tidy(() => {
+        this.blazeGaze.predict(dummyEyePatch, dummyHeadVector, dummyFaceOrigin3D);
+      });
+
+      // Warmup backward pass (gradient computation)
+      const opt = tf.train.adam(1e-5, 0.85, 0.9, 1e-8);
+      tf.tidy(() => {
+        const { grads, value: loss } = tf.variableGrads(() => {
+          const preds = this.blazeGaze.predict(dummyEyePatch, dummyHeadVector, dummyFaceOrigin3D);
+          const loss = tf.losses.meanSquaredError(dummyTarget, preds);
+          return loss.asScalar();
+        });
+        opt.applyGradients(grads as Record<string, tf.Variable>);
+      });
+
+      // Warmup affine matrix computation path (kicks in at iteration 4)
+      if (iteration >= 4) {
+        tf.tidy(() => {
+          // Simulate multiple calibration points [batch, H=128, W=512, channels]
+          const multiEyePatches = tf.randomUniform([iteration, 128, 512, 3], 0, 1);
+          const multiHeadVectors = tf.randomUniform([iteration, 3], -1, 1);
+          const multiFaceOrigins3D = tf.randomUniform([iteration, 3], -100, 100);
+
+          const preds = this.blazeGaze.predict(multiEyePatches, multiHeadVectors, multiFaceOrigins3D);
+
+          // Trigger affine transformation path
+          if (this.affineMatrix) {
+            applyAffineMatrix(this.affineMatrix, preds);
+          }
+        });
+      }
+
+      // Clean up iteration tensors
+      opt.dispose();
+      tf.dispose([dummyEyePatch, dummyHeadVector, dummyFaceOrigin3D, dummyTarget]);
+
+      const iterationTime = performance.now() - iterationStart;
+      console.log(`  Iteration ${iteration}/${numWarmupIterations}: ${iterationTime.toFixed(2)}ms`);
+    }
+
+    const warmupTime = performance.now() - warmupStart;
+    console.log(`✅ TensorFlow.js warmup complete in ${warmupTime.toFixed(2)}ms`);
+    console.log(`   GPU shaders compiled, computation graphs optimized`);
   }
 
   pruneCalibData() {
