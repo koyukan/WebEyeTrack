@@ -358,89 +358,103 @@ export default class WebEyeTrack implements IDisposable {
     // Prune old calibration data
     this.pruneCalibData();
 
-    // Prepare the inputs
+    // Optimizer must persist across training iterations, so created outside tf.tidy()
+    // Must be explicitly disposed to prevent memory leak of internal variables
     const opt = tf.train.adam(innerLR, 0.85, 0.9, 1e-8);
-    let { supportX, supportY } = generateSupport(
-      eyePatches,
-      headVectors,
-      faceOrigins3D,
-      normPogs
-    );
 
-    // Append the new support data to the calibration data
-    this.calibData.supportX.push(supportX);
-    this.calibData.supportY.push(supportY);
-    this.calibData.timestamps.push(Date.now());
-    this.calibData.ptType.push(ptType);
+    try {
+      let { supportX, supportY } = generateSupport(
+        eyePatches,
+        headVectors,
+        faceOrigins3D,
+        normPogs
+      );
 
-    // Now extend the supportX and supportY tensors with prior calib data
-    let tfEyePatches: tf.Tensor;
-    let tfHeadVectors: tf.Tensor;
-    let tfFaceOrigins3D: tf.Tensor;
-    let tfSupportY: tf.Tensor;
-    if (this.calibData.supportX.length > 1) {
-      tfEyePatches = tf.concat(this.calibData.supportX.map(s => s.eyePatches), 0);
-      tfHeadVectors = tf.concat(this.calibData.supportX.map(s => s.headVectors), 0);
-      tfFaceOrigins3D = tf.concat(this.calibData.supportX.map(s => s.faceOrigins3D), 0);
-      tfSupportY = tf.concat(this.calibData.supportY, 0);
-    } else {
-      // If there is no prior calibration data, we use the current supportX and supportY
-      tfEyePatches = supportX.eyePatches;
-      tfHeadVectors = supportX.headVectors;
-      tfFaceOrigins3D = supportX.faceOrigins3D;
-      tfSupportY = supportY;
-    }
+      // Append the new support data to the calibration data
+      this.calibData.supportX.push(supportX);
+      this.calibData.supportY.push(supportY);
+      this.calibData.timestamps.push(Date.now());
+      this.calibData.ptType.push(ptType);
 
-    // Perform a single forward pass to compute an affine transformation
-    if (tfEyePatches.shape[0] > 3) {
-      const supportPreds = tf.tidy(() => {
-        return this.blazeGaze.predict(
-          tfEyePatches,
-          tfHeadVectors,
-          tfFaceOrigins3D
-        );
-      })
-      const supportPredsNumber = supportPreds.arraySync() as number[][];
-      const supportYNumber = tfSupportY.arraySync() as number[][];
-
-      // Dispose the prediction tensor after extracting values
-      tf.dispose(supportPreds);
-
-      const affineMatrixML = computeAffineMatrixML(
-        supportPredsNumber,
-        supportYNumber
-      )
-
-      // Dispose old affine matrix before creating new one
-      if (this.affineMatrix) {
-        tf.dispose(this.affineMatrix);
+      // Now extend the supportX and supportY tensors with prior calib data
+      let tfEyePatches: tf.Tensor;
+      let tfHeadVectors: tf.Tensor;
+      let tfFaceOrigins3D: tf.Tensor;
+      let tfSupportY: tf.Tensor;
+      if (this.calibData.supportX.length > 1) {
+        tfEyePatches = tf.concat(this.calibData.supportX.map(s => s.eyePatches), 0);
+        tfHeadVectors = tf.concat(this.calibData.supportX.map(s => s.headVectors), 0);
+        tfFaceOrigins3D = tf.concat(this.calibData.supportX.map(s => s.faceOrigins3D), 0);
+        tfSupportY = tf.concat(this.calibData.supportY, 0);
+      } else {
+        // If there is no prior calibration data, we use the current supportX and supportY
+        tfEyePatches = supportX.eyePatches;
+        tfHeadVectors = supportX.headVectors;
+        tfFaceOrigins3D = supportX.faceOrigins3D;
+        tfSupportY = supportY;
       }
-      this.affineMatrix = tf.tensor2d(affineMatrixML, [2, 3], 'float32');
-    }
 
-    tf.tidy(() => {
-      for (let i = 0; i < stepsInner; i++) {
-        const { grads, value: loss } = tf.variableGrads(() => {
-          const preds = this.blazeGaze.predict(tfEyePatches, tfHeadVectors, tfFaceOrigins3D);
-          const predsTransformed = this.affineMatrix ? applyAffineMatrix(this.affineMatrix, preds) : preds;
-          const loss = tf.losses.meanSquaredError(tfSupportY, predsTransformed);
-          return loss.asScalar();
-        });
+      // Perform a single forward pass to compute an affine transformation
+      if (tfEyePatches.shape[0] > 3) {
+        const supportPreds = tf.tidy(() => {
+          return this.blazeGaze.predict(
+            tfEyePatches,
+            tfHeadVectors,
+            tfFaceOrigins3D
+          );
+        })
+        const supportPredsNumber = supportPreds.arraySync() as number[][];
+        const supportYNumber = tfSupportY.arraySync() as number[][];
 
-        // variableGrads returns NamedTensorMap where values are gradients of Variables
-        // Type assertion is safe because variableGrads computes gradients w.r.t. Variables
-        opt.applyGradients(grads as Record<string, tf.Variable>);
+        // Dispose the prediction tensor after extracting values
+        tf.dispose(supportPreds);
 
-        // Optionally log
-        loss.data().then(val => console.log(`Loss = ${val[0].toFixed(4)}`));
+        const affineMatrixML = computeAffineMatrixML(
+          supportPredsNumber,
+          supportYNumber
+        )
+
+        // Dispose old affine matrix before creating new one
+        if (this.affineMatrix) {
+          tf.dispose(this.affineMatrix);
+        }
+        this.affineMatrix = tf.tensor2d(affineMatrixML, [2, 3], 'float32');
       }
-    });
 
-    // Dispose concatenated tensors after training
-    // Note: If we only have one calibration point, these reference the supportX/supportY tensors
-    // which are stored in calibData, so we only dispose the concatenated versions
-    if (this.calibData.supportX.length > 1) {
-      tf.dispose([tfEyePatches, tfHeadVectors, tfFaceOrigins3D, tfSupportY]);
+      tf.tidy(() => {
+        for (let i = 0; i < stepsInner; i++) {
+          const { grads, value: loss } = tf.variableGrads(() => {
+            const preds = this.blazeGaze.predict(tfEyePatches, tfHeadVectors, tfFaceOrigins3D);
+            const predsTransformed = this.affineMatrix ? applyAffineMatrix(this.affineMatrix, preds) : preds;
+            const loss = tf.losses.meanSquaredError(tfSupportY, predsTransformed);
+            return loss.asScalar();
+          });
+
+          // variableGrads returns NamedTensorMap where values are gradients of Variables
+          // Type assertion is safe because variableGrads computes gradients w.r.t. Variables
+          opt.applyGradients(grads as Record<string, tf.Variable>);
+
+          // Explicitly dispose gradients (defensive, tf.tidy should handle this)
+          Object.values(grads).forEach(g => g.dispose());
+
+          // Synchronous logging to avoid race condition with tf.tidy() cleanup
+          const lossValue = loss.dataSync()[0];
+          console.log(`Loss = ${lossValue.toFixed(4)}`);
+          loss.dispose();
+        }
+      });
+
+      // Dispose concatenated tensors after training
+      // Note: If we only have one calibration point, these reference the supportX/supportY tensors
+      // which are stored in calibData, so we only dispose the concatenated versions
+      if (this.calibData.supportX.length > 1) {
+        tf.dispose([tfEyePatches, tfHeadVectors, tfFaceOrigins3D, tfSupportY]);
+      }
+    } finally {
+      // CRITICAL: Dispose optimizer to prevent memory leak
+      // Optimizer creates internal variables (momentum buffers, variance accumulators)
+      // that persist until explicitly disposed, causing ~1-5 MB leak per adapt() call
+      opt.dispose();
     }
   }
 
