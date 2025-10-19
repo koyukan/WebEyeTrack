@@ -68,7 +68,7 @@ export function useCalibration({
    * Handle incoming gaze results during sample collection
    */
   const handleGazeResult = useCallback((gazeResult: GazeResult) => {
-    if (state.status !== 'collecting') return;
+    if (state.status !== 'collecting' || !gazeResult) return;
 
     const currentPoint = DEFAULT_CALIBRATION_POSITIONS[state.currentPointIndex];
 
@@ -203,18 +203,18 @@ export function useCalibration({
 
       console.log('Calling tracker.adapt() with:');
       console.log('  - Points:', normPogs);
-      console.log('  - stepsInner:', config.stepsInner, '(Python default, NOT 1)');
-      console.log('  - innerLR:', config.innerLR);
+      console.log('  - stepsInner:', config.stepsInner, '(matches Python main.py:250)');
+      console.log('  - innerLR:', config.innerLR, '(matches Python main.py:251)');
 
       // Call adaptation with Python default parameters
-      // CRITICAL: Use stepsInner=5 (Python default), NOT 1 (JS default)
+      // CRITICAL: Use stepsInner=10, innerLR=1e-4 (Python defaults), NOT JS defaults (1, 1e-5)
       await tracker.adapt(
         eyePatches,
         headVectors,
         faceOrigins3D,
         normPogs,
-        config.stepsInner,  // 5 (Python default)
-        config.innerLR,     // 1e-5
+        config.stepsInner,  // 10 (Python main.py:250)
+        config.innerLR,     // 1e-4 (Python main.py:251)
         'calib'             // Point type
       );
 

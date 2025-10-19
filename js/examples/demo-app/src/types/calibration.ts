@@ -49,10 +49,18 @@ export interface CalibrationConfig {
   /** Duration in ms to collect samples after animation (default: 1500) */
   collectionDuration?: number;
 
-  /** Inner loop steps for MAML adaptation (default: 5, matching Python) */
+  /**
+   * Inner loop steps for MAML adaptation (default: 10, matching Python)
+   * Reference: python/demo/main.py:250
+   * More steps = better convergence but slightly longer calibration time
+   */
   stepsInner?: number;
 
-  /** Learning rate for adaptation (default: 1e-5) */
+  /**
+   * Learning rate for adaptation (default: 1e-4, matching Python)
+   * Reference: python/demo/main.py:251
+   * Higher LR = faster convergence, must be balanced with stepsInner
+   */
   innerLR?: number;
 }
 
@@ -91,12 +99,13 @@ export const DEFAULT_CALIBRATION_POSITIONS: CalibrationPoint[] = [
 
 /**
  * Default calibration configuration
+ * Parameters match Python reference implementation (python/demo/main.py:246-252)
  */
 export const DEFAULT_CALIBRATION_CONFIG: Required<CalibrationConfig> = {
   numPoints: 4,
   samplesPerPoint: 25,
   animationDuration: 2000,
   collectionDuration: 1500,
-  stepsInner: 5,      // Match Python (NOT 1)
-  innerLR: 1e-5,
+  stepsInner: 10,     // Match Python main.py:250 (NOT the JS default of 1)
+  innerLR: 1e-4,      // Match Python main.py:251
 };

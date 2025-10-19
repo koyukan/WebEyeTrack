@@ -9,7 +9,7 @@ This demo app now includes a complete **Initial Few-Shot Calibration** workflow 
 ✅ **4-Point Calibration Grid** - Matches Python reference implementation
 ✅ **Visual Feedback** - Animated calibration dots with crosshair overlay
 ✅ **Statistical Filtering** - Selects best samples (mean-based outlier removal)
-✅ **MAML Adaptation** - Uses Python default parameters (stepsInner=5, innerLR=1e-5)
+✅ **MAML Adaptation** - Uses Python default parameters (stepsInner=10, innerLR=1e-4)
 ✅ **Progress Indicators** - Clear visual progress tracking
 ✅ **Error Handling** - Graceful error recovery and user feedback
 
@@ -97,8 +97,8 @@ tracker.adapt(
   headVectors,
   faceOrigins3D,
   normPogs,
-  5,        // stepsInner: 5 (Python default, NOT 1)
-  1e-5,     // innerLR: 1e-5 (same as Python)
+  10,       // stepsInner: 10 (Python default, NOT 1)
+  1e-4,     // innerLR: 1e-4 (Python default)
   'calib'   // ptType: 'calib'
 )
 ```
@@ -167,8 +167,8 @@ You can customize calibration behavior:
     samplesPerPoint: 25,       // Samples to collect per point (default: 25)
     animationDuration: 2000,   // Dot color animation time in ms (default: 2000)
     collectionDuration: 1500,  // Sample collection time in ms (default: 1500)
-    stepsInner: 5,             // MAML inner loop steps (default: 5)
-    innerLR: 1e-5,             // Learning rate (default: 1e-5)
+    stepsInner: 10,            // MAML inner loop steps (default: 10, matching Python)
+    innerLR: 1e-4,             // Learning rate (default: 1e-4, matching Python)
   }}
   onComplete={() => console.log('Calibration complete!')}
   onCancel={() => console.log('Calibration cancelled')}
@@ -223,8 +223,8 @@ Before considering the calibration feature complete, verify:
 | Positions | [-0.4, -0.4], etc. | [-0.4, -0.4], etc. | ✅ Same |
 | Animation | Color gradient | CSS transition | ✅ Equivalent |
 | Statistical Filter | Mean + closest | Mean + closest | ✅ Same algorithm |
-| stepsInner | 5 | 5 | ✅ Same |
-| innerLR | 1e-5 | 1e-5 | ✅ Same |
+| stepsInner | 10 | 10 | ✅ Same |
+| innerLR | 1e-4 | 1e-4 | ✅ Same |
 | Affine Transform | Optional flag | Auto if >3 points | ⚠️ JS always applies |
 | Worker Thread | No | Yes | ✅ JS advantage |
 
