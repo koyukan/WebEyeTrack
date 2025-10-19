@@ -8,6 +8,8 @@ export default class WebEyeTrackProxy implements IDisposable {
   private clickHandler: ((e: MouseEvent) => void) | null = null;
   private messageHandler: ((e: MessageEvent) => void) | null = null;
   private _disposed: boolean = false;
+  private adaptResolve: (() => void) | null = null;
+  private adaptReject: ((error: Error) => void) | null = null;
 
   public status: 'idle' | 'inference' | 'calib' = 'idle';
 
@@ -49,6 +51,25 @@ export default class WebEyeTrackProxy implements IDisposable {
           this.status = mess.data.status;
           break;
 
+        case 'adaptComplete':
+          // Handle adaptation completion
+          if (mess.data.success) {
+            console.log('[WebEyeTrackProxy] Adaptation completed successfully');
+          } else {
+            console.error('[WebEyeTrackProxy] Adaptation failed:', mess.data.error);
+          }
+          // Resolve promise if we stored it
+          if (this.adaptResolve && this.adaptReject) {
+            if (mess.data.success) {
+              this.adaptResolve();
+            } else {
+              this.adaptReject(new Error(mess.data.error));
+            }
+            this.adaptResolve = null;
+            this.adaptReject = null;
+          }
+          break;
+
         default:
           console.warn(`[WebEyeTrackProxy] Unknown message type: ${mess.data.type}`);
           break;
@@ -76,6 +97,49 @@ export default class WebEyeTrackProxy implements IDisposable {
   // Callback for gaze results
   onGazeResults: (gazeResult: GazeResult) => void = () => {
     console.warn('onGazeResults callback not set');
+  }
+
+  /**
+   * Perform calibration adaptation
+   * Sends calibration data to the worker for model fine-tuning
+   *
+   * @param eyePatches - Array of eye region images
+   * @param headVectors - Array of 3D head direction vectors
+   * @param faceOrigins3D - Array of 3D face positions
+   * @param normPogs - Ground truth gaze points in normalized coords [-0.5, 0.5]
+   * @param stepsInner - Number of gradient descent iterations (default: 1)
+   * @param innerLR - Learning rate for adaptation (default: 1e-5)
+   * @param ptType - Point type: 'calib' for manual, 'click' for automatic
+   * @returns Promise that resolves when adaptation completes
+   */
+  async adapt(
+    eyePatches: ImageData[],
+    headVectors: number[][],
+    faceOrigins3D: number[][],
+    normPogs: number[][],
+    stepsInner: number = 1,
+    innerLR: number = 1e-5,
+    ptType: 'calib' | 'click' = 'calib'
+  ): Promise<void> {
+    console.log('[WebEyeTrackProxy] Starting adaptation with', normPogs.length, 'points');
+
+    return new Promise((resolve, reject) => {
+      this.adaptResolve = resolve;
+      this.adaptReject = reject;
+
+      this.worker.postMessage({
+        type: 'adapt',
+        payload: {
+          eyePatches,
+          headVectors,
+          faceOrigins3D,
+          normPogs,
+          stepsInner,
+          innerLR,
+          ptType
+        }
+      });
+    });
   }
 
   /**

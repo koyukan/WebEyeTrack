@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { WebcamClient, WebEyeTrackProxy, GazeResult } from 'webeyetrack';
 import GazeDot from './GazeDot.jsx';
 import DebugOverlay from './DebugOverlay';
 import { drawMesh } from './drawMesh';
-import { eye } from '@tensorflow/tfjs';
 import MemoryCleanupErrorBoundary from './MemoryCleanupErrorBoundary';
+import CalibrationOverlay from './components/CalibrationOverlay';
 
 function AppContent() {
   const [gaze, setGaze] = useState({ x: 0, y: 0, gazeState: 'closed'});
@@ -18,6 +18,7 @@ function AppContent() {
   const [showEyePatch, setShowEyePatch] = useState(true);
   const [showDebug, setShowDebug] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showCalibration, setShowCalibration] = useState(false);
 
   const hasInitializedRef = useRef(false);
   const hasCanvasSizeRef = useRef(false);
@@ -138,6 +139,21 @@ function AppContent() {
 
   return (
     <>
+      {/* Calibration Overlay */}
+      {showCalibration && eyeTrackProxyRef.current && (
+        <CalibrationOverlay
+          tracker={eyeTrackProxyRef.current}
+          onComplete={() => {
+            console.log('Calibration completed successfully');
+            setShowCalibration(false);
+          }}
+          onCancel={() => {
+            console.log('Calibration cancelled');
+            setShowCalibration(false);
+          }}
+        />
+      )}
+
       {/* Burger Menu */}
       <div className="flex items-center top-0 left-0 w-full h-12 bg-white relative z-50">
         <div ref={menuRef} className="relative">
@@ -172,6 +188,15 @@ function AppContent() {
             </label>
           </div>
         </div>
+
+        {/* Calibrate Button */}
+        <button
+          className="ml-auto mr-2 px-4 py-2 bg-blue-600 text-white rounded-md shadow-md hover:bg-blue-700 transition font-semibold"
+          onClick={() => setShowCalibration(true)}
+          disabled={!eyeTrackProxyRef.current}
+        >
+          Calibrate
+        </button>
       </div>
 
       {/* Gaze Dot */}

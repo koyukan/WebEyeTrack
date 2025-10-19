@@ -43,6 +43,31 @@ self.onmessage = async (e) => {
       self.postMessage({ type: 'statusUpdate', status: status});
       break;
 
+    case 'adapt':
+      // Handle manual calibration adaptation
+      status = 'calib';
+      self.postMessage({ type: 'statusUpdate', status: status});
+
+      try {
+        tracker.adapt(
+          payload.eyePatches,
+          payload.headVectors,
+          payload.faceOrigins3D,
+          payload.normPogs,
+          payload.stepsInner,
+          payload.innerLR,
+          payload.ptType
+        );
+        self.postMessage({ type: 'adaptComplete', success: true });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Adaptation failed';
+        self.postMessage({ type: 'adaptComplete', success: false, error: errorMessage });
+      }
+
+      status = 'idle';
+      self.postMessage({ type: 'statusUpdate', status: status});
+      break;
+
     case 'dispose':
       // Clean up tracker resources before worker termination
       if (tracker) {

@@ -23,6 +23,10 @@
     "react-scripts": "5.0.1"
   },
   "scripts": {
+    "copy-worker": "node scripts/copy-worker.js",
+    "postinstall": "npm run copy-worker",
+    "prestart": "npm run copy-worker",
+    "prebuild": "npm run copy-worker",
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
