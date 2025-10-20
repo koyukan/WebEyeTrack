@@ -251,11 +251,15 @@ export default class WebEyeTrack implements IDisposable {
 
     if (this.loaded && this.latestGazeResult) {
       // Adapt the model based on the click position
+      // Use Python default parameters (main.py:183-185) for click calibration
       this.adapt(
         [this.latestGazeResult?.eyePatch as ImageData],
         [this.latestGazeResult?.headVector as number[]],
         [this.latestGazeResult?.faceOrigin3D as number[]],
-        [[x, y]]
+        [[x, y]],
+        10,      // stepsInner: matches Python main.py:183
+        1e-4,    // innerLR: matches Python main.py:184
+        'click'  // ptType: matches Python main.py:185
       );
     }
   }
@@ -350,8 +354,8 @@ export default class WebEyeTrack implements IDisposable {
     headVectors: number[][],
     faceOrigins3D: number[][],
     normPogs: number[][],
-    stepsInner: number = 1,
-    innerLR: number = 1e-5,
+    stepsInner: number = 5,    // Default: 5 (matches Python webeyetrack.py:324)
+    innerLR: number = 1e-5,    // Default: 1e-5 (matches Python webeyetrack.py:325)
     ptType: 'calib' | 'click' = 'calib'
   ) {
 
