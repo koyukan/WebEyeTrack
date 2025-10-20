@@ -84,6 +84,7 @@ export function useCalibration({
 
   /**
    * Start calibration workflow
+   * IMPORTANT: Clears previous calibration data to support re-calibration
    */
   const startCalibration = useCallback(() => {
     if (!tracker) {
@@ -94,6 +95,15 @@ export function useCalibration({
     }
 
     console.log('Starting calibration with config:', config);
+
+    // Clear previous calibration buffer (supports re-calibration)
+    // This ensures old calibration data doesn't interfere with new calibration
+    if (tracker.clearCalibrationBuffer) {
+      console.log('🔄 Clearing previous calibration data for fresh start');
+      tracker.clearCalibrationBuffer();
+    } else {
+      console.warn('⚠️ clearCalibrationBuffer() not available on tracker - old calibration data may persist');
+    }
 
     setState({
       status: 'instructions',

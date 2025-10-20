@@ -143,6 +143,16 @@ export default class WebEyeTrackProxy implements IDisposable {
   }
 
   /**
+   * Clears the calibration buffer and resets the affine transformation matrix.
+   * Call this when starting a new calibration session (e.g., user clicks "Calibrate" button again).
+   * This ensures old calibration data doesn't interfere with the new calibration.
+   */
+  clearCalibrationBuffer(): void {
+    console.log('[WebEyeTrackProxy] Clearing calibration buffer');
+    this.worker.postMessage({ type: 'clearCalibration' });
+  }
+
+  /**
    * Disposes the proxy, terminating the worker and removing all event listeners.
    */
   dispose(): void {

@@ -68,6 +68,13 @@ self.onmessage = async (e) => {
       self.postMessage({ type: 'statusUpdate', status: status});
       break;
 
+    case 'clearCalibration':
+      // Clear calibration buffer for re-calibration
+      if (tracker) {
+        tracker.clearCalibrationBuffer();
+      }
+      break;
+
     case 'dispose':
       // Clean up tracker resources before worker termination
       if (tracker) {
