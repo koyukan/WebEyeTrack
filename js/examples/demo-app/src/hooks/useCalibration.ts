@@ -84,7 +84,7 @@ export function useCalibration({
 
   /**
    * Start calibration workflow
-   * IMPORTANT: Clears previous calibration data to support re-calibration
+   * IMPORTANT: Clears previous calibration AND clickstream data to support re-calibration
    */
   const startCalibration = useCallback(() => {
     if (!tracker) {
@@ -96,13 +96,18 @@ export function useCalibration({
 
     console.log('Starting calibration with config:', config);
 
-    // Clear previous calibration buffer (supports re-calibration)
-    // This ensures old calibration data doesn't interfere with new calibration
-    if (tracker.clearCalibrationBuffer) {
-      console.log('🔄 Clearing previous calibration data for fresh start');
+    // Clear ALL previous buffer data (both calibration and clickstream)
+    // This ensures stale data from previous calibration context doesn't contaminate new calibration
+    if (tracker.resetAllBuffers) {
+      console.log('🔄 Resetting all buffers (calibration + clickstream) for fresh start');
+      tracker.resetAllBuffers();
+    } else if (tracker.clearCalibrationBuffer) {
+      // Fallback for older API (only clears calibration, not clickstream)
+      console.warn('⚠️ resetAllBuffers() not available - using clearCalibrationBuffer() fallback');
+      console.warn('⚠️ Clickstream buffer will NOT be cleared - may contain stale data');
       tracker.clearCalibrationBuffer();
     } else {
-      console.warn('⚠️ clearCalibrationBuffer() not available on tracker - old calibration data may persist');
+      console.warn('⚠️ No buffer clearing methods available - old data may persist');
     }
 
     setState({

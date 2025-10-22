@@ -75,6 +75,20 @@ self.onmessage = async (e) => {
       }
       break;
 
+    case 'clearClickstream':
+      // Clear clickstream buffer while preserving calibration
+      if (tracker) {
+        tracker.clearClickstreamPoints();
+      }
+      break;
+
+    case 'resetAllBuffers':
+      // Reset both calibration and clickstream buffers
+      if (tracker) {
+        tracker.resetAllBuffers();
+      }
+      break;
+
     case 'dispose':
       // Clean up tracker resources before worker termination
       if (tracker) {

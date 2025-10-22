@@ -221,6 +221,52 @@ export default class WebEyeTrack implements IDisposable {
   }
 
   /**
+   * Clears the clickstream buffer while preserving calibration points.
+   * Use this to remove stale clickstream data without affecting calibration.
+   * Properly disposes all clickstream tensors to prevent memory leaks.
+   *
+   * @example
+   * // Clear stale clicks while keeping calibration
+   * tracker.clearClickstreamPoints();
+   */
+  clearClickstreamPoints() {
+    console.log('🔄 Clearing clickstream buffer');
+
+    // Dispose all clickstream tensors
+    this.calibData.clickSupportX.forEach(item => {
+      tf.dispose([item.eyePatches, item.headVectors, item.faceOrigins3D]);
+    });
+
+    this.calibData.clickSupportY.forEach(tensor => {
+      tf.dispose(tensor);
+    });
+
+    // Clear clickstream arrays
+    this.calibData.clickSupportX = [];
+    this.calibData.clickSupportY = [];
+    this.calibData.clickTimestamps = [];
+
+    console.log('✅ Clickstream buffer cleared');
+  }
+
+  /**
+   * Resets both calibration and clickstream buffers for a completely fresh start.
+   * This is the recommended method to call when initiating re-calibration.
+   * Properly disposes all tensors and resets affine matrix.
+   *
+   * @example
+   * // User clicks "Recalibrate" button
+   * tracker.resetAllBuffers();
+   * tracker.adapt(...); // Start fresh calibration
+   */
+  resetAllBuffers() {
+    console.log('🔄 Resetting all buffers for re-calibration');
+    this.clearCalibrationBuffer();
+    this.clearClickstreamPoints();
+    console.log('✅ All buffers reset - ready for fresh calibration');
+  }
+
+  /**
    * Prunes the clickstream buffer based on TTL and maxClickPoints.
    * Calibration buffer is NEVER pruned - calibration points persist for the entire session.
    */

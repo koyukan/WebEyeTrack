@@ -153,6 +153,34 @@ export default class WebEyeTrackProxy implements IDisposable {
   }
 
   /**
+   * Clears the clickstream buffer while preserving calibration points.
+   * Use this to remove stale clickstream data without affecting calibration.
+   *
+   * @example
+   * // Clear stale clicks while keeping calibration
+   * tracker.clearClickstreamPoints();
+   */
+  clearClickstreamPoints(): void {
+    console.log('[WebEyeTrackProxy] Clearing clickstream buffer');
+    this.worker.postMessage({ type: 'clearClickstream' });
+  }
+
+  /**
+   * Resets both calibration and clickstream buffers for a completely fresh start.
+   * This is the recommended method to call when initiating re-calibration.
+   *
+   * @example
+   * // User clicks "Recalibrate" button
+   * tracker.resetAllBuffers();
+   * // Then start new calibration
+   * await tracker.adapt(...);
+   */
+  resetAllBuffers(): void {
+    console.log('[WebEyeTrackProxy] Resetting all buffers');
+    this.worker.postMessage({ type: 'resetAllBuffers' });
+  }
+
+  /**
    * Disposes the proxy, terminating the worker and removing all event listeners.
    */
   dispose(): void {
