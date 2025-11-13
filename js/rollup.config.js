@@ -8,8 +8,7 @@ const external = [
   '@mediapipe/tasks-vision',
   '@tensorflow/tfjs',
   'mathjs',
-  'ml-matrix',
-  /^worker-loader/ // Make worker-loader imports external
+  'ml-matrix'
 ];
 
 // ESM build

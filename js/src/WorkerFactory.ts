@@ -21,34 +21,39 @@ export function createWebEyeTrackWorker(config?: WorkerConfig): Worker {
     }
   }
 
+  // Auto-detect worker location from script URL
   try {
-    const WebpackWorker = require('worker-loader?inline=no-fallback!./WebEyeTrackWorker.ts');
-    return new WebpackWorker.default();
-  } catch (webpackError) {
-    try {
-      if (typeof document !== 'undefined' && document.currentScript) {
-        const scriptUrl = (document.currentScript as HTMLScriptElement).src;
-        const baseUrl = scriptUrl.substring(0, scriptUrl.lastIndexOf('/'));
-        const workerUrl = `${baseUrl}/webeyetrack.worker.js`;
-        return new Worker(workerUrl);
-      }
-
-      if (typeof self !== 'undefined' && self.location) {
-        const baseUrl = self.location.origin + self.location.pathname.substring(0, self.location.pathname.lastIndexOf('/'));
-        const workerUrl = `${baseUrl}/webeyetrack.worker.js`;
-        return new Worker(workerUrl);
-      }
-
-      const workerUrl = './webeyetrack.worker.js';
+    // Priority 1: Try to detect from document.currentScript (works in browser main thread)
+    if (typeof document !== 'undefined' && document.currentScript) {
+      const scriptUrl = (document.currentScript as HTMLScriptElement).src;
+      const baseUrl = scriptUrl.substring(0, scriptUrl.lastIndexOf('/'));
+      const workerUrl = `${baseUrl}/webeyetrack.worker.js`;
       return new Worker(workerUrl);
-    } catch (fallbackError) {
-      throw new Error(
-        'Failed to create WebEyeTrack worker. Please provide a custom workerUrl in the config:\n' +
-        'new WebEyeTrackProxy(webcamClient, { workerUrl: "/path/to/webeyetrack.worker.js" })\n\n' +
-        'Make sure webeyetrack.worker.js is accessible from your application.\n' +
-        `Webpack error: ${webpackError instanceof Error ? webpackError.message : String(webpackError)}\n` +
-        `Fallback error: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`
-      );
     }
+
+    // Priority 2: Try to detect from self.location (works in Web Workers)
+    if (typeof self !== 'undefined' && self.location) {
+      const baseUrl = self.location.origin + self.location.pathname.substring(0, self.location.pathname.lastIndexOf('/'));
+      const workerUrl = `${baseUrl}/webeyetrack.worker.js`;
+      return new Worker(workerUrl);
+    }
+
+    // Priority 3: Relative path fallback (works if worker is in same directory as bundle)
+    const workerUrl = './webeyetrack.worker.js';
+    return new Worker(workerUrl);
+  } catch (error) {
+    throw new Error(
+      'Failed to automatically detect worker location.\n\n' +
+      'Please provide an explicit workerUrl in the configuration:\n' +
+      '  new WebEyeTrackProxy(webcamClient, {\n' +
+      '    workerUrl: "/path/to/webeyetrack.worker.js"\n' +
+      '  })\n\n' +
+      'Make sure webeyetrack.worker.js is publicly accessible from your application.\n\n' +
+      'Common solutions:\n' +
+      '- Vite: Copy worker to public/ directory\n' +
+      '- webpack: Use CopyWebpackPlugin to copy worker to dist/\n' +
+      '- Custom: Serve worker from CDN or static assets\n\n' +
+      `Error: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
