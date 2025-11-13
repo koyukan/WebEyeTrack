@@ -1,6 +1,6 @@
 {
   "name": "webeyetrack-demo",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "private": true,
   "homepage": "./",
   "dependencies": {
@@ -20,16 +20,20 @@
     "typescript": "^4.6.4",
     "video.js": "^8.23.4",
     "web-vitals": "^2.1.4",
-    "webeyetrack": "file:../../"
+    "webeyetrack": "file:../../",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "esbuild": "^0.27.0",
     "react-scripts": "5.0.1"
   },
   "scripts": {
     "copy-worker": "node scripts/copy-worker.js",
-    "postinstall": "npm run copy-worker",
-    "prestart": "npm run copy-worker",
-    "prebuild": "npm run copy-worker",
+    "build-fixation-worker": "node scripts/build-fixation-worker.js",
+    "prepare-workers": "npm run copy-worker && npm run build-fixation-worker",
+    "postinstall": "npm run prepare-workers",
+    "prestart": "npm run prepare-workers",
+    "prebuild": "npm run prepare-workers",
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",

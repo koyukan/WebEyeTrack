@@ -1,23 +1,38 @@
-# WebEyeTrack in JS/TS
+# @koyukan/webeyetrack - Enhanced WebEyeTrack
 
-Created by <a href="https://edavalosanaya.github.io" target="_blank">Eduardo Davalos</a>, <a href="https://scholar.google.com/citations?user=_E0SGAkAAAAJ&hl=en" target="_blank">Yike Zhang</a>, <a href="https://scholar.google.com/citations?user=GWvdYIoAAAAJ&hl=en&oi=ao" target="_blank">Namrata Srivastava</a>, <a href="https://www.linkedin.com/in/yashvitha/" target="_blank">Yashvitha Thatigolta</a>, <a href="" target="_blank">Jorge A. Salas</a>, <a href="https://www.linkedin.com/in/sara-mcfadden-93162a4/" target="_blank">Sara McFadden</a>, <a href="https://scholar.google.com/citations?user=0SHxelgAAAAJ&hl=en" target="_blank">Cho Sun-Joo</a>, <a href="https://scholar.google.com/citations?user=dZ8X7mMAAAAJ&hl=en" target="_blank">Amanda Goodwin</a>, <a href="https://sites.google.com/view/ashwintudur/home" target="_blank">Ashwin TS</a>, and <a href="https://scholar.google.com/citations?user=-m5wrTkAAAAJ&hl=en" target="_blank">Guatam Biswas</a> from <a href="https://wp0.vanderbilt.edu/oele/" target="_blank">Vanderbilt University</a>, <a href="https://redforestai.github.io" target="_blank">Trinity University</a>, and <a href="https://knotlab.github.io/KnotLab/" target="_blank">St. Mary's University</a>
+[![NPM Version](https://img.shields.io/npm/v/@koyukan/webeyetrack)](https://www.npmjs.com/package/@koyukan/webeyetrack) [![GitHub License](https://img.shields.io/github/license/koyukan/webeyetrack)](#license)
 
-### [Project](https://redforestai.github.io/WebEyeTrack) | [Paper](https://arxiv.org/abs/2508.19544) | [Demo](https://azure-olympie-5.tiiny.site)
+> **Enhanced fork** of [WebEyeTrack](https://github.com/RedForestAI/WebEyeTrack) with professional-grade features, performance optimizations, and improved developer experience.
+>
+> See [main README](../README.md#attribution--enhancements) for full attribution and list of enhancements.
 
-<p></p>
+## About
 
-[![NPM Version](https://img.shields.io/npm/v/webeyetrack)](https://www.npmjs.com/package/webeyetrack) [![PyPI - Version](https://img.shields.io/pypi/v/webeyetrack)](https://pypi.org/project/webeyetrack/) [![GitHub License](https://img.shields.io/github/license/RedForestAI/webeyetrack)](#license)
+This is the TypeScript/JavaScript implementation of WebEyeTrack, enhanced with:
+- 🚀 Performance optimizations (3× faster in some operations)
+- 🧠 Memory management and leak prevention
+- 📦 Modern build system (ESM/CJS/UMD)
+- 🔒 TypeScript strict mode
+- 🎯 Professional-grade calibration system
+- 📊 Real-time analysis and visualization tools
 
-The JS/TS implementation of WebEyeTrack uses a [Web Worker](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Using_web_workers) to offload the AI inference to an isolated worker thread, preventing the main UI thread to become unresponsive. Lastly, we made the ``webeyetrack`` independent of a UI framework such as React, Vue, or Angular.
+The implementation uses a [Web Worker](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Using_web_workers) to offload AI inference to an isolated thread, keeping the main UI thread responsive. The package is framework-independent and works with React, Vue, Angular, or vanilla JavaScript.
 
-Additionally, you can combine ``webeyetrack``, a gaze estimation JS library, with [``webfixrt``](https://github.com/redforestai/webfixrt), an online fixation detection JS library, to extract fixation and saccade information as a real-time stream.
+Additionally, you can combine `@koyukan/webeyetrack` with [webfixrt](https://github.com/redforestai/webfixrt) for online fixation detection to extract fixation and saccade information as a real-time stream.
+
+### Original Research
+
+Created by Eduardo Davalos, Yike Zhang, and collaborators at Vanderbilt University.
+- **Paper**: [WEBEYETRACK: Scalable Eye-Tracking for the Browser via On-Device Few-Shot Personalization](https://arxiv.org/abs/2508.19544)
+- **Original Repository**: https://github.com/RedForestAI/WebEyeTrack
+- **Funding**: Institute of Education Sciences, U.S. Department of Education
 
 # Getting Started
 
 Install the npm package running the following command:
 
 ```bash
-npm install webeyetrack
+npm install @koyukan/webeyetrack
 ```
 
 # Usage
@@ -70,7 +85,7 @@ WebEyeTrack uses TensorFlow.js for real-time gaze estimation, which requires car
 All WebEyeTrack components must be explicitly disposed to release GPU/CPU resources:
 
 ```typescript
-import { WebcamClient, WebEyeTrackProxy } from 'webeyetrack';
+import { WebcamClient, WebEyeTrackProxy } from '@koyukan/webeyetrack';
 
 // Initialize
 const webcamClient = new WebcamClient('webcam');
@@ -113,7 +128,7 @@ useEffect(() => {
 Wrap your application with `MemoryCleanupErrorBoundary` to ensure cleanup on errors:
 
 ```typescript
-import { MemoryCleanupErrorBoundary } from 'webeyetrack';
+import { MemoryCleanupErrorBoundary } from '@koyukan/webeyetrack';
 
 function App() {
   return (
@@ -129,7 +144,7 @@ function App() {
 Use the `MemoryMonitor` utility to track TensorFlow.js memory usage:
 
 ```typescript
-import { MemoryMonitor } from 'webeyetrack';
+import { MemoryMonitor } from '@koyukan/webeyetrack';
 
 const monitor = new MemoryMonitor();
 monitor.captureBaseline();
@@ -212,14 +227,14 @@ export default defineConfig({
     {
       name: 'copy-worker',
       buildStart() {
-        const src = resolve(__dirname, 'node_modules/webeyetrack/dist/webeyetrack.worker.js')
+        const src = resolve(__dirname, 'node_modules/@koyukan/webeyetrack/dist/webeyetrack.worker.js')
         const dest = resolve(__dirname, 'public/webeyetrack.worker.js')
         copyFileSync(src, dest)
       }
     }
   ],
   optimizeDeps: {
-    exclude: ['webeyetrack']  // Important: prevents Vite from pre-bundling
+    exclude: ['@koyukan/webeyetrack']  // Important: prevents Vite from pre-bundling
   }
 })
 ```

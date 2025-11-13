@@ -1,7 +1,7 @@
 {
-  "name": "webeyetrack",
-  "version": "0.0.2",
-  "description": "A library for real-time eye tracking in the browser",
+  "name": "@koyukan/webeyetrack",
+  "version": "1.0.0",
+  "description": "Enhanced WebEyeTrack with professional-grade features, performance optimizations, and improved developer experience",
   "main": "./dist/index.cjs",
   "module": "./dist/index.esm.js",
   "types": "./dist/index.d.ts",
@@ -32,15 +32,27 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/RedForestAI/WebEyeTrack.git"
+    "url": "https://github.com/koyukan/WebEyeTrack.git"
   },
-  "homepage": "https://redforestai.github.io/WebEyeTrack/",
+  "homepage": "https://github.com/koyukan/WebEyeTrack",
   "keywords": [
     "eye-tracking",
     "real-time",
-    "browser"
+    "browser",
+    "webeyetrack",
+    "fork",
+    "enhanced",
+    "typescript",
+    "memory-management",
+    "performance"
   ],
-  "author": "Eduardo Davalos",
+  "author": "Huseyin Koyukan",
+  "contributors": [
+    "Eduardo Davalos (original WebEyeTrack author)",
+    "Yike Zhang",
+    "Amanda Goodwin",
+    "Gautam Biswas"
+  ],
   "license": "MIT",
   "devDependencies": {
     "@babel/preset-env": "^7.27.2",

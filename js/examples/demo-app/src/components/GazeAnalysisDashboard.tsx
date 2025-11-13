@@ -152,23 +152,6 @@ export default function GazeAnalysisDashboard({
         </button>
       </div>
 
-      {/* Warning Banner for Webcam Mode */}
-      {session.recordingMetadata.recordingMode === 'webcam' && (
-        <div className="bg-orange-600 text-white px-4 py-3 flex items-center gap-3 border-b border-orange-700">
-          <svg className="w-6 h-6 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-          </svg>
-          <div className="flex-1">
-            <p className="font-semibold">Webcam Mode - Demo Only</p>
-            <p className="text-sm text-orange-100">
-              This recording shows the webcam feed (your face), not your screen.
-              Fixation overlays are positioned in screen coordinates and do not correspond to the video content.
-              For meaningful visualization, use <strong>Screen Recording Mode</strong>.
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Main Content */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Visualization Area */}
@@ -305,16 +288,6 @@ export default function GazeAnalysisDashboard({
                 <span className="text-gray-400">Sampling Rate:</span>
                 <span className="font-mono">
                   {(stats.samples / parseFloat(stats.duration)).toFixed(0)} Hz
-                </span>
-              </div>
-              <div className="flex justify-between border-t border-gray-700 pt-2 mt-2">
-                <span className="text-gray-400">Recording Mode:</span>
-                <span className={`font-semibold ${
-                  session.recordingMetadata.recordingMode === 'screen'
-                    ? 'text-green-400'
-                    : 'text-orange-400'
-                }`}>
-                  {session.recordingMetadata.recordingMode === 'screen' ? 'Screen' : 'Webcam'}
                 </span>
               </div>
             </div>
