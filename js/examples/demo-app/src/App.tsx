@@ -130,7 +130,7 @@ function AppContent() {
 
       const webcamClient = new WebcamClient(videoRef.current.id);
       const webEyeTrackProxy = new WebEyeTrackProxy(webcamClient, {
-        workerUrl: '/webeyetrack.worker.js'
+        workerUrl: process.env.PUBLIC_URL + '/webeyetrack.worker.js'
       });
 
       // Store refs for cleanup

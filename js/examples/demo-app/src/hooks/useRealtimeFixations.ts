@@ -62,7 +62,7 @@ export function useRealtimeFixations(
 
     try {
       // Load pre-compiled worker from public directory
-      const worker = new Worker('/fixation.worker.js');
+      const worker = new Worker(process.env.PUBLIC_URL + '/fixation.worker.js');
 
       // Handle messages from worker
       worker.onmessage = (event: MessageEvent<WorkerOutputMessage>) => {
