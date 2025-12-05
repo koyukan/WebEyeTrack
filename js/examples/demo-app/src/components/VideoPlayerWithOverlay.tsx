@@ -196,6 +196,7 @@ export default function VideoPlayerWithOverlay({
         playerRef.current = null;
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoUrl]);
 
   // RequestAnimationFrame loop for smooth 60 FPS overlay updates
@@ -280,7 +281,8 @@ export default function VideoPlayerWithOverlay({
       }
       window.removeEventListener('resize', updateDimensions);
     };
-  }, [playerRef.current]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Calculate fixation circle size based on duration
   const getFixationSize = (fixation: Fixation) => {

@@ -83,116 +83,18 @@ export function useCalibration({
   }, [state.status, state.currentPointIndex, config.samplesPerPoint]);
 
   /**
-   * Start calibration workflow
-   * IMPORTANT: Clears previous calibration AND clickstream data to support re-calibration
+   * Reset calibration state to idle
+   * Defined first so other callbacks can depend on it
    */
-  const startCalibration = useCallback(() => {
-    if (!tracker) {
-      const error = 'Tracker not initialized';
-      console.error(error);
-      if (onError) onError(error);
-      return;
-    }
-
-    console.log('Starting calibration with config:', config);
-
-    // Clear ALL previous buffer data (both calibration and clickstream)
-    // This ensures stale data from previous calibration context doesn't contaminate new calibration
-    if (tracker.resetAllBuffers) {
-      console.log('🔄 Resetting all buffers (calibration + clickstream) for fresh start');
-      tracker.resetAllBuffers();
-    } else if (tracker.clearCalibrationBuffer) {
-      // Fallback for older API (only clears calibration, not clickstream)
-      console.warn('⚠️ resetAllBuffers() not available - using clearCalibrationBuffer() fallback');
-      console.warn('⚠️ Clickstream buffer will NOT be cleared - may contain stale data');
-      tracker.clearCalibrationBuffer();
-    } else {
-      console.warn('⚠️ No buffer clearing methods available - old data may persist');
-    }
-
+  const resetCalibration = useCallback(() => {
+    samplesRef.current = [];
     setState({
-      status: 'instructions',
+      status: 'idle',
       currentPointIndex: 0,
       totalPoints: config.numPoints,
       pointsData: []
     });
-
-    // Move to first calibration point after brief delay
-    setTimeout(() => {
-      setState(prev => ({
-        ...prev,
-        status: 'collecting'
-      }));
-    }, 3000);  // 3 second instruction display
-  }, [tracker, config, onError]);
-
-  /**
-   * Handle animation completion (dot turned white)
-   * Start collecting samples
-   */
-  const handleAnimationComplete = useCallback(() => {
-    if (state.status !== 'collecting') return;
-
-    console.log(`Animation complete for point ${state.currentPointIndex + 1}, starting sample collection`);
-
-    // Clear previous samples
-    samplesRef.current = [];
-
-    // Stop collection after specified duration
-    collectionTimerRef.current = setTimeout(() => {
-      finishCurrentPoint();
-    }, config.collectionDuration);
-  }, [state.status, state.currentPointIndex, config.collectionDuration]);
-
-  /**
-   * Finish collecting samples for current point
-   * Apply filtering and move to next point or complete calibration
-   */
-  const finishCurrentPoint = useCallback(async () => {
-    if (collectionTimerRef.current) {
-      clearTimeout(collectionTimerRef.current);
-      collectionTimerRef.current = null;
-    }
-
-    const currentSamples = [...samplesRef.current];
-    const currentPoint = DEFAULT_CALIBRATION_POSITIONS[state.currentPointIndex];
-
-    console.log(`Finishing point ${state.currentPointIndex + 1}, collected ${currentSamples.length} samples`);
-
-    // Apply statistical filtering (matching Python main.py:217-238)
-    const filteredSample = filterSamples(currentSamples);
-
-    if (!filteredSample) {
-      const error = `Failed to collect samples for point ${state.currentPointIndex + 1}`;
-      console.error(error);
-      setState(prev => ({ ...prev, status: 'error', error }));
-      if (onError) onError(error);
-      return;
-    }
-
-    // Store point data
-    const pointData: CalibrationPointData = {
-      position: currentPoint,
-      samples: currentSamples,
-      filteredSample
-    };
-
-    const newPointsData = [...state.pointsData, pointData];
-
-    // Check if this was the last point
-    if (state.currentPointIndex + 1 >= config.numPoints) {
-      // All points collected, perform adaptation
-      await performAdaptation(newPointsData);
-    } else {
-      // Move to next point
-      setState(prev => ({
-        ...prev,
-        currentPointIndex: prev.currentPointIndex + 1,
-        pointsData: newPointsData,
-        status: 'collecting'
-      }));
-    }
-  }, [state, config.numPoints, onError]);
+  }, [config.numPoints]);
 
   /**
    * Perform model adaptation using collected calibration data
@@ -264,7 +166,119 @@ export function useCalibration({
         onError(errorMessage);
       }
     }
-  }, [tracker, config, onComplete, onError]);
+  }, [tracker, config, onComplete, onError, resetCalibration]);
+
+  /**
+   * Finish collecting samples for current point
+   * Apply filtering and move to next point or complete calibration
+   */
+  const finishCurrentPoint = useCallback(async () => {
+    if (collectionTimerRef.current) {
+      clearTimeout(collectionTimerRef.current);
+      collectionTimerRef.current = null;
+    }
+
+    const currentSamples = [...samplesRef.current];
+    const currentPoint = DEFAULT_CALIBRATION_POSITIONS[state.currentPointIndex];
+
+    console.log(`Finishing point ${state.currentPointIndex + 1}, collected ${currentSamples.length} samples`);
+
+    // Apply statistical filtering (matching Python main.py:217-238)
+    const filteredSample = filterSamples(currentSamples);
+
+    if (!filteredSample) {
+      const error = `Failed to collect samples for point ${state.currentPointIndex + 1}`;
+      console.error(error);
+      setState(prev => ({ ...prev, status: 'error', error }));
+      if (onError) onError(error);
+      return;
+    }
+
+    // Store point data
+    const pointData: CalibrationPointData = {
+      position: currentPoint,
+      samples: currentSamples,
+      filteredSample
+    };
+
+    const newPointsData = [...state.pointsData, pointData];
+
+    // Check if this was the last point
+    if (state.currentPointIndex + 1 >= config.numPoints) {
+      // All points collected, perform adaptation
+      await performAdaptation(newPointsData);
+    } else {
+      // Move to next point
+      setState(prev => ({
+        ...prev,
+        currentPointIndex: prev.currentPointIndex + 1,
+        pointsData: newPointsData,
+        status: 'collecting'
+      }));
+    }
+  }, [state, config.numPoints, onError, performAdaptation]);
+
+  /**
+   * Handle animation completion (dot turned white)
+   * Start collecting samples
+   */
+  const handleAnimationComplete = useCallback(() => {
+    if (state.status !== 'collecting') return;
+
+    console.log(`Animation complete for point ${state.currentPointIndex + 1}, starting sample collection`);
+
+    // Clear previous samples
+    samplesRef.current = [];
+
+    // Stop collection after specified duration
+    collectionTimerRef.current = setTimeout(() => {
+      finishCurrentPoint();
+    }, config.collectionDuration);
+  }, [state.status, state.currentPointIndex, config.collectionDuration, finishCurrentPoint]);
+
+  /**
+   * Start calibration workflow
+   * IMPORTANT: Clears previous calibration AND clickstream data to support re-calibration
+   */
+  const startCalibration = useCallback(() => {
+    if (!tracker) {
+      const error = 'Tracker not initialized';
+      console.error(error);
+      if (onError) onError(error);
+      return;
+    }
+
+    console.log('Starting calibration with config:', config);
+
+    // Clear ALL previous buffer data (both calibration and clickstream)
+    // This ensures stale data from previous calibration context doesn't contaminate new calibration
+    if (tracker.resetAllBuffers) {
+      console.log('🔄 Resetting all buffers (calibration + clickstream) for fresh start');
+      tracker.resetAllBuffers();
+    } else if (tracker.clearCalibrationBuffer) {
+      // Fallback for older API (only clears calibration, not clickstream)
+      console.warn('⚠️ resetAllBuffers() not available - using clearCalibrationBuffer() fallback');
+      console.warn('⚠️ Clickstream buffer will NOT be cleared - may contain stale data');
+      tracker.clearCalibrationBuffer();
+    } else {
+      console.warn('⚠️ No buffer clearing methods available - old data may persist');
+    }
+
+    setState({
+      status: 'instructions',
+      currentPointIndex: 0,
+      totalPoints: config.numPoints,
+      pointsData: []
+    });
+
+    // Move to first calibration point after brief delay
+    setTimeout(() => {
+      setState(prev => ({
+        ...prev,
+        status: 'collecting'
+      }));
+    }, 3000);  // 3 second instruction display
+  }, [tracker, config, onError]);
 
   /**
    * Cancel calibration and reset state
@@ -276,20 +290,7 @@ export function useCalibration({
     }
 
     resetCalibration();
-  }, []);
-
-  /**
-   * Reset calibration state to idle
-   */
-  const resetCalibration = useCallback(() => {
-    samplesRef.current = [];
-    setState({
-      status: 'idle',
-      currentPointIndex: 0,
-      totalPoints: config.numPoints,
-      pointsData: []
-    });
-  }, [config.numPoints]);
+  }, [resetCalibration]);
 
   return {
     state,

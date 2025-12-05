@@ -32,6 +32,48 @@ export function useVideoRecording(
   const autoStopTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
 
+  // Define stopRecording first so it can be used in startRecording's dependency array
+  const stopRecording = useCallback(async (): Promise<Blob | null> => {
+    // Use mediaRecorder state instead of React state to avoid stale closure issues
+    if (!mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording') {
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      const mediaRecorder = mediaRecorderRef.current!;
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: mediaRecorder.mimeType });
+        setVideoBlob(blob);
+        setIsRecording(false);
+
+        // Clear intervals and timeouts
+        if (durationIntervalRef.current) {
+          clearInterval(durationIntervalRef.current);
+          durationIntervalRef.current = null;
+        }
+        if (autoStopTimeoutRef.current) {
+          clearTimeout(autoStopTimeoutRef.current);
+          autoStopTimeoutRef.current = null;
+        }
+
+        // Stop screen stream if it exists
+        if (screenStreamRef.current) {
+          screenStreamRef.current.getTracks().forEach(track => track.stop());
+          screenStreamRef.current = null;
+          console.log('Screen stream stopped');
+        }
+
+        // Calculate duration from ref to avoid stale closure
+        const recordingDuration = Date.now() - startTimeRef.current;
+        console.log(`Recording stopped. Duration: ${recordingDuration}ms, Size: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
+        resolve(blob);
+      };
+
+      mediaRecorder.stop();
+    });
+  }, []);
+
   const startRecording = useCallback(async (): Promise<boolean> => {
     try {
       let stream: MediaStream;
@@ -105,45 +147,7 @@ export function useVideoRecording(
       console.error('Failed to start recording:', error);
       return false;
     }
-  }, []);
-
-  const stopRecording = useCallback(async (): Promise<Blob | null> => {
-    if (!mediaRecorderRef.current || !isRecording) {
-      return null;
-    }
-
-    return new Promise((resolve) => {
-      const mediaRecorder = mediaRecorderRef.current!;
-
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: mediaRecorder.mimeType });
-        setVideoBlob(blob);
-        setIsRecording(false);
-
-        // Clear intervals and timeouts
-        if (durationIntervalRef.current) {
-          clearInterval(durationIntervalRef.current);
-          durationIntervalRef.current = null;
-        }
-        if (autoStopTimeoutRef.current) {
-          clearTimeout(autoStopTimeoutRef.current);
-          autoStopTimeoutRef.current = null;
-        }
-
-        // Stop screen stream if it exists
-        if (screenStreamRef.current) {
-          screenStreamRef.current.getTracks().forEach(track => track.stop());
-          screenStreamRef.current = null;
-          console.log('Screen stream stopped');
-        }
-
-        console.log(`Recording stopped. Duration: ${duration}ms, Size: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
-        resolve(blob);
-      };
-
-      mediaRecorder.stop();
-    });
-  }, [isRecording, duration]);
+  }, [stopRecording]);
 
   const clearRecording = useCallback(() => {
     setVideoBlob(null);
