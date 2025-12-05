@@ -78,8 +78,8 @@ export default class WebEyeTrackProxy implements IDisposable {
 
     this.worker.onmessage = this.messageHandler;
 
-    // Initialize the worker
-    this.worker.postMessage({ type: 'init' });
+    // Initialize the worker with optional modelPath
+    this.worker.postMessage({ type: 'init', payload: { modelPath: workerConfig?.modelPath } });
 
     // Store click handler reference for cleanup
     this.clickHandler = (e: MouseEvent) => {

@@ -1,5 +1,6 @@
 export interface WorkerConfig {
   workerUrl?: string;
+  modelPath?: string;
 }
 
 export function createWebEyeTrackWorker(config?: WorkerConfig): Worker {

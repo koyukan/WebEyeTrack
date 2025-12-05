@@ -113,9 +113,9 @@ export default class WebEyeTrack implements IDisposable {
     this.clickTTL = clickTTL;
   }
 
-  async initialize(): Promise<void> {
+  async initialize(modelPath?: string): Promise<void> {
     await this.faceLandmarkerClient.initialize();
-    await this.blazeGaze.loadModel();
+    await this.blazeGaze.loadModel(modelPath);
     await this.warmup();
     this.loaded = true;
   }

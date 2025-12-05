@@ -20,7 +20,7 @@
     "typescript": "^4.6.4",
     "video.js": "^8.23.4",
     "web-vitals": "^2.1.4",
-    "webeyetrack": "npm:@koyukan/webeyetrack@^1.0.1",
+    "webeyetrack": "npm:@koyukan/webeyetrack@^1.0.2",
     "zustand": "^5.0.8"
   },
   "devDependencies": {

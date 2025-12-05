@@ -12,7 +12,7 @@ self.onmessage = async (e) => {
   switch (type) {
     case 'init':
       tracker = new WebEyeTrack();
-      await tracker.initialize();
+      await tracker.initialize(payload?.modelPath);
       self.postMessage({ type: 'ready' });
       status = 'idle';
       break;
